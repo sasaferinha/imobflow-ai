@@ -18,23 +18,39 @@ const steps = [
 
 export default function LandingClient() {
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
-  function openWhatsApp(event: FormEvent<HTMLFormElement>) {
+  async function openWhatsApp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const payload = {
+      name: String(form.get('name') || ''), phone: String(form.get('phone') || ''), email: String(form.get('email') || ''),
+      goal: String(form.get('goal') || ''), propertyType: String(form.get('propertyType') || ''),
+      region: String(form.get('region') || ''), budget: String(form.get('budget') || ''), details: String(form.get('details') || ''),
+    };
     const message = [
       'Olá! Vim pelo site da ImobFlow e gostaria de encontrar um imóvel.',
       '',
-      `Nome: ${String(form.get('name') || '')}`,
-      `Objetivo: ${String(form.get('goal') || '')}`,
-      `Tipo de imóvel: ${String(form.get('propertyType') || '')}`,
-      `Cidade ou região: ${String(form.get('region') || '')}`,
-      `Faixa de investimento: ${String(form.get('budget') || '')}`,
-      `Detalhes: ${String(form.get('details') || 'Não informado')}`,
+      `Nome: ${payload.name}`,
+      `Telefone: ${payload.phone}`,
+      `E-mail: ${payload.email || 'Não informado'}`,
+      `Objetivo: ${payload.goal}`,
+      `Tipo de imóvel: ${payload.propertyType}`,
+      `Cidade ou região: ${payload.region}`,
+      `Faixa de investimento: ${payload.budget}`,
+      `Detalhes: ${payload.details || 'Não informado'}`,
     ].join('\n');
-    const endpoint = WHATSAPP_NUMBER ? `https://wa.me/${WHATSAPP_NUMBER}` : 'https://wa.me/';
-    setSubmitted(true);
-    window.open(`${endpoint}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+    setSubmitting(true); setFormError('');
+    try {
+      const response = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!response.ok) throw new Error('save_failed');
+      const endpoint = WHATSAPP_NUMBER ? `https://wa.me/${WHATSAPP_NUMBER}` : 'https://wa.me/';
+      setSubmitted(true);
+      window.location.href = `${endpoint}?text=${encodeURIComponent(message)}`;
+    } catch {
+      setFormError('Não conseguimos salvar seus dados agora. Tente novamente em instantes.');
+    } finally { setSubmitting(false); }
   }
 
   return (
@@ -94,15 +110,20 @@ export default function LandingClient() {
           <div className="form-progress" aria-label="Etapas do atendimento"><span className="active"><i>1</i>Seu perfil</span><span><i>2</i>Preferências</span><span><i>3</i>WhatsApp</span></div>
           <label>Como podemos chamar você?<input name="name" placeholder="Digite seu nome" required /></label>
           <div className="landing-form-grid">
+            <label>Seu WhatsApp<input name="phone" type="tel" placeholder="(11) 99999-9999" required /></label>
+            <label>Seu e-mail <small>opcional</small><input name="email" type="email" placeholder="voce@email.com" /></label>
+          </div>
+          <div className="landing-form-grid">
             <label>O que você deseja?<select name="goal" defaultValue="" required><option value="" disabled>Selecione</option><option>Comprar</option><option>Alugar</option><option>Investir</option></select></label>
             <label>Tipo de imóvel<select name="propertyType" defaultValue="" required><option value="" disabled>Selecione</option><option>Apartamento</option><option>Casa</option><option>Terreno</option><option>Comercial</option></select></label>
           </div>
           <label>Cidade ou região<input name="region" placeholder="Ex.: Centro, São Paulo" required /></label>
           <label>Faixa de investimento<select name="budget" defaultValue="" required><option value="" disabled>Selecione uma faixa</option><option>Até R$ 300 mil</option><option>R$ 300 mil a R$ 600 mil</option><option>R$ 600 mil a R$ 1 milhão</option><option>Acima de R$ 1 milhão</option><option>Aluguel até R$ 3 mil/mês</option><option>Aluguel acima de R$ 3 mil/mês</option></select></label>
           <label>Algo mais que devemos saber?<textarea name="details" rows={3} placeholder="Quartos, vagas, condomínio, prazo…" /></label>
-          <button type="submit"><i>◔</i> Continuar no WhatsApp <span>→</span></button>
+          <button type="submit" disabled={submitting}><i>◔</i> {submitting ? 'Salvando seu perfil…' : 'Continuar no WhatsApp'} <span>→</span></button>
           <small className="privacy-note">Ao continuar, você concorda em receber contato sobre sua busca. Seus dados serão usados apenas para este atendimento.</small>
           {submitted && <p className="form-success" role="status">✓ Sua mensagem foi preparada e o WhatsApp foi aberto.</p>}
+          {formError && <p className="form-error" role="alert">{formError}</p>}
         </form>
       </section>
 
@@ -115,6 +136,4 @@ export default function LandingClient() {
     </main>
   );
 }
-
-
 
