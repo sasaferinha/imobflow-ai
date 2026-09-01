@@ -1,0 +1,455 @@
+{
+  "name": "Real Estate AI - 02 - Eventos e Follow-up Meta",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "realestate-ai/events",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e058af49-34d1-47af-bfc6-635c51445fb9",
+      "name": "Backend Outbox Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -880,
+        0
+      ],
+      "webhookId": "e64c9d10-9e98-48c7-80b3-70d6d876f3c5"
+    },
+    {
+      "parameters": {
+        "jsCode": "const envelope = $json.body ?? {};\nconst type = typeof envelope.type === 'string' ? envelope.type : '';\nconst payload = envelope.payload && typeof envelope.payload === 'object' && !Array.isArray(envelope.payload) ? envelope.payload : {};\nconst envelopeValid = Boolean(envelope.id && envelope.tenantId && envelope.aggregateType && envelope.aggregateId && envelope.occurredAt && type);\n\nif (envelopeValid && type === 'lead.qualified') {\n  return [{ json: { route: 'leadQualified', eventId: envelope.id, envelope } }];\n}\n\nif (!envelopeValid || !['followup.requested', 'followup.due'].includes(type)) {\n  return [{ json: { route: 'ignored', eventId: envelope.id ?? null, eventType: type || null, reason: envelopeValid ? 'event_type_not_handled' : 'invalid_envelope', envelope } }];\n}\n\nreturn [{\n  json: {\n    route: 'followup',\n    eventId: envelope.id,\n    eventType: type,\n    tenantId: envelope.tenantId,\n    jobId: payload.followUpJobId ?? payload.jobId ?? envelope.aggregateId,\n    leadId: payload.leadId ?? '',\n    runAt: payload.runAt ?? envelope.occurredAt,\n    occurredAt: envelope.occurredAt,\n    reason: payload.reason ?? '',\n    envelope\n  }\n}];"
+      },
+      "id": "417961e4-c7e0-4d9d-814e-f27b386be5d4",
+      "name": "Normalizar e Validar Evento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e1f5089b-af83-4a14-ae0a-37e558440dad",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "followup",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0a87e762-63c9-4795-b63b-82df37f1b889",
+      "name": "Evento de Follow-up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -368,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.BACKEND_BASE_URL || 'http://api:3000').replace(/\\/$/, '') + '/leads/' + encodeURIComponent($json.leadId) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-tenant-id",
+              "value": "={{ $json.tenantId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "e665abf7-3f5b-4749-b649-942f64cf5f7c",
+      "name": "Buscar Lead no Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -112,
+        -224
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $('Normalizar e Validar Evento').item.json;\nconst lead = $json.data && typeof $json.data === 'object' && !Array.isArray($json.data) ? $json.data : null;\nconst templateName = String($env.META_FOLLOWUP_TEMPLATE_NAME ?? '').trim();\nconst languageCode = String($env.META_TEMPLATE_LANGUAGE ?? 'pt_BR').trim();\nconst allowlist = String($env.META_FOLLOWUP_TEMPLATE_ALLOWLIST ?? '').split(',').map((value) => value.trim()).filter(Boolean);\nconst to = String(lead?.phone ?? '').replace(/\\D/g, '');\nconst dueTimestamp = Date.parse(String(event.runAt));\nconst eventTimestamp = Date.parse(String(event.occurredAt));\nconst lastInteractionTimestamp = Date.parse(String(lead?.lastInteractionAt ?? ''));\nconst followupIsDue = Number.isFinite(dueTimestamp) && dueTimestamp <= Date.now();\nconst hasNewInteraction = Number.isFinite(eventTimestamp) && Number.isFinite(lastInteractionTimestamp) && lastInteractionTimestamp > eventTimestamp;\nconst leadIsActive = lead?.status === 'ACTIVE';\nconst leadName = String(lead?.name ?? lead?.profile?.name ?? 'cliente').trim().slice(0, 120) || 'cliente';\nconst components = [{ type: 'body', parameters: [{ type: 'text', text: leadName }] }];\n\nconst validationErrors = [];\nif (!event.leadId) validationErrors.push('missing_lead_id');\nif (!lead) validationErrors.push('missing_lead_response');\nif (!/^\\d{10,15}$/.test(to)) validationErrors.push('invalid_phone');\nif (!leadIsActive) validationErrors.push('lead_not_active');\nif (hasNewInteraction) validationErrors.push('lead_interacted_after_scheduling');\nif (!followupIsDue) validationErrors.push('followup_not_due');\nif (!templateName) validationErrors.push('missing_template');\nif (!allowlist.includes(templateName)) validationErrors.push('template_not_allowlisted');\nif (!/^[a-z]{2}(?:_[A-Z]{2})?$/.test(languageCode)) validationErrors.push('invalid_language');\n\nreturn [{ json: {\n  followupAction: validationErrors.length === 0 ? 'send' : 'skip',\n  validationErrors,\n  eventId: event.eventId,\n  eventType: event.eventType,\n  tenantId: event.tenantId,\n  jobId: event.jobId,\n  leadId: event.leadId,\n  to,\n  templateName,\n  languageCode,\n  components\n} }];"
+      },
+      "id": "d945190c-88c9-43c8-b7a6-d2b88e8be256",
+      "name": "Validar Follow-up com Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "10f389f6-1333-4b0a-9ebc-ee6295d57b7f",
+              "leftValue": "={{ $json.followupAction }}",
+              "rightValue": "send",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2dcf65b4-27de-4394-b323-667d67cfa11f",
+      "name": "Pode Enviar Follow-up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        400,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/' + ($env.WHATSAPP_API_VERSION || 'v23.0') + '/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.to, type: 'template', template: { name: $json.templateName, language: { code: $json.languageCode }, ...($json.components.length ? { components: $json.components } : {}) } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "0f45359c-f394-4c9c-b580-b889491c9340",
+      "name": "Enviar Template Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        672,
+        -288
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, sent: true, eventId: $('Normalizar e Validar Evento').item.json.eventId, metaMessageId: $json.messages?.[0]?.id ?? null } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "23d61712-4dc4-4df0-a174-94d0ee1f282f",
+      "name": "Responder Follow-up Enviado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, sent: false, eventId: $json.eventId, reasons: $json.validationErrors } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "9ada7daf-556f-421d-aa43-b11f3c91950a",
+      "name": "Responder Follow-up Ignorado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        672,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "82915215-4a95-4274-9426-0e57a6464aed",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "leadQualified",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b511828f-18fb-422d-91b5-e886295ba76d",
+      "name": "Lead Qualificado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -112,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_INTERNAL_BASE_URL || 'http://n8n:5678').replace(/\\/$/, '') + '/webhook/realestate-ai/lead-qualified' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.envelope) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "d8d93784-bbc2-436a-9122-b070c75bfc0d",
+      "name": "Encaminhar para Workflow 03",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        160,
+        96
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, routed: 'lead.qualified', eventId: $('Normalizar e Validar Evento').item.json.eventId } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "57bf5b97-032d-4fd1-9017-bfe558aa0e4c",
+      "name": "Responder Evento Encaminhado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        448,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, ignored: true, eventId: $json.eventId, eventType: $json.eventType, reason: $json.reason } }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "fd6363f8-2ea9-41f1-81eb-7428bc9bf6f7",
+      "name": "Responder Evento Nao Tratado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        160,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Credenciais e variaveis\n\n**Backend Outbox Webhook** e **Encaminhar para Workflow 03**: Header Auth `x-n8n-secret`.\n\n**Buscar Lead no Backend**: Header Auth `x-api-key`.\n\n**Enviar Template Meta**: Header Auth `Authorization: Bearer <TOKEN>`.\n\nVariaveis: `BACKEND_BASE_URL`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_API_VERSION`, `META_TEMPLATE_LANGUAGE`, `META_FOLLOWUP_TEMPLATE_NAME`, `META_FOLLOWUP_TEMPLATE_ALLOWLIST` e `N8N_INTERNAL_BASE_URL`.\n\nO template de follow-up deve possuir uma variavel no corpo (`{{1}}`) para o nome. O fluxo falha fechado se o lead nao vier do backend, nao estiver ACTIVE, tiver interagido depois do agendamento, ainda nao estiver vencido ou o template nao estiver na allowlist.",
+        "height": 340,
+        "width": 600,
+        "color": 5
+      },
+      "id": "2df33cb8-ac91-4f3a-a756-8d11b1e3bf47",
+      "name": "Notas de Configuracao",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        448
+      ]
+    }
+  ],
+  "connections": {
+    "Backend Outbox Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalizar e Validar Evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar e Validar Evento": {
+      "main": [
+        [
+          {
+            "node": "Evento de Follow-up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evento de Follow-up?": {
+      "main": [
+        [
+          {
+            "node": "Buscar Lead no Backend",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lead Qualificado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Lead no Backend": {
+      "main": [
+        [
+          {
+            "node": "Validar Follow-up com Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Follow-up com Lead": {
+      "main": [
+        [
+          {
+            "node": "Pode Enviar Follow-up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pode Enviar Follow-up?": {
+      "main": [
+        [
+          {
+            "node": "Enviar Template Meta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Follow-up Ignorado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Template Meta": {
+      "main": [
+        [
+          {
+            "node": "Responder Follow-up Enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Qualificado?": {
+      "main": [
+        [
+          {
+            "node": "Encaminhar para Workflow 03",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Evento Nao Tratado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encaminhar para Workflow 03": {
+      "main": [
+        [
+          {
+            "node": "Responder Evento Encaminhado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 60
+  },
+  "versionId": "954eb52e-3674-4926-8efb-77e3e7a79f75",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

@@ -1,0 +1,360 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadIntent {
+  BUY_PROPERTY
+  RENT_PROPERTY
+  SELL_PROPERTY
+  PROPERTY_INFO
+  SCHEDULE_VISIT
+  FINANCING_QUESTION
+  HUMAN_REQUEST
+  GENERAL_QUESTION
+  UNKNOWN
+}
+
+enum LeadTemperature {
+  COLD
+  WARM
+  HOT
+  VERY_HOT
+}
+
+enum ConversationStatus {
+  AI_ACTIVE
+  HUMAN_HANDOFF
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  DOCUMENT
+  TEMPLATE
+  UNKNOWN
+}
+
+enum ProcessingStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED_DUPLICATE
+}
+
+enum TransactionType {
+  BUY
+  RENT
+}
+
+enum PropertyType {
+  APARTMENT
+  HOUSE
+  LAND
+  COMMERCIAL
+  OTHER
+}
+
+enum PropertyStatus {
+  ACTIVE
+  INACTIVE
+  SOLD
+  RENTED
+}
+
+enum PropertyInterestKind {
+  PRESENTED
+  VIEWED
+  FAVORITED
+}
+
+enum AppointmentStatus {
+  REQUESTED
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum FollowUpStatus {
+  PENDING
+  DISPATCHED
+  CANCELLED
+  FAILED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+model Tenant {
+  id                    String                @id
+  name                  String
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  brokers               Broker[]
+  leads                 Lead[]
+  conversations         Conversation[]
+  messages              Message[]
+  conversationSummaries ConversationSummary[]
+  properties            Property[]
+  propertyInterests     PropertyInterest[]
+  appointments          Appointment[]
+  leadAssignments       LeadAssignment[]
+  followUpJobs          FollowUpJob[]
+  outboxEvents          OutboxEvent[]
+
+  @@map("tenants")
+}
+
+model Broker {
+  id          String           @id @default(cuid())
+  tenantId    String           @map("tenant_id")
+  name        String
+  email       String?
+  phone       String?
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  properties  Property[]
+  appointments Appointment[]
+  assignments LeadAssignment[]
+
+  @@index([tenantId, active])
+  @@map("brokers")
+}
+
+model Lead {
+  id                  String              @id @default(cuid())
+  tenantId            String              @map("tenant_id")
+  phone               String
+  name                String?
+  email               String?
+  intent              LeadIntent          @default(UNKNOWN)
+  profile             Json                @default("{}")
+  score               Int                 @default(0)
+  temperature         LeadTemperature     @default(COLD)
+  status              String              @default("ACTIVE")
+  lastInteractionAt   DateTime?           @map("last_interaction_at")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations       Conversation[]
+  interests           PropertyInterest[]
+  appointments        Appointment[]
+  assignments         LeadAssignment[]
+  followUpJobs        FollowUpJob[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, score])
+  @@map("leads")
+}
+
+model Conversation {
+  id             String                @id @default(cuid())
+  tenantId       String                @map("tenant_id")
+  leadId         String                @map("lead_id")
+  channel        String                @default("WHATSAPP")
+  status         ConversationStatus    @default(AI_ACTIVE)
+  externalId     String?               @map("external_id")
+  lastMessageAt  DateTime?             @map("last_message_at")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead           Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  messages       Message[]
+  summary        ConversationSummary?
+
+  @@index([tenantId, leadId, status])
+  @@map("conversations")
+}
+
+model Message {
+  id                  String            @id @default(cuid())
+  tenantId            String            @map("tenant_id")
+  conversationId      String            @map("conversation_id")
+  direction           MessageDirection
+  sender              String
+  content             String
+  timestamp           DateTime          @default(now())
+  whatsappMessageId   String?           @map("whatsapp_message_id")
+  messageType         MessageType       @default(TEXT) @map("message_type")
+  metadata            Json              @default("{}")
+  processingStatus    ProcessingStatus  @default(RECEIVED) @map("processing_status")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation        Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, whatsappMessageId])
+  @@index([tenantId, conversationId, timestamp])
+  @@map("messages")
+}
+
+model ConversationSummary {
+  id                   String        @id @default(cuid())
+  tenantId             String        @map("tenant_id")
+  conversationId       String        @unique @map("conversation_id")
+  leadName             String?       @map("lead_name")
+  intent               LeadIntent    @default(UNKNOWN)
+  preferences          Json          @default("{}")
+  presentedPropertyIds String[]      @default([]) @map("presented_property_ids")
+  questions            String[]      @default([])
+  objections           String[]      @default([])
+  stage                String        @default("DISCOVERY")
+  nextStep             String?       @map("next_step")
+  messageCount         Int           @default(0) @map("message_count")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+  tenant               Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation         Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, conversationId])
+  @@map("conversation_summaries")
+}
+
+model Property {
+  id                String            @id @default(cuid())
+  tenantId          String            @map("tenant_id")
+  externalId        String            @map("external_id")
+  title             String
+  description       String
+  transactionType   TransactionType   @map("transaction_type")
+  propertyType      PropertyType      @map("property_type")
+  status            PropertyStatus    @default(ACTIVE)
+  price             Decimal           @db.Decimal(14, 2)
+  condoFee          Decimal?          @map("condo_fee") @db.Decimal(12, 2)
+  propertyTax       Decimal?          @map("property_tax") @db.Decimal(12, 2)
+  city              String
+  state             String            @db.Char(2)
+  neighborhood      String
+  address           String?
+  latitude          Decimal?          @db.Decimal(10, 7)
+  longitude         Decimal?          @db.Decimal(10, 7)
+  bedrooms          Int               @default(0)
+  bathrooms         Int               @default(0)
+  parkingSpaces     Int               @default(0) @map("parking_spaces")
+  areaM2            Decimal           @map("area_m2") @db.Decimal(10, 2)
+  furnished         Boolean           @default(false)
+  acceptsFinancing  Boolean           @default(true) @map("accepts_financing")
+  features          String[]          @default([])
+  imageUrls         String[]          @default([]) @map("image_urls")
+  propertyUrl       String?           @map("property_url")
+  brokerId          String?           @map("broker_id")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  available         Boolean           @default(true)
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  broker            Broker?           @relation(fields: [brokerId], references: [id], onDelete: SetNull)
+  interests         PropertyInterest[]
+  appointments      Appointment[]
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, transactionType, propertyType, city, neighborhood, available])
+  @@index([tenantId, price])
+  @@map("properties")
+}
+
+model PropertyInterest {
+  id          String                @id @default(cuid())
+  tenantId    String                @map("tenant_id")
+  leadId      String                @map("lead_id")
+  propertyId  String                @map("property_id")
+  kind        PropertyInterestKind  @default(PRESENTED)
+  createdAt   DateTime              @default(now()) @map("created_at")
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead        Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  property    Property              @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, leadId, propertyId, kind])
+  @@map("property_interests")
+}
+
+model Appointment {
+  id           String             @id @default(cuid())
+  tenantId     String             @map("tenant_id")
+  leadId       String             @map("lead_id")
+  propertyId   String?            @map("property_id")
+  brokerId     String?            @map("broker_id")
+  scheduledAt  DateTime           @map("scheduled_at")
+  duration     Int                @default(60)
+  status       AppointmentStatus  @default(REQUESTED)
+  notes        String?
+  externalId   String?            @map("external_id")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead         Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  property     Property?          @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  broker       Broker?            @relation(fields: [brokerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, scheduledAt, status])
+  @@map("appointments")
+}
+
+model LeadAssignment {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  leadId      String    @map("lead_id")
+  brokerId    String    @map("broker_id")
+  assignedAt  DateTime  @default(now()) @map("assigned_at")
+  releasedAt  DateTime? @map("released_at")
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  broker      Broker    @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, leadId, releasedAt])
+  @@map("lead_assignments")
+}
+
+model FollowUpJob {
+  id          String          @id @default(cuid())
+  tenantId    String          @map("tenant_id")
+  leadId      String          @map("lead_id")
+  runAt       DateTime        @map("run_at")
+  reason      String
+  status      FollowUpStatus  @default(PENDING)
+  payload     Json            @default("{}")
+  attempts    Int             @default(0)
+  lastError   String?         @map("last_error")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead        Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, runAt])
+  @@map("follow_up_jobs")
+}
+
+model OutboxEvent {
+  id            String        @id @default(cuid())
+  tenantId      String        @map("tenant_id")
+  type          String
+  aggregateType String        @map("aggregate_type")
+  aggregateId   String        @map("aggregate_id")
+  payload       Json
+  status        OutboxStatus  @default(PENDING)
+  attempts      Int           @default(0)
+  availableAt   DateTime      @default(now()) @map("available_at")
+  publishedAt   DateTime?     @map("published_at")
+  lastError     String?       @map("last_error")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@index([tenantId, type])
+  @@map("outbox_events")
+}

@@ -1,0 +1,18 @@
+{
+  "name": "imobflow-ai",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev:api": "pnpm --filter realestate-ai-mvp dev",
+    "dev:dashboard": "pnpm --filter sites-project dev",
+    "build": "pnpm -r build",
+    "test": "pnpm --filter realestate-ai-mvp test",
+    "typecheck": "pnpm --filter realestate-ai-mvp typecheck",
+    "lint": "pnpm --filter sites-project lint",
+    "db:generate": "pnpm --filter realestate-ai-mvp db:generate"
+  }
+}

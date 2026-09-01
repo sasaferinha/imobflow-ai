@@ -1,0 +1,282 @@
+{
+  "name": "Real Estate AI - 01 - WhatsApp para Backend",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "realestate-ai/whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "cb27d8d8-afd9-45bd-8149-171198716f2c",
+      "name": "Meta - Verificacao GET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -720,
+        -240
+      ],
+      "webhookId": "afe91d4a-4da0-49cb-905a-72b3b166659d"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "af7c3533-893a-40c7-8c1d-fc665cf47593",
+              "leftValue": "={{ $json.query['hub.mode'] }}",
+              "rightValue": "subscribe",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "89998bfa-eec8-4f44-bf71-159e210a9e68",
+              "leftValue": "={{ $json.query['hub.verify_token'] }}",
+              "rightValue": "={{ $env.WHATSAPP_VERIFY_TOKEN || '__NOT_CONFIGURED__' }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "922c4d6f-a7cf-469f-9e3f-bdc3a1f1ba98",
+              "leftValue": "={{ $json.query['hub.challenge'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "43db4608-067b-4182-bf39-bba4fd1162c2",
+      "name": "Verify Token Valido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -464,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ String($json.query['hub.challenge']) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "92d5f998-171c-41ea-bbd5-7ce59634254a",
+      "name": "Responder Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -192,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Forbidden",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "1394f6c8-9bd0-4772-b86b-e8ff775c621c",
+      "name": "Rejeitar Verificacao",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -192,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "realestate-ai/whatsapp",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "40465469-fb14-44e4-9a0a-e1e64762868f",
+      "name": "Meta - Mensagem POST",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -720,
+        160
+      ],
+      "webhookId": "f89bed26-6207-4083-98a5-453de90d48ce"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.BACKEND_BASE_URL || 'http://api:3000').replace(/\\/$/, '') + '/webhooks/whatsapp' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "={{ $json.headers['content-type'] || 'application/json' }}"
+            },
+            {
+              "name": "x-hub-signature-256",
+              "value": "={{ $json.headers['x-hub-signature-256'] || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "2ae8fd88-b9b4-42e2-a0c5-016195412aed",
+      "name": "Encaminhar Corpo Bruto ao Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -432,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { received: true } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "9f494453-9ab7-4786-af79-a2f9f4e6b19c",
+      "name": "Confirmar Recebimento Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -144,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Configuracao obrigatoria\n\n- `WHATSAPP_VERIFY_TOKEN`: mesmo token informado no painel Meta.\n- `BACKEND_BASE_URL`: URL interna do backend, sem barra final.\n- O POST usa **Raw Body** e envia o binario original. Nao converta o corpo em JSON: a assinatura Meta deixaria de ser valida.\n- Publique o workflow antes de cadastrar a Production URL na Meta.",
+        "height": 240,
+        "width": 520,
+        "color": 5
+      },
+      "id": "1aceed0d-6558-49a4-be99-216b8f36c780",
+      "name": "Notas de Configuracao",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Meta - Verificacao GET": {
+      "main": [
+        [
+          {
+            "node": "Verify Token Valido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Token Valido?": {
+      "main": [
+        [
+          {
+            "node": "Responder Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejeitar Verificacao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta - Mensagem POST": {
+      "main": [
+        [
+          {
+            "node": "Encaminhar Corpo Bruto ao Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encaminhar Corpo Bruto ao Backend": {
+      "main": [
+        [
+          {
+            "node": "Confirmar Recebimento Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "e5dc7865-c6bc-4573-ab2c-1502786b2681",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

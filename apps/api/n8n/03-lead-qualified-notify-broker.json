@@ -1,0 +1,371 @@
+{
+  "name": "Real Estate AI - 03 - Lead Qualificado para Corretor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "realestate-ai/lead-qualified",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "deba8712-bd82-4e49-a0ee-0dcaf8ca7f94",
+      "name": "Lead Qualified Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -640,
+        0
+      ],
+      "webhookId": "8a69ce64-f5f5-4a7a-81b8-0ee22e6caf1e"
+    },
+    {
+      "parameters": {
+        "jsCode": "const envelope = $json.body ?? {};\nconst payload = envelope.payload && typeof envelope.payload === 'object' && !Array.isArray(envelope.payload) ? envelope.payload : {};\nconst validationErrors = [];\nif (envelope.type !== 'lead.qualified') validationErrors.push('invalid_event_type');\nif (!envelope.id || !envelope.tenantId || !envelope.aggregateId || !envelope.occurredAt) validationErrors.push('invalid_envelope');\nif (!payload.conversationId) validationErrors.push('missing_conversation_id');\nreturn [{ json: {\n  valid: validationErrors.length === 0,\n  validationErrors,\n  eventId: envelope.id ?? null,\n  tenantId: envelope.tenantId ?? null,\n  leadId: envelope.aggregateId ?? null,\n  conversationId: payload.conversationId ?? null,\n  score: payload.score ?? null,\n  temperature: payload.temperature ?? null\n} }];"
+      },
+      "id": "c0ef7c06-0b56-4296-b9c6-00562137786b",
+      "name": "Validar Evento Lead Qualified",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "404432d5-cb18-4dbd-99e5-7e601935c4cc",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4a2f319b-e80e-4938-8640-60d5b9e14d23",
+      "name": "Envelope Valido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -128,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.BACKEND_BASE_URL || 'http://api:3000').replace(/\\/$/, '') + '/leads/' + encodeURIComponent($json.leadId) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-tenant-id",
+              "value": "={{ $json.tenantId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "31ceec37-8011-452a-aa04-f9621a8bab4c",
+      "name": "Buscar Lead no Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        128,
+        -160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.BACKEND_BASE_URL || 'http://api:3000').replace(/\\/$/, '') + '/conversations/' + encodeURIComponent($('Validar Evento Lead Qualified').item.json.conversationId) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-tenant-id",
+              "value": "={{ $('Validar Evento Lead Qualified').item.json.tenantId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "47d36c25-0e3f-4473-b18f-6715b47c4c0b",
+      "name": "Buscar Conversa no Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        384,
+        -160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $('Validar Evento Lead Qualified').item.json;\nconst lead = $('Buscar Lead no Backend').item.json.data;\nconst conversation = $json.data;\nconst profile = lead?.profile && typeof lead.profile === 'object' && !Array.isArray(lead.profile) ? lead.profile : {};\nconst conversationSummary = conversation?.summary && typeof conversation.summary === 'object' && !Array.isArray(conversation.summary) ? conversation.summary : {};\nconst to = String($env.BROKER_NOTIFICATION_PHONE ?? '').replace(/\\D/g, '');\nconst templateName = String($env.META_BROKER_TEMPLATE_NAME ?? '').trim();\nconst languageCode = String($env.META_TEMPLATE_LANGUAGE ?? 'pt_BR').trim();\nconst backofficeBaseUrl = String($env.BACKOFFICE_BASE_URL ?? '').replace(/\\/$/, '');\n\nconst intentLabels = {\n  BUY_PROPERTY: 'Compra', RENT_PROPERTY: 'Locacao', SELL_PROPERTY: 'Venda', PROPERTY_INFO: 'Informacoes de imovel',\n  SCHEDULE_VISIT: 'Agendamento de visita', FINANCING_QUESTION: 'Financiamento', HUMAN_REQUEST: 'Atendimento humano',\n  GENERAL_QUESTION: 'Duvida geral', UNKNOWN: 'Nao identificada'\n};\nconst list = (value) => Array.isArray(value) ? (value.filter(Boolean).join(' / ') || 'Nao informado') : (value ? String(value) : 'Nao informado');\nconst scalar = (value) => value === undefined || value === null || value === '' ? 'Nao informado' : String(value);\nconst money = (value) => {\n  const number = Number(value);\n  return Number.isFinite(number) ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(number) : null;\n};\nconst minBudget = money(profile.minPrice);\nconst maxBudget = money(profile.maxPrice);\nconst budget = minBudget && maxBudget ? `${minBudget} a ${maxBudget}` : (maxBudget ? `Ate ${maxBudget}` : (minBudget ? `A partir de ${minBudget}` : 'Nao informado'));\nconst intent = scalar(lead?.intent ?? conversationSummary.intent ?? 'UNKNOWN');\nconst conversationRef = backofficeBaseUrl ? `${backofficeBaseUrl}/conversations/${event.conversationId}` : event.conversationId;\nconst summary = [\n  'NOVO LEAD QUALIFICADO', '',\n  `Nome: ${scalar(lead?.name ?? profile.name)}`,\n  `Telefone: ${scalar(lead?.phone)}`,\n  `Intencao: ${intentLabels[intent] ?? intent}`,\n  `Tipo: ${scalar(profile.propertyType)}`,\n  `Regiao: ${list([profile.city, ...(profile.neighborhoods ?? [])].filter(Boolean))}`,\n  `Orcamento: ${budget}`,\n  `Quartos: ${profile.minBedrooms === undefined ? 'Nao informado' : `${profile.minBedrooms}+`}`,\n  `Pagamento: ${scalar(profile.paymentMethod)}`,\n  `Prazo: ${profile.purchaseTimelineDays === undefined ? 'Nao informado' : `Ate ${profile.purchaseTimelineDays} dias`}`,\n  `Imoveis apresentados: ${list(conversationSummary.presentedPropertyIds)}`,\n  `Lead Score: ${scalar(lead?.score ?? event.score)}/100`,\n  `Classificacao: ${scalar(lead?.temperature ?? event.temperature)}`,\n  `Proximo passo: ${scalar(conversationSummary.nextStep)}`,\n  `Conversa: ${scalar(conversationRef)}`\n].join('\\n').slice(0, 1000);\nconst validationErrors = [];\nif (!lead || !conversation) validationErrors.push('missing_backend_data');\nif (lead?.id !== event.leadId || conversation?.id !== event.conversationId || conversation?.leadId !== event.leadId) validationErrors.push('inconsistent_backend_data');\nif (!/^\\d{10,15}$/.test(to)) validationErrors.push('invalid_broker_phone');\nif (!templateName) validationErrors.push('missing_broker_template');\nif (!/^[a-z]{2}(?:_[A-Z]{2})?$/.test(languageCode)) validationErrors.push('invalid_language');\nreturn [{ json: { valid: validationErrors.length === 0, validationErrors, eventId: event.eventId, tenantId: event.tenantId, to, templateName, languageCode, summary } }];"
+      },
+      "id": "9fd8fa08-d3d9-4ccc-ae6d-82e59422059d",
+      "name": "Montar Resumo Deterministico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6b302ca0-4036-4364-99a8-0f2b1b1af1c4",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "05161ef0-533b-4fbf-a7af-ef46fb15c896",
+      "name": "Notificacao Valida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/' + ($env.WHATSAPP_API_VERSION || 'v23.0') + '/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.to, type: 'template', template: { name: $json.templateName, language: { code: $json.languageCode }, components: [{ type: 'body', parameters: [{ type: 'text', text: $json.summary }] }] } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "684d38ca-e0cc-4825-bd89-35027b1749d7",
+      "name": "Notificar Corretor via Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1168,
+        -272
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, notified: true, eventId: $('Montar Resumo Deterministico').item.json.eventId, metaMessageId: $json.messages?.[0]?.id ?? null } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "2ba0038f-c020-4cb7-b1dd-525d64d72fc6",
+      "name": "Responder Corretor Notificado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1456,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, notified: false, eventId: $json.eventId, reasons: $json.validationErrors } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "67c2448d-eb64-4bf0-8b02-7b1784af9f71",
+      "name": "Responder Notificacao Ignorada",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1168,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Configuracao obrigatoria\n\n- No webhook, selecione Header Auth `x-n8n-secret`.\n- Em **Buscar Lead** e **Buscar Conversa**, selecione Header Auth `x-api-key`; `x-tenant-id` vem do evento autenticado.\n- No HTTP Meta, selecione Header Auth `Authorization: Bearer <TOKEN>`.\n- Configure `BACKEND_BASE_URL`, `BROKER_NOTIFICATION_PHONE`, `META_BROKER_TEMPLATE_NAME`, `META_TEMPLATE_LANGUAGE`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_API_VERSION` e, opcionalmente, `BACKOFFICE_BASE_URL`.\n- O template do corretor deve possuir exatamente uma variavel no corpo (`{{1}}`), preenchida pelo resumo deterministico.\n- O workflow nao usa LLM e valida lead/conversa no mesmo tenant antes de notificar.",
+        "height": 300,
+        "width": 640,
+        "color": 5
+      },
+      "id": "96920b5e-18c7-44d8-b1bb-1b1e91435b19",
+      "name": "Notas de Configuracao",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Lead Qualified Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validar Evento Lead Qualified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Evento Lead Qualified": {
+      "main": [
+        [
+          {
+            "node": "Envelope Valido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envelope Valido?": {
+      "main": [
+        [
+          {
+            "node": "Buscar Lead no Backend",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Notificacao Ignorada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Lead no Backend": {
+      "main": [
+        [
+          {
+            "node": "Buscar Conversa no Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Conversa no Backend": {
+      "main": [
+        [
+          {
+            "node": "Montar Resumo Deterministico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Resumo Deterministico": {
+      "main": [
+        [
+          {
+            "node": "Notificacao Valida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificacao Valida?": {
+      "main": [
+        [
+          {
+            "node": "Notificar Corretor via Meta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Notificacao Ignorada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Corretor via Meta": {
+      "main": [
+        [
+          {
+            "node": "Responder Corretor Notificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 60
+  },
+  "versionId": "0a33407c-952b-44dc-8687-a216ee5f8eca",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
