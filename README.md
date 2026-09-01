@@ -38,3 +38,8 @@ pnpm test
 ```
 
 Consulte `apps/api/docs` para arquitetura, API, operação e estado atual do projeto.
+
+
+## Fluxo de leads
+
+O formulário público registra cada solicitação no PostgreSQL antes de abrir o WhatsApp. Os dados aparecem no painel protegido do corretor com resumo, score, temperatura e perfil completo.
