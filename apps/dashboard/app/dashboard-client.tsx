@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import type { LeadProfile } from '@/lib/leads';
 
 type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations';
 type ChatMessage = { id: number; side: 'incoming' | 'outgoing'; text: string };
@@ -31,6 +32,18 @@ const leadRows = [
   { initials: 'CS', name: 'Carla Souza', phone: '(11) 96632-7744', intent: 'Comprar terreno', region: 'Alphaville', score: 48, status: 'Morno', tone: 3 },
   { initials: 'VF', name: 'Victor Freitas', phone: '(11) 95521-0062', intent: 'Financiamento', region: 'Vila Mariana', score: 32, status: 'Morno', tone: 4 },
 ];
+
+type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
+
+function decorateLead(lead: LeadProfile, index: number): DashboardLead {
+  return {
+    ...lead,
+    initials: lead.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(),
+    intent: `${lead.goal} ${lead.propertyType.toLowerCase()}`,
+    status: lead.temperature,
+    tone: index % 5,
+  };
+}
 
 const initialProperties: Property[] = [
   { id: 1, title: 'Residencial Aurora', district: 'Centro', price: 'R$ 575.000', meta: '3 quartos • 2 vagas • 98 m²', match: 96, tone: 'orchid' },
@@ -71,8 +84,20 @@ export default function DashboardClient() {
   const [propertySearch, setPropertySearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>([]);
+  const [selectedLead, setSelectedLead] = useState<DashboardLead | null>(null);
 
-  const visibleLeads = useMemo(() => leadRows.filter((lead) => `${lead.name} ${lead.intent} ${lead.region}`.toLowerCase().includes(leadSearch.toLowerCase())), [leadSearch]);
+  useEffect(() => {
+    fetch('/api/leads').then(async (response) => {
+      if (!response.ok) return;
+      const result = await response.json() as { data: LeadProfile[] };
+      const decorated = result.data.map(decorateLead);
+      setCapturedLeads(decorated);
+      setSelectedLead(decorated[0] ?? null);
+    }).catch(() => undefined);
+  }, []);
+
+  const visibleLeads = useMemo(() => capturedLeads.filter((lead) => `${lead.name} ${lead.intent} ${lead.region}`.toLowerCase().includes(leadSearch.toLowerCase())), [capturedLeads, leadSearch]);
   const visibleProperties = useMemo(() => properties.filter((property) => `${property.title} ${property.district}`.toLowerCase().includes(propertySearch.toLowerCase())), [properties, propertySearch]);
   const header = headers[view];
 
@@ -132,7 +157,7 @@ export default function DashboardClient() {
 
         {view === 'overview' && <Overview onSimulate={() => setView('conversations')} />}
         {view === 'conversations' && <Conversations messages={messages} draft={draft} setDraft={setDraft} sendMessage={sendMessage} notify={notify} />}
-        {view === 'leads' && <Leads leads={visibleLeads} search={leadSearch} setSearch={setLeadSearch} notify={notify} />}
+        {view === 'leads' && <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} />}
         {view === 'properties' && <Properties properties={visibleProperties} search={propertySearch} setSearch={setPropertySearch} add={() => setModalOpen(true)} />}
         {view === 'agenda' && <Agenda notify={notify} />}
         {view === 'automations' && <Automations notify={notify} />}
@@ -189,8 +214,8 @@ function Conversations({ messages, draft, setDraft, sendMessage, notify }: { mes
   </div>;
 }
 
-function Leads({ leads, search, setSearch, notify }: { leads: typeof leadRows; search:string; setSearch:(value:string)=>void; notify:(message:string)=>void }) {
-  return <section className="table-panel panel"><div className="toolbar"><div className="search-field">⌕<input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Buscar por nome, região ou intenção"/></div><button>Temperatura⌄</button><button>Intenção⌄</button></div><div className="lead-table"><div className="table-row table-head"><span>Lead</span><span>Intenção</span><span>Região</span><span>Score</span><span>Temperatura</span><span/></div>{leads.map((lead)=><button className="table-row" key={lead.name} onClick={()=>notify(`Perfil de ${lead.name} selecionado`)}><span className="lead-cell"><i className={`lead-avatar avatar-${lead.tone}`}>{lead.initials}</i><b>{lead.name}<small>{lead.phone}</small></b></span><span>{lead.intent}</span><span>{lead.region}</span><span className="score-cell"><i style={{width:`${lead.score}%`}}/><b>{lead.score}</b></span><span><em className={`temperature temp-${lead.tone}`}>{lead.status}</em></span><span>›</span></button>)}</div></section>;
+function Leads({ leads, selected, onSelect, search, setSearch }: { leads: DashboardLead[]; selected: DashboardLead | null; onSelect:(lead:DashboardLead)=>void; search:string; setSearch:(value:string)=>void }) {
+  return <div className="lead-management"><section className="table-panel panel"><div className="toolbar"><div className="search-field">⌕<input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Buscar por nome, região ou intenção"/></div><span className="live-leads"><i/> {leads.length} leads do formulário</span></div><div className="lead-table"><div className="table-row table-head"><span>Lead</span><span>Intenção</span><span>Região</span><span>Score</span><span>Temperatura</span><span/></div>{leads.map((lead)=><button className={`table-row ${selected?.id===lead.id?'selected':''}`} key={lead.id} onClick={()=>onSelect(lead)}><span className="lead-cell"><i className={`lead-avatar avatar-${lead.tone}`}>{lead.initials}</i><b>{lead.name}<small>{lead.phone}</small></b></span><span>{lead.intent}</span><span>{lead.region}</span><span className="score-cell"><i style={{width:`${lead.score}%`}}/><b>{lead.score}</b></span><span><em className={`temperature temp-${lead.tone}`}>{lead.status}</em></span><span>›</span></button>)}{leads.length===0&&<div className="empty-leads"><span>◎</span><h3>Nenhum lead recebido ainda</h3><p>Os clientes que enviarem o formulário aparecerão aqui automaticamente.</p></div>}</div></section>{selected&&<aside className="captured-profile panel"><div className="captured-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p className="eyebrow">Perfil completo</p><h2>{selected.name}</h2><span>{new Date(selected.createdAt).toLocaleString('pt-BR')}</span></div><em className={`temperature temp-${selected.tone}`}>{selected.status}</em></div><div className="profile-explanation"><span>✦</span><div><strong>Resumo para o corretor</strong><p>{selected.summary}</p></div></div><dl><div><dt>Objetivo</dt><dd>{selected.goal}</dd></div><div><dt>Tipo de imóvel</dt><dd>{selected.propertyType}</dd></div><div><dt>Região desejada</dt><dd>{selected.region}</dd></div><div><dt>Faixa de investimento</dt><dd>{selected.budget}</dd></div><div><dt>WhatsApp</dt><dd>{selected.phone}</dd></div><div><dt>E-mail</dt><dd>{selected.email||'Não informado'}</dd></div><div className="profile-wide"><dt>Informações adicionais</dt><dd>{selected.details||'Nenhuma observação adicional.'}</dd></div></dl><div className="captured-score"><span>Potencial do lead</span><strong>{selected.score}<small>/100</small></strong><i><b style={{width:`${selected.score}%`}}/></i></div><a className="profile-whatsapp" href={`https://wa.me/${selected.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer">Continuar no WhatsApp →</a></aside>}</div>;
 }
 
 function Properties({ properties, search, setSearch, add }: { properties:Property[]; search:string; setSearch:(value:string)=>void; add:()=>void }) {
