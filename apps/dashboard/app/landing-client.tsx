@@ -80,22 +80,19 @@ export default function LandingClient() {
         <p>Uma jornada mais simples, do primeiro “oi” até a visita.</p>
       </section>
 
-      <section className="how-section" id="como-funciona">
-        <div className="section-intro"><p className="landing-kicker">Simples do início ao fim</p><h2>Encontre o imóvel certo<br/>sem perder tempo.</h2></div>
-        <div className="steps-grid">{steps.map((step) => <article key={step.number}><span>{step.number}</span><h3>{step.title}</h3><p>{step.copy}</p></article>)}</div>
-      </section>
-
       <section className="lead-section" id="encontrar-imovel">
         <div className="form-promise">
           <p className="landing-kicker light"><i /> Comece agora</p>
           <h2>O imóvel ideal pode estar a uma conversa de distância.</h2>
           <p>Responda algumas perguntas rápidas. Ao finalizar, sua mensagem será aberta no WhatsApp com tudo organizado para agilizar o atendimento.</p>
           <ul><li><span>✓</span> Leva menos de 2 minutos</li><li><span>✓</span> Sem compromisso</li><li><span>✓</span> Atendimento personalizado</li></ul>
+          <div className="form-quote"><span>“</span><p>A melhor busca começa quando a gente entende o que realmente importa para você.</p></div>
         </div>
 
         <form className="lead-form" onSubmit={openWhatsApp}>
-          <div className="form-title"><span>✦</span><div><strong>Vamos encontrar seu imóvel</strong><small>Preencha seus dados para começar</small></div></div>
-          <label>Como podemos chamar você?<input name="name" placeholder="Seu nome" required /></label>
+          <div className="form-title"><span>✦</span><div><strong>Vamos encontrar seu imóvel</strong><small>Uma busca personalizada começa aqui</small></div><b>2 min</b></div>
+          <div className="form-progress" aria-label="Etapas do atendimento"><span className="active"><i>1</i>Seu perfil</span><span><i>2</i>Preferências</span><span><i>3</i>WhatsApp</span></div>
+          <label>Como podemos chamar você?<input name="name" placeholder="Digite seu nome" required /></label>
           <div className="landing-form-grid">
             <label>O que você deseja?<select name="goal" defaultValue="" required><option value="" disabled>Selecione</option><option>Comprar</option><option>Alugar</option><option>Investir</option></select></label>
             <label>Tipo de imóvel<select name="propertyType" defaultValue="" required><option value="" disabled>Selecione</option><option>Apartamento</option><option>Casa</option><option>Terreno</option><option>Comercial</option></select></label>
@@ -103,14 +100,21 @@ export default function LandingClient() {
           <label>Cidade ou região<input name="region" placeholder="Ex.: Centro, São Paulo" required /></label>
           <label>Faixa de investimento<select name="budget" defaultValue="" required><option value="" disabled>Selecione uma faixa</option><option>Até R$ 300 mil</option><option>R$ 300 mil a R$ 600 mil</option><option>R$ 600 mil a R$ 1 milhão</option><option>Acima de R$ 1 milhão</option><option>Aluguel até R$ 3 mil/mês</option><option>Aluguel acima de R$ 3 mil/mês</option></select></label>
           <label>Algo mais que devemos saber?<textarea name="details" rows={3} placeholder="Quartos, vagas, condomínio, prazo…" /></label>
-          <button type="submit">Continuar no WhatsApp <span>↗</span></button>
+          <button type="submit"><i>◔</i> Continuar no WhatsApp <span>→</span></button>
           <small className="privacy-note">Ao continuar, você concorda em receber contato sobre sua busca. Seus dados serão usados apenas para este atendimento.</small>
           {submitted && <p className="form-success" role="status">✓ Sua mensagem foi preparada e o WhatsApp foi aberto.</p>}
         </form>
+      </section>
+
+      <section className="how-section" id="como-funciona">
+        <div className="section-intro"><p className="landing-kicker">Simples do início ao fim</p><h2>Encontre o imóvel certo<br/>sem perder tempo.</h2></div>
+        <div className="steps-grid">{steps.map((step) => <article key={step.number}><span>{step.number}</span><h3>{step.title}</h3><p>{step.copy}</p></article>)}</div>
       </section>
 
       <footer className="landing-footer"><a className="landing-brand" href="#inicio"><span>I</span><strong>ImobFlow</strong></a><p>Atendimento imobiliário que entende, qualifica e aproxima.</p><a href="/painel">Acessar painel</a></footer>
     </main>
   );
 }
+
+
 
