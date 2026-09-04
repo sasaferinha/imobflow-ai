@@ -9,7 +9,14 @@ type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | '
 type ChatMessage = { id: number; side: 'incoming' | 'outgoing'; text: string };
 type Property = { id: number; title: string; district: string; price: string; meta: string; match: number; tone: string; purpose: 'Venda' | 'Aluguel' };
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
-type LeadFilter = 'all' | 'rent' | 'buy' | 'hot' | 'cold';
+type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
+type LeadFilterGroup = 'goal' | 'temperature' | 'property';
+
+const leadFilterGroups: Array<{ id: LeadFilterGroup; label: string; options: Array<{ id: LeadFilter; label: string }> }> = [
+  { id: 'goal', label: 'Interesse', options: [{ id: 'rent', label: 'Aluguel' }, { id: 'buy', label: 'Compra' }] },
+  { id: 'temperature', label: 'Temperatura', options: [{ id: 'hot', label: 'Lead quente' }, { id: 'cold', label: 'Lead frio' }] },
+  { id: 'property', label: 'Tipo de imóvel', options: [{ id: 'house', label: 'Casa' }, { id: 'apartment', label: 'Apartamento' }] },
+];
 
 const navItems: Array<{ id: View; icon: string; label: string; badge?: string }> = [
   { id: 'overview', icon: '⌂', label: 'Visão geral' },
@@ -49,12 +56,22 @@ function decorateLead(lead: LeadProfile, index: number): DashboardLead {
 function matchesLeadFilter(lead: DashboardLead, filter: LeadFilter) {
   const goal = lead.goal.toLowerCase();
   const temperature = lead.temperature.toLowerCase();
+  const propertyType = lead.propertyType.toLowerCase();
 
   if (filter === 'rent') return goal.includes('alug');
   if (filter === 'buy') return goal.includes('compr');
   if (filter === 'hot') return temperature.includes('quente');
   if (filter === 'cold') return temperature.includes('frio') || temperature.includes('morno');
-  return true;
+  if (filter === 'house') return propertyType.includes('casa');
+  return propertyType.includes('apartamento');
+}
+
+function matchesLeadFilters(lead: DashboardLead, filters: LeadFilter[]) {
+  if (filters.length === 0) return true;
+  return leadFilterGroups.every((group) => {
+    const activeInGroup = group.options.filter((option) => filters.includes(option.id));
+    return activeInGroup.length === 0 || activeInGroup.some((option) => matchesLeadFilter(lead, option.id));
+  });
 }
 
 const initialProperties: Property[] = [
@@ -78,7 +95,7 @@ export default function DashboardClient() {
   const [messages, setMessages] = useState(initialMessages);
   const [draft, setDraft] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
-  const [leadFilter, setLeadFilter] = useState<LeadFilter>('all');
+  const [leadFilters, setLeadFilters] = useState<LeadFilter[]>([]);
   const [properties, setProperties] = useState(initialProperties);
   const [propertySearch, setPropertySearch] = useState('');
   const [propertyModalOpen, setPropertyModalOpen] = useState(false);
@@ -134,8 +151,8 @@ export default function DashboardClient() {
 
   const visibleLeads = useMemo(() => capturedLeads.filter((lead) => {
     const matchesSearch = `${lead.name} ${lead.intent} ${lead.region}`.toLowerCase().includes(leadSearch.toLowerCase());
-    return matchesSearch && matchesLeadFilter(lead, leadFilter);
-  }), [capturedLeads, leadFilter, leadSearch]);
+    return matchesSearch && matchesLeadFilters(lead, leadFilters);
+  }), [capturedLeads, leadFilters, leadSearch]);
   const header = headers[view];
   const headerTitle = view === 'overview' ? `Bom dia, ${profile.name.split(/\s+/)[0]}` : header.title;
   const unreadCount = notifications.filter((item) => item.unread).length;
@@ -220,7 +237,7 @@ export default function DashboardClient() {
 
         {view === 'overview' && <Overview onOpen={() => openView('conversations')} onActivity={() => openView('leads')} notify={notify} sendText={sendText} />}
         {view === 'conversations' && <Conversations messages={messages} draft={draft} setDraft={setDraft} sendMessage={sendMessage} notify={notify} openAgenda={() => openView('agenda')} />}
-        {view === 'leads' && <><LeadFilterBar leads={capturedLeads} active={leadFilter} onChange={setLeadFilter} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} /></>}
+        {view === 'leads' && <><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={() => setPropertyModalOpen(true)} onOpen={setSelectedProperty} />}
         {view === 'agenda' && <Agenda notify={notify} />}
         {view === 'automations' && <Automations notify={notify} />}
@@ -299,23 +316,42 @@ function Conversations({ messages, draft, setDraft, sendMessage, notify, openAge
   </div>;
 }
 
-function LeadFilterBar({ leads, active, onChange }: { leads: DashboardLead[]; active: LeadFilter; onChange: (filter: LeadFilter) => void }) {
-  const options: Array<{ id: LeadFilter; label: string }> = [
-    { id: 'all', label: 'Todos' },
-    { id: 'rent', label: 'Leads Aluguel' },
-    { id: 'buy', label: 'Leads Compra' },
-    { id: 'hot', label: 'Leads Quentes' },
-    { id: 'cold', label: 'Leads Frios' },
-  ];
+function LeadFilterBar({ leads, active, onChange }: { leads: DashboardLead[]; active: LeadFilter[]; onChange: (filters: LeadFilter[]) => void }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, []);
+
+  function toggleFilter(filter: LeadFilter) {
+    onChange(active.includes(filter) ? active.filter((item) => item !== filter) : [...active, filter]);
+  }
+
+  const activeLabels = leadFilterGroups.flatMap((group) => group.options).filter((option) => active.includes(option.id));
 
   return <section className="lead-filter-bar panel" aria-labelledby="lead-filter-title">
-    <div className="lead-filter-heading"><p className="eyebrow">Segmentação</p><h2 id="lead-filter-title">Filtrar leads</h2></div>
-    <div className="lead-filter-options" role="group" aria-label="Categorias de leads">
-      {options.map((option) => {
-        const count = option.id === 'all' ? leads.length : leads.filter((lead) => matchesLeadFilter(lead, option.id)).length;
-        return <button type="button" key={option.id} className={active === option.id ? 'selected' : ''} aria-pressed={active === option.id} onClick={() => onChange(option.id)}><span>{option.label}</span><b>{count}</b></button>;
-      })}
+    <div className="lead-filter-heading"><p className="eyebrow">Segmentação</p><h2 id="lead-filter-title">Filtrar leads</h2><p>Combine critérios para encontrar o perfil exato.</p></div>
+    <div className="lead-filter-control">
+      <button type="button" className={`lead-filter-trigger ${open ? 'open' : ''}`} aria-expanded={open} aria-controls="lead-filter-menu" onClick={() => setOpen((current) => !current)}>
+        <span><small>Filtros selecionados</small><strong>{active.length === 0 ? 'Todos os leads' : `${active.length} ${active.length === 1 ? 'filtro ativo' : 'filtros ativos'}`}</strong></span><b>{active.length}</b><i aria-hidden="true">⌄</i>
+      </button>
+      {open && <div className="lead-filter-menu" id="lead-filter-menu">
+        <div className="lead-filter-menu-head"><div><strong>Selecione os filtros</strong><span>As categorias diferentes são combinadas.</span></div>{active.length > 0 && <button type="button" onClick={() => onChange([])}>Limpar</button>}</div>
+        <div className="lead-filter-groups">
+          {leadFilterGroups.map((group) => <fieldset key={group.id}><legend>{group.label}</legend>{group.options.map((option) => {
+            const selected = active.includes(option.id);
+            const count = leads.filter((lead) => matchesLeadFilter(lead, option.id)).length;
+            return <button type="button" key={option.id} className={selected ? 'selected' : ''} aria-pressed={selected} onClick={() => toggleFilter(option.id)}><i aria-hidden="true">{selected ? '✓' : ''}</i><span>{option.label}</span><b>{count}</b></button>;
+          })}</fieldset>)}
+        </div>
+        <div className="lead-filter-menu-actions"><span>{active.length === 0 ? 'Nenhum filtro aplicado' : `${active.length} ${active.length === 1 ? 'selecionado' : 'selecionados'}`}</span><button type="button" onClick={() => setOpen(false)}>Ver resultados</button></div>
+      </div>}
     </div>
+    {activeLabels.length > 0 && <div className="lead-active-filters" aria-label="Filtros ativos">{activeLabels.map((option) => <button type="button" key={option.id} onClick={() => toggleFilter(option.id)}>{option.label}<span aria-hidden="true">×</span></button>)}<button type="button" className="clear-all" onClick={() => onChange([])}>Limpar todos</button></div>}
   </section>;
 }
 
