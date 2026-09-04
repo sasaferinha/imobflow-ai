@@ -9,6 +9,7 @@ type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | '
 type ChatMessage = { id: number; side: 'incoming' | 'outgoing'; text: string };
 type Property = { id: number; title: string; district: string; price: string; meta: string; match: number; tone: string; purpose: 'Venda' | 'Aluguel' };
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
+type LeadFilter = 'all' | 'rent' | 'buy' | 'hot' | 'cold';
 
 const navItems: Array<{ id: View; icon: string; label: string; badge?: string }> = [
   { id: 'overview', icon: '⌂', label: 'Visão geral' },
@@ -45,6 +46,17 @@ function decorateLead(lead: LeadProfile, index: number): DashboardLead {
   };
 }
 
+function matchesLeadFilter(lead: DashboardLead, filter: LeadFilter) {
+  const goal = lead.goal.toLowerCase();
+  const temperature = lead.temperature.toLowerCase();
+
+  if (filter === 'rent') return goal.includes('alug');
+  if (filter === 'buy') return goal.includes('compr');
+  if (filter === 'hot') return temperature.includes('quente');
+  if (filter === 'cold') return temperature.includes('frio') || temperature.includes('morno');
+  return true;
+}
+
 const initialProperties: Property[] = [
   { id: 1, title: 'Residencial Aurora', district: 'Centro', price: 'R$ 575.000', meta: '3 quartos • 2 vagas • 98 m²', match: 96, tone: 'orchid', purpose: 'Venda' },
   { id: 2, title: 'Edifício Horizonte', district: 'Jardim Floresta', price: 'R$ 590.000', meta: '3 quartos • 1 vaga • 91 m²', match: 92, tone: 'sky', purpose: 'Venda' },
@@ -66,6 +78,7 @@ export default function DashboardClient() {
   const [messages, setMessages] = useState(initialMessages);
   const [draft, setDraft] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
+  const [leadFilter, setLeadFilter] = useState<LeadFilter>('all');
   const [properties, setProperties] = useState(initialProperties);
   const [propertySearch, setPropertySearch] = useState('');
   const [propertyModalOpen, setPropertyModalOpen] = useState(false);
@@ -119,7 +132,10 @@ export default function DashboardClient() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, []);
 
-  const visibleLeads = useMemo(() => capturedLeads.filter((lead) => `${lead.name} ${lead.intent} ${lead.region}`.toLowerCase().includes(leadSearch.toLowerCase())), [capturedLeads, leadSearch]);
+  const visibleLeads = useMemo(() => capturedLeads.filter((lead) => {
+    const matchesSearch = `${lead.name} ${lead.intent} ${lead.region}`.toLowerCase().includes(leadSearch.toLowerCase());
+    return matchesSearch && matchesLeadFilter(lead, leadFilter);
+  }), [capturedLeads, leadFilter, leadSearch]);
   const header = headers[view];
   const headerTitle = view === 'overview' ? `Bom dia, ${profile.name.split(/\s+/)[0]}` : header.title;
   const unreadCount = notifications.filter((item) => item.unread).length;
@@ -204,7 +220,7 @@ export default function DashboardClient() {
 
         {view === 'overview' && <Overview onOpen={() => openView('conversations')} onActivity={() => openView('leads')} notify={notify} sendText={sendText} />}
         {view === 'conversations' && <Conversations messages={messages} draft={draft} setDraft={setDraft} sendMessage={sendMessage} notify={notify} openAgenda={() => openView('agenda')} />}
-        {view === 'leads' && <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} />}
+        {view === 'leads' && <><LeadFilterBar leads={capturedLeads} active={leadFilter} onChange={setLeadFilter} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={() => setPropertyModalOpen(true)} onOpen={setSelectedProperty} />}
         {view === 'agenda' && <Agenda notify={notify} />}
         {view === 'automations' && <Automations notify={notify} />}
@@ -281,6 +297,26 @@ function Conversations({ messages, draft, setDraft, sendMessage, notify, openAge
     <section className="full-chat panel"><div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><strong>{selected.name}</strong><span><i/> Atendimento online • {humanMode ? 'Marina responsável' : 'Triagem automática'}</span></div><button type="button" className={humanMode ? 'active-action' : ''} onClick={() => { setHumanMode((active) => !active); notify(humanMode ? 'Triagem automática retomada' : 'Atendimento atribuído a Marina'); }}>{humanMode ? 'Retomar triagem' : 'Assumir conversa'}</button></div><div className="full-chat-body"><span className="chat-date">Hoje</span>{messages.map(message=><div className={`bubble ${message.side}`} key={message.id}>{message.text}<small>{message.side==='incoming'?'10:44':'10:45'} ✓✓</small></div>)}</div><form className="full-composer" onSubmit={sendMessage}><input id="conversation-attachment" className="visually-hidden" type="file" onChange={(event) => event.target.files?.[0] && notify(`Anexo selecionado: ${event.target.files[0].name}`)}/><button type="button" aria-label="Anexar arquivo" onClick={() => document.getElementById('conversation-attachment')?.click()}>＋</button><input value={draft} onChange={(event)=>setDraft(event.target.value)} aria-label="Mensagem" placeholder="Digite uma mensagem..."/><button className="send-button" type="submit" aria-label="Enviar mensagem">➜</button></form></section>
     <aside className="lead-profile panel"><div className="profile-hero"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><h3>{selected.name}</h3><p>Cliente cadastrado</p><span className="hot-pill">Muito quente</span></div><div className="score-ring"><strong>86</strong><span>Prioridade</span></div><dl><div><dt>Intenção</dt><dd>Comprar</dd></div><div><dt>Tipo</dt><dd>Apartamento</dd></div><div><dt>Região</dt><dd>Centro</dd></div><div><dt>Orçamento</dt><dd>Até R$ 600 mil</dd></div><div><dt>Quartos</dt><dd>3+</dd></div><div><dt>Pagamento</dt><dd>Financiamento</dd></div></dl><button type="button" className="profile-action" onClick={openAgenda}>＋ Agendar visita</button></aside>
   </div>;
+}
+
+function LeadFilterBar({ leads, active, onChange }: { leads: DashboardLead[]; active: LeadFilter; onChange: (filter: LeadFilter) => void }) {
+  const options: Array<{ id: LeadFilter; label: string }> = [
+    { id: 'all', label: 'Todos' },
+    { id: 'rent', label: 'Leads Aluguel' },
+    { id: 'buy', label: 'Leads Compra' },
+    { id: 'hot', label: 'Leads Quentes' },
+    { id: 'cold', label: 'Leads Frios' },
+  ];
+
+  return <section className="lead-filter-bar panel" aria-labelledby="lead-filter-title">
+    <div className="lead-filter-heading"><p className="eyebrow">Segmentação</p><h2 id="lead-filter-title">Filtrar leads</h2></div>
+    <div className="lead-filter-options" role="group" aria-label="Categorias de leads">
+      {options.map((option) => {
+        const count = option.id === 'all' ? leads.length : leads.filter((lead) => matchesLeadFilter(lead, option.id)).length;
+        return <button type="button" key={option.id} className={active === option.id ? 'selected' : ''} aria-pressed={active === option.id} onClick={() => onChange(option.id)}><span>{option.label}</span><b>{count}</b></button>;
+      })}
+    </div>
+  </section>;
 }
 
 function Leads({ leads, selected, onSelect, search, setSearch, onContinue, notify }: { leads: DashboardLead[]; selected: DashboardLead; onSelect:(lead:DashboardLead)=>void; search:string; setSearch:(value:string)=>void; onContinue:()=>void; notify:(message:string)=>void }) {

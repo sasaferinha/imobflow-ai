@@ -298,3 +298,16 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .admin-login>form>p:not(.eyebrow){font-size:16px}.admin-login label{font-size:14px}.admin-login input{font-size:16px}.admin-login button{font-size:15px}.admin-login form>small{font-size:13px}
 @media(max-width:1050px){.app-shell .nav-item:not(.active){font-size:0}.app-shell .nav-item>span{font-size:15px}}
 @media(max-width:720px){.app-shell .nav-item{font-size:0}.app-shell .nav-item>span{font-size:18px}.app-shell .primary-button{font-size:0}.app-shell .primary-button::after{font-size:18px}.app-shell .topbar p:last-child{font-size:15px}.app-shell .table-row{font-size:13px}.app-shell .modal-actions .primary-button{font-size:14px}}
+
+/* Filtros de leads */
+.app-shell .lead-filter-bar{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:16px;padding:17px 18px}
+.app-shell .lead-filter-heading{flex:none}.app-shell .lead-filter-heading .eyebrow{margin-bottom:3px}.app-shell .lead-filter-heading h2{margin:0;color:#172033;font-size:18px;font-weight:650;letter-spacing:-.2px}
+.app-shell .lead-filter-options{display:grid;grid-template-columns:repeat(5,minmax(112px,1fr));gap:8px;width:min(100%,720px)}
+.app-shell .lead-filter-options button{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:0 11px;border:1px solid #dce2ea;border-radius:8px;background:#f8fafc;color:#536074;font-size:14px;font-weight:600;white-space:nowrap;transition:border-color .16s ease,background .16s ease,color .16s ease,box-shadow .16s ease}
+.app-shell .lead-filter-options button:hover{border-color:#aebbd0;background:#fff;color:#22304a}
+.app-shell .lead-filter-options button:focus-visible{outline:3px solid #315fd42e;outline-offset:2px}
+.app-shell .lead-filter-options button.selected{border-color:#315fd4;background:#315fd4;color:#fff;box-shadow:0 2px 6px #315fd42c}
+.app-shell .lead-filter-options b{display:grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:6px;background:#e8edf5;color:#536074;font-size:12px;font-weight:700}
+.app-shell .lead-filter-options button.selected b{background:#ffffff24;color:#fff}
+@media(max-width:1200px){.app-shell .lead-filter-bar{align-items:flex-start;flex-direction:column}.app-shell .lead-filter-options{width:100%}}
+@media(max-width:720px){.app-shell .lead-filter-bar{gap:14px;padding:15px}.app-shell .lead-filter-options{display:flex;max-width:100%;padding:2px 1px 6px;overflow-x:auto;scrollbar-width:thin}.app-shell .lead-filter-options button{flex:0 0 auto}.app-shell .lead-filter-heading h2{font-size:17px}}
