@@ -179,3 +179,122 @@ button,a { font:inherit; } button { cursor:pointer; }
 @media(max-width:1100px){.lead-management{grid-template-columns:1fr}.captured-profile{position:static}}
 @media(max-width:960px){.form-promise{padding:42px}.lead-section{gap:24px}}
 @media(max-width:640px){.lead-section{padding:60px 15px}.form-promise{padding:32px 24px}.lead-form{padding:22px 18px}.form-progress span{font-size:0}.form-progress span i{font-size:7px}}
+
+/* Interações completas do painel administrativo */
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #8d75ef55;outline-offset:2px}
+button:disabled{cursor:not-allowed;opacity:.45}
+.profile-wrap,.notification-wrap{position:relative}
+.period-filter{display:flex;align-items:center;gap:8px;color:#9993a1;font-size:8px;font-weight:700}.period-filter select{padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:#655f70;font-size:9px;font-weight:700}
+.activity-button{width:100%;border-right:0;border-bottom:0;border-left:0;background:transparent;color:inherit;text-align:left}.activity-button:hover{background:#faf9fc}
+.chat-composer input{min-width:0;padding:9px 11px;border:0;outline:0;border-radius:10px;background:#f5f3f8;color:#5d5768;font-size:8px}.full-chat-head button.active-action{border-color:#6c4cf1;background:#eee9ff;color:#5b3dda}
+.catalog-actions select{height:40px;padding:0 30px 0 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#716c7e;font-size:9px;font-weight:700}.catalog-actions .filter-active{border-color:#7658e8;background:#f1edff;color:#6042d2}.filter-panel{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:-6px 0 16px;padding:14px 18px}.filter-panel label{display:grid;grid-template-columns:auto auto minmax(160px,320px);align-items:center;gap:10px;color:#756f80;font-size:9px}.filter-panel strong{color:#5f40d0}.filter-panel input{accent-color:#6c4cf1}.filter-panel button,.empty-catalog button{padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:#686173;font-size:8px;font-weight:800}
+.property-visual{width:100%;border:0}.empty-catalog{grid-column:1/-1;display:grid;place-items:center;min-height:280px;text-align:center}.empty-catalog>span{font-size:30px;color:#8d75ef}.empty-catalog h3{margin:8px 0 0;font:500 21px Georgia,serif}.empty-catalog p{margin:0;color:#8c8695;font-size:9px}
+.appointment-row.selected{background:#f7f4ff}.appointment-detail{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:8px;margin:0 18px 17px;padding:13px;border-radius:11px;background:#eee9ff}.appointment-detail div{display:flex;flex-direction:column}.appointment-detail strong{font-size:10px}.appointment-detail span{margin-top:3px;color:#756f82;font-size:8px}.appointment-detail button{padding:7px 9px;border:0;border-radius:8px;background:#fff;color:#625b70;font-size:8px;font-weight:750}.appointment-detail button:last-child{background:#6c4cf1;color:#fff}.inline-form{display:flex;flex-direction:column;gap:9px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}.inline-form label{display:flex;flex-direction:column;gap:5px;color:#807989;font-size:7px;font-weight:800;text-transform:uppercase}.inline-form input{height:35px;padding:0 9px;border:1px solid var(--line);border-radius:8px;font-size:9px}.inline-form>div{display:flex;gap:6px}.inline-form button{flex:1;height:33px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#686173;font-size:8px;font-weight:800}.inline-form button:last-child{border:0;background:#211b3a;color:#fff}
+.automation-card.paused{opacity:.65}.automation-card.paused .automation-state{background:#f1eff5;color:#7b7585}.automation-card.paused .automation-state i{background:#aaa4b3}.automation-card footer>div{display:flex;gap:8px}.automation-card footer>div button:last-child{color:#8d8796}.flow-detail .profile-action{margin-top:auto}
+.modal-card select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;outline:0;background:#fff;color:var(--ink);font:10px Inter,sans-serif}.modal-card select:focus{border-color:#8d74ec;box-shadow:0 0 0 3px #6c4cf111}.property-detail-modal{padding:0 23px 23px;overflow:hidden}.property-detail-modal>.property-visual{width:calc(100% + 46px);margin-left:-23px;margin-bottom:20px}.property-detail-modal>p{color:#7e7888;font-size:10px}.detail-price{display:block;margin-top:16px;font:500 22px Georgia,serif}
+.popover{position:absolute;z-index:40;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);box-shadow:0 16px 40px #20193828}.profile-menu{right:0;bottom:50px;display:flex;flex-direction:column;width:180px;padding:10px}.profile-menu strong{padding:6px 8px 9px;font-size:9px}.profile-menu button{padding:9px 8px;border:0;border-radius:8px;background:transparent;color:#6f6979;font-size:9px;text-align:left}.profile-menu button:hover{background:#f5f2fa}.notification-menu{right:0;top:50px;width:270px;overflow:hidden}.notification-menu>div{display:flex;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid var(--line)}.notification-menu>div strong{font-size:10px}.notification-menu>div button{border:0;background:transparent;color:#6548df;font-size:8px;font-weight:800}.notification-menu>button{display:flex;align-items:center;gap:8px;width:100%;padding:11px 12px;border:0;border-bottom:1px solid #f0eef3;background:#fff;color:#6d6678;font-size:8px;text-align:left}.notification-menu>button.unread{background:#f7f4ff;color:#332b43;font-weight:700}.notification-menu>button i{width:6px;height:6px;border-radius:50%;background:#d1ccd9}.notification-menu>button.unread i{background:#6c4cf1}.profile-whatsapp.demo-channel{width:100%;border:0}
+@media(max-width:720px){.header-actions .icon-button{display:block}.filter-panel{align-items:stretch;flex-direction:column}.filter-panel label{grid-template-columns:auto auto}.filter-panel input{grid-column:1/-1}.appointment-detail{grid-template-columns:1fr 1fr}.appointment-detail div{grid-column:1/-1}.notification-menu{position:fixed;right:14px;top:82px;left:14px;width:auto}.modal-actions .primary-button{width:auto;padding:0 15px;font-size:9px}.modal-actions .primary-button::after{display:none}}
+.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}.conversation-head button.conversation-following{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#eaf8f1;color:#278367}.modal-actions .saved-button{border-color:#e2c4ce;background:#fff2f5;color:#bf526e}.setting-row{display:flex!important;align-items:center;justify-content:space-between;gap:20px;padding:13px 0;border-bottom:1px solid var(--line);text-transform:none!important}.setting-row>span{display:flex;flex-direction:column;gap:3px}.setting-row strong{color:#3f384b;font-size:10px}.setting-row small{color:#8e8798;font-size:8px;font-weight:500}.setting-row input{width:18px!important;height:18px;accent-color:#6c4cf1}.compact-mode .workspace{padding-top:22px}.compact-mode .topbar{margin-bottom:18px}.compact-mode .metric-card{padding-block:13px}.compact-mode .panel{padding-top:16px;padding-bottom:16px}
+
+/* Painel corporativo */
+.app-shell{
+  --ink:#172033;
+  --muted:#667085;
+  --line:#e1e6ee;
+  --violet:#315fd4;
+  --paper:#fff;
+  --canvas:#f3f5f8;
+  grid-template-columns:252px minmax(0,1fr);
+  background:#f3f5f8;
+  color:#172033;
+  font-variant-numeric:tabular-nums;
+}
+.app-shell .sidebar{padding:26px 18px 20px;background:#111827;border-right:1px solid #202b3d;color:#fff}
+.app-shell .brand{gap:11px;padding:0 7px 27px}
+.app-shell .brand-mark{width:36px;height:36px;border-radius:8px;background:#315fd4;box-shadow:none;font:700 18px/1 "Segoe UI",sans-serif}
+.app-shell .brand strong{font-size:15px;font-weight:700;letter-spacing:-.15px}
+.app-shell .brand span:not(.brand-mark){margin-top:3px;color:#8f9bb0;font-size:9px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+.app-shell .nav-list{gap:3px}
+.app-shell .nav-item{gap:9px;padding:11px 12px;border-radius:7px;color:#aeb8c8;font-size:12px;font-weight:550;transition:background .16s ease,color .16s ease}
+.app-shell .nav-item>span{display:grid;place-items:center;width:24px;height:24px;border:1px solid #334155;border-radius:6px;font-size:13px}
+.app-shell .nav-item:hover{background:#1b2535;color:#fff}
+.app-shell .nav-item.active{background:#263348;color:#fff;box-shadow:inset 3px 0 #5f8cff}
+.app-shell .nav-item.active>span{border-color:#5075c8;background:#315fd4}
+.app-shell .nav-item b{min-width:19px;padding:3px 5px;border-radius:5px;background:#34445d;color:#dce7f9;font-size:9px}
+.app-shell .sidebar-card{padding:13px;border-color:#2c394d;border-radius:8px;background:#172131}
+.app-shell .sidebar-card strong{font-size:10px;font-weight:650}.app-shell .sidebar-card span{color:#8e9bae;font-size:9px}
+.app-shell .live-dot{width:7px;height:7px;background:#2fb67f;box-shadow:0 0 0 3px #2fb67f20}
+.app-shell .profile-row{padding:15px 4px 0;border-color:#293548}.app-shell .profile-row strong{font-size:10px}.app-shell .profile-row span{color:#8996a9;font-size:9px}.app-shell .avatar{border-radius:7px;background:#d9e4ff;color:#294d9d}
+.app-shell .workspace{padding:31px clamp(26px,3vw,46px) 44px}
+.app-shell .topbar{align-items:flex-end;margin-bottom:24px;padding-bottom:22px;border-bottom:1px solid #dde3eb}
+.app-shell .eyebrow{margin-bottom:6px;color:#758195;font-size:9px;font-weight:700;letter-spacing:.09em}
+.app-shell .topbar h1{font-family:"Segoe UI",Inter,sans-serif;font-size:clamp(25px,2.7vw,32px);font-weight:650;letter-spacing:-.8px;color:#152033}
+.app-shell .topbar p:last-child{margin-top:6px;color:#697586;font-size:12px}
+.app-shell .icon-button,.app-shell .primary-button{height:40px;border-radius:8px}
+.app-shell .icon-button{border-color:#d8dee8;background:#fff;color:#455268}
+.app-shell .primary-button{padding:0 16px;background:#315fd4;box-shadow:0 1px 2px #132c6826;font-size:11px;font-weight:650}
+.app-shell .primary-button:hover{background:#264faf}
+.app-shell .panel,.app-shell .conversation-card{border-color:#e0e5ec;border-radius:10px;box-shadow:0 1px 2px #1018280a,0 1px 3px #10182810}
+.app-shell .panel{padding:20px}
+.app-shell .panel-heading h2{font-family:"Segoe UI",Inter,sans-serif;font-size:16px;font-weight:650;letter-spacing:-.2px}
+.app-shell .panel-heading button{color:#315fd4;font-size:9px;font-weight:650}
+.app-shell .metric-grid{gap:12px}
+.app-shell .metric-card{padding:18px;border-color:#e0e5ec;border-radius:10px;box-shadow:0 1px 2px #1018280a;background:#fff}
+.app-shell .metric-card::after{display:none}
+.app-shell .metric-card>span{margin:12px 0 5px;color:#697586;font-size:10px;font-weight:550}
+.app-shell .metric-card>strong{font-family:"Segoe UI",Inter,sans-serif;font-size:29px;font-weight:650;letter-spacing:-1px;color:#162033}
+.app-shell .metric-card small{margin-top:8px;border-radius:5px;background:#f2f4f7;color:#596579;font-size:8px}
+.app-shell .metric-icon{width:27px;height:27px;border-radius:6px;font-size:9px}
+.app-shell .metric-card.violet .metric-icon{background:#315fd4}.app-shell .metric-card.mint .metric-icon{background:#16835d}.app-shell .metric-card.amber .metric-icon{background:#b66b12}.app-shell .metric-card.blue .metric-icon{background:#3b556f}
+.app-shell .main-grid,.app-shell .content-column{gap:14px}.app-shell .main-grid{margin-top:14px}
+.app-shell .pipeline{gap:7px}
+.app-shell .pipeline-step{min-height:92px;border:1px solid #e2e7ee;border-radius:8px;color:#273449}
+.app-shell .pipeline-step::after{display:none}
+.app-shell .pipeline-step strong{font-family:"Segoe UI",Inter,sans-serif;font-size:23px;font-weight:650}
+.app-shell .pipeline-step span{font-size:8px;font-weight:550;opacity:.75}
+.app-shell .step-one{border-top:3px solid #315fd4;background:#f4f7ff}.app-shell .step-two{border-top:3px solid #5e779c;background:#f5f7fa}.app-shell .step-three{border-top:3px solid #728b81;background:#f4f8f6}.app-shell .step-four{border-top:3px solid #9a7651;background:#faf7f3}
+.app-shell .activity-row{border-color:#edf0f4}.app-shell .activity-button:hover{background:#f8fafc}.app-shell .activity-copy strong{font-size:10px;font-weight:650}.app-shell .activity-copy span{font-size:8px}
+.app-shell .lead-avatar{border-radius:8px}.app-shell .avatar-0{background:#e4ebfb;color:#31559f}.app-shell .avatar-1{background:#e3f1eb;color:#23664e}.app-shell .avatar-2{background:#f6e9dc;color:#8b5426}
+.app-shell .status-tag,.app-shell .temperature,.app-shell .hot-pill{border-radius:5px}
+.app-shell .conversation-card{background:#fff}.app-shell .conversation-head{border-color:#e8ecf1}.app-shell .lead-signal{background:#f8fafc;border-color:#e8ecf1}.app-shell .lead-signal strong{font-family:"Segoe UI",Inter,sans-serif;font-weight:650}
+.app-shell .chat-area,.app-shell .full-chat-body{background:#f5f7fa;background-image:none}.app-shell .bubble{border:1px solid #e5e9ef;border-radius:8px;box-shadow:none;font-size:9px}.app-shell .outgoing{border-color:#315fd4;background:#315fd4}.app-shell .chat-date{border:1px solid #e4e8ee;border-radius:5px}
+.app-shell .chat-composer input,.app-shell .full-composer input,.app-shell .inbox-search{border:1px solid #e1e6ed;border-radius:7px;background:#f8fafc}
+.app-shell .send-button,.app-shell .full-composer .send-button{border-radius:7px;background:#315fd4}.app-shell .simulate-button{border-radius:7px;background:#172033;font-size:9px;font-weight:650}
+.app-shell .inbox-tabs button,.app-shell .contact-row,.app-shell .full-chat-head button,.app-shell .profile-action{font-weight:600}.app-shell .inbox-tabs button.selected{border-radius:6px;background:#eaf0ff;color:#284fae}.app-shell .contact-row.selected{background:#f0f4fc;box-shadow:inset 3px 0 #315fd4}.app-shell .full-chat-head button{border-radius:7px}.app-shell .profile-action{border-radius:7px;background:#172033}
+.app-shell .score-ring strong{font-family:"Segoe UI",Inter,sans-serif;color:#315fd4;font-weight:650}
+.app-shell .search-field{border-color:#dce2ea;border-radius:8px}.app-shell .catalog-actions select,.app-shell .catalog-toolbar>div>button{border-color:#dce2ea;border-radius:8px}
+.app-shell .table-panel{padding:16px}.app-shell .lead-table{border-color:#e2e6ec;border-radius:8px}.app-shell .table-head{background:#f6f8fa;color:#667085}.app-shell .table-row{border-color:#e9edf2;color:#4f5d70}.app-shell .table-row.selected{background:#f1f5fd;box-shadow:inset 3px 0 #315fd4}.app-shell .score-cell i{background:#315fd4}
+.app-shell .captured-profile{padding:20px}.app-shell .captured-head h2,.app-shell .empty-leads h3,.app-shell .empty-catalog h3{font-family:"Segoe UI",Inter,sans-serif;font-weight:650}.app-shell .profile-explanation{border:1px solid #dfe6f1;border-radius:8px;background:#f6f8fc}.app-shell .profile-explanation>span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#dfe8fb;color:#315fd4;font-style:normal;font-weight:700}.app-shell .captured-score{border-radius:8px;background:#172033}.app-shell .captured-score strong{font-family:"Segoe UI",Inter,sans-serif;font-weight:650}.app-shell .captured-score>i b{background:#4f7de7}.app-shell .profile-whatsapp{border-radius:8px;background:#315fd4}.app-shell .profile-whatsapp:hover{background:#264faf}
+.app-shell .property-card{border-color:#e0e5ec;border-radius:10px;box-shadow:0 1px 3px #10182812}.app-shell .property-visual::before,.app-shell .property-visual::after{display:none}.app-shell .property-visual{height:126px}.app-shell .property-visual.orchid,.app-shell .property-visual.sky,.app-shell .property-visual.sage,.app-shell .property-visual.sand,.app-shell .property-visual.rose,.app-shell .property-visual.slate{background:linear-gradient(145deg,#243248,#43536b)}.app-shell .property-visual>span{font-size:40px;color:#ffffff70}.app-shell .property-visual em{border:1px solid #ffffff50;border-radius:5px;background:#ffffffed;color:#334155}.app-shell .property-copy h3{font-family:"Segoe UI",Inter,sans-serif;font-size:14px;font-weight:650}.app-shell .property-copy button{border-radius:6px;background:#edf2fb;color:#315fd4}
+.app-shell .calendar-head h2,.app-shell .day-summary h2{font-family:"Segoe UI",Inter,sans-serif;font-size:17px;font-weight:650}.app-shell .calendar-head button,.app-shell .week-strip button{border-radius:7px}.app-shell .week-strip button.today{background:#315fd4;box-shadow:none}.app-shell .appointment-row.selected{background:#f2f5fb}.app-shell .day-summary .summary-number{border:1px solid #dee5ef;border-radius:8px;background:#f5f7fb}.app-shell .summary-number strong{font-family:"Segoe UI",Inter,sans-serif;color:#315fd4;font-weight:650}
+.app-shell .automation-card{padding:18px}.app-shell .automation-icon{border-radius:7px;background:#e8eefb;color:#315fd4}.app-shell .automation-card h3,.app-shell .health-panel h3{font-family:"Segoe UI",Inter,sans-serif;font-size:15px;font-weight:650}.app-shell .automation-state{border-radius:5px}.app-shell .health-orbit{background:conic-gradient(#315fd4 0 99.8%,#e6eaf0 99.8% 100%);box-shadow:none}.app-shell .health-orbit span{font-family:"Segoe UI",Inter,sans-serif;font-weight:650}
+.app-shell .modal-backdrop{background:#0f172a8c}.app-shell .modal-card,.modal-backdrop .modal-card{border-color:#dfe4eb;border-radius:10px;box-shadow:0 22px 55px #10182835}.app-shell .modal-head h2,.modal-backdrop .modal-head h2{font-family:"Segoe UI",Inter,sans-serif;font-weight:650}.app-shell .modal-head button,.modal-backdrop .modal-head button{border-radius:6px;background:#f2f4f7}.app-shell .popover{border-radius:8px;box-shadow:0 12px 28px #1018281f}.app-shell .toast{border-color:#26354a;border-radius:8px;background:#172033;box-shadow:0 12px 28px #1018282e}
+.admin-login{background:#eef1f5}.admin-login form{padding:40px;border-color:#dce2ea;border-radius:12px;box-shadow:0 12px 35px #10182814}.admin-login h1{font-family:"Segoe UI",Inter,sans-serif;font-size:31px;font-weight:650;letter-spacing:-.7px}.admin-login input{border-color:#d7dee8;border-radius:8px}.admin-login button{border-radius:8px;background:#315fd4;font-weight:650}.admin-login .landing-brand>span{border-radius:7px;background:#315fd4;box-shadow:none}
+@media(max-width:1050px){.app-shell{grid-template-columns:76px 1fr}.app-shell .nav-item{padding:9px}.app-shell .nav-item>span{border:0}.app-shell .nav-item.active{box-shadow:none}}
+@media(max-width:720px){.app-shell .sidebar{background:#111827}.app-shell .workspace{padding-top:20px}.app-shell .topbar{padding-bottom:17px}.app-shell .panel{border-radius:9px}}
+
+/* Escala tipográfica e legibilidade do painel */
+.app-shell{font-family:"Segoe UI",Inter,Arial,sans-serif;font-size:16px;line-height:1.45}
+.app-shell button,.app-shell input,.app-shell select,.app-shell textarea{font-family:inherit}
+.app-shell .brand strong{font-size:16px}.app-shell .brand span:not(.brand-mark){font-size:12px}
+.app-shell .nav-item{font-size:14px}.app-shell .nav-item b{font-size:12px}
+.app-shell .sidebar-card strong,.app-shell .profile-row strong{font-size:14px}.app-shell .sidebar-card span,.app-shell .profile-row span{font-size:12px;line-height:1.4}
+.app-shell .eyebrow{font-size:12px}.app-shell .topbar p:last-child{max-width:720px;font-size:16px;line-height:1.55}
+.app-shell .primary-button{font-size:14px}.app-shell .panel-heading h2{font-size:18px}.app-shell .panel-heading button,.app-shell .period-filter{font-size:13px}.app-shell .period-filter select{font-size:14px}
+.app-shell .metric-card>span{font-size:14px}.app-shell .metric-card small{font-size:12px}.app-shell .metric-icon{font-size:12px}
+.app-shell .pipeline-step span{font-size:13px}.app-shell .activity-copy strong{font-size:14px}.app-shell .activity-copy span{font-size:13px}.app-shell .activity-row time,.app-shell .status-tag{font-size:12px}
+.app-shell .conversation-head strong,.app-shell .full-chat-head strong,.app-shell .contact-row strong{font-size:14px}.app-shell .conversation-head span,.app-shell .full-chat-head span,.app-shell .contact-row small,.app-shell .contact-row time{font-size:12px}
+.app-shell .lead-signal span,.app-shell .lead-signal small,.app-shell .chat-date{font-size:12px}.app-shell .bubble,.app-shell .full-chat-body .bubble{font-size:14px;line-height:1.55}.app-shell .full-chat-body .bubble small{font-size:12px}
+.app-shell .chat-composer input,.app-shell .full-composer input,.app-shell .search-field input,.app-shell .inbox-search input{font-size:14px}.app-shell .simulate-button,.app-shell .inbox-tabs button,.app-shell .full-chat-head button,.app-shell .profile-action{font-size:14px}
+.app-shell .profile-hero h3{font-family:inherit;font-size:18px;font-weight:650}.app-shell .profile-hero p{font-size:13px}.app-shell .score-ring span,.app-shell .lead-profile dt{font-size:12px}.app-shell .lead-profile dd{font-size:14px}
+.app-shell .toolbar>button,.app-shell .catalog-toolbar>div>button,.app-shell .catalog-actions select,.app-shell .filter-panel label{font-size:14px}.app-shell .live-leads{font-size:13px}
+.app-shell .table-row{font-size:14px}.app-shell .table-head{font-size:12px}.app-shell .lead-cell b{font-size:14px}.app-shell .lead-cell small,.app-shell .score-cell b,.app-shell .temperature{font-size:12px}
+.app-shell .empty-leads p,.app-shell .empty-catalog p{font-size:14px}.app-shell .captured-head div>span{font-size:12px}.app-shell .profile-explanation strong{font-size:12px}.app-shell .profile-explanation p{font-size:14px}.app-shell .captured-profile dt{font-size:12px}.app-shell .captured-profile dd{font-size:14px}.app-shell .captured-score>span,.app-shell .captured-score strong small{font-size:12px}.app-shell .profile-whatsapp{font-size:14px}
+.app-shell .property-visual em,.app-shell .property-copy>small{font-size:12px}.app-shell .property-copy h3{font-size:16px}.app-shell .property-copy p{font-size:14px;line-height:1.5}.app-shell .property-copy strong{font-size:15px}
+.app-shell .week-strip span{font-size:12px}.app-shell .appointment-row strong,.app-shell .appointment-detail strong{font-size:14px}.app-shell .appointment-row span,.app-shell .appointment-detail span{font-size:12px}.app-shell .appointment-detail button{font-size:13px}.app-shell .inline-form label{font-size:12px}.app-shell .inline-form input,.app-shell .inline-form button{font-size:14px}
+.app-shell .automation-card p,.app-shell .health-panel p{font-size:14px;line-height:1.55}.app-shell .automation-meta,.app-shell .automation-state{font-size:12px}.app-shell .automation-card footer button{font-size:13px}
+.app-shell .modal-card label,.modal-backdrop .modal-card label{font-size:13px}.app-shell .modal-card input,.app-shell .modal-card select,.app-shell .modal-card textarea,.modal-backdrop .modal-card input,.modal-backdrop .modal-card select,.modal-backdrop .modal-card textarea{font-size:14px}.app-shell .modal-actions button,.modal-backdrop .modal-actions button{font-size:14px}
+.app-shell .profile-menu strong,.app-shell .profile-menu button,.app-shell .notification-menu>div strong,.app-shell .notification-menu>div button,.app-shell .notification-menu>button{font-size:13px}.app-shell .setting-row strong{font-size:14px}.app-shell .setting-row small{font-size:12px}
+.admin-login>form>p:not(.eyebrow){font-size:16px}.admin-login label{font-size:14px}.admin-login input{font-size:16px}.admin-login button{font-size:15px}.admin-login form>small{font-size:13px}
+@media(max-width:1050px){.app-shell .nav-item:not(.active){font-size:0}.app-shell .nav-item>span{font-size:15px}}
+@media(max-width:720px){.app-shell .nav-item{font-size:0}.app-shell .nav-item>span{font-size:18px}.app-shell .primary-button{font-size:0}.app-shell .primary-button::after{font-size:18px}.app-shell .topbar p:last-child{font-size:15px}.app-shell .table-row{font-size:13px}.app-shell .modal-actions .primary-button{font-size:14px}}
