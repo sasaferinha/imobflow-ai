@@ -9,13 +9,19 @@ function clean(value: unknown, max = 300) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+function cleanImages(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const images = value.filter((image): image is string => typeof image === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(image) && image.length <= 700_000).slice(0, 5);
+  return images.reduce<string[]>((accepted, image) => accepted.join('').length + image.length <= 3_200_000 ? [...accepted, image] : accepted, []);
+}
+
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   try {
     const body = await request.json() as Record<string, unknown>;
     const input: PropertyInput = {
       title: clean(body.title, 160), district: clean(body.district, 120), price: clean(body.price, 80), meta: clean(body.meta, 500),
-      match: Math.max(0, Math.min(100, Number(body.match) || 80)), tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda',
+      match: Math.max(0, Math.min(100, Number(body.match) || 80)), tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
     };
     if (!input.title || !input.district || !input.price || !input.meta) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     const data = await updateProperty((await context.params).id, input);

@@ -58,8 +58,10 @@ async function ensurePropertySchema() {
     match INTEGER NOT NULL DEFAULT 80,
     tone TEXT NOT NULL DEFAULT 'orchid',
     purpose TEXT NOT NULL,
+    images JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb`;
   await sql`INSERT INTO site_properties (reference_key, title, district, price, meta, match, tone, purpose) VALUES
     ('aurora', 'Residencial Aurora', 'Centro', 'R$ 575.000', '3 quartos • 2 vagas • 98 m²', 96, 'orchid', 'Venda'),
     ('horizonte', 'Edifício Horizonte', 'Jardim Floresta', 'R$ 590.000', '3 quartos • 1 vaga • 91 m²', 92, 'sky', 'Venda'),
@@ -72,22 +74,22 @@ async function ensurePropertySchema() {
 
 export async function listProperties(): Promise<PropertyRecord[]> {
   await ensurePropertySchema();
-  const rows = await database()`SELECT id, title, district, price, meta, match, tone, purpose, created_at FROM site_properties ORDER BY created_at DESC`;
+  const rows = await database()`SELECT id, title, district, price, meta, match, tone, purpose, images, created_at FROM site_properties ORDER BY created_at DESC`;
   return rows.map(mapProperty);
 }
 
 export async function createProperty(input: PropertyInput): Promise<PropertyRecord> {
   await ensurePropertySchema();
-  const rows = await database()`INSERT INTO site_properties (title, district, price, meta, match, tone, purpose)
-    VALUES (${input.title}, ${input.district}, ${input.price}, ${input.meta}, ${input.match}, ${input.tone}, ${input.purpose})
-    RETURNING id, title, district, price, meta, match, tone, purpose, created_at`;
+  const rows = await database()`INSERT INTO site_properties (title, district, price, meta, match, tone, purpose, images)
+    VALUES (${input.title}, ${input.district}, ${input.price}, ${input.meta}, ${input.match}, ${input.tone}, ${input.purpose}, ${JSON.stringify(input.images)}::jsonb)
+    RETURNING id, title, district, price, meta, match, tone, purpose, images, created_at`;
   return mapProperty(rows[0]);
 }
 
 export async function updateProperty(id: string, input: PropertyInput): Promise<PropertyRecord | null> {
   await ensurePropertySchema();
-  const rows = await database()`UPDATE site_properties SET title=${input.title}, district=${input.district}, price=${input.price}, meta=${input.meta}, match=${input.match}, tone=${input.tone}, purpose=${input.purpose}
-    WHERE id=${id} RETURNING id, title, district, price, meta, match, tone, purpose, created_at`;
+  const rows = await database()`UPDATE site_properties SET title=${input.title}, district=${input.district}, price=${input.price}, meta=${input.meta}, match=${input.match}, tone=${input.tone}, purpose=${input.purpose}, images=${JSON.stringify(input.images)}::jsonb
+    WHERE id=${id} RETURNING id, title, district, price, meta, match, tone, purpose, images, created_at`;
   return rows[0] ? mapProperty(rows[0]) : null;
 }
 
@@ -98,10 +100,11 @@ export async function deleteProperty(id: string): Promise<boolean> {
 }
 
 function mapProperty(row: Record<string, unknown>): PropertyRecord {
+  const images = Array.isArray(row.images) ? row.images.filter((image): image is string => typeof image === 'string') : [];
   return {
     id: String(row.id), title: String(row.title), district: String(row.district), price: String(row.price),
     meta: String(row.meta), match: Number(row.match), tone: String(row.tone),
-    purpose: row.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', createdAt: new Date(String(row.created_at)).toISOString(),
+    purpose: row.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images, createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }
 

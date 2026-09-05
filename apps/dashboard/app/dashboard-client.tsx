@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- previews use locally compressed data URLs */
 
 import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import type { LeadProfile } from '@/lib/leads';
@@ -76,12 +77,12 @@ function matchesLeadFilters(lead: DashboardLead, filters: LeadFilter[]) {
 }
 
 const initialProperties: Property[] = [
-  { id: 'aurora', title: 'Residencial Aurora', district: 'Centro', price: 'R$ 575.000', meta: '3 quartos • 2 vagas • 98 m²', match: 96, tone: 'orchid', purpose: 'Venda', createdAt: '' },
-  { id: 'horizonte', title: 'Edifício Horizonte', district: 'Jardim Floresta', price: 'R$ 590.000', meta: '3 quartos • 1 vaga • 91 m²', match: 92, tone: 'sky', purpose: 'Venda', createdAt: '' },
-  { id: 'bosque-sereno', title: 'Casa Bosque Sereno', district: 'Alto da Serra', price: 'R$ 820.000', meta: '4 quartos • 3 vagas • 184 m²', match: 88, tone: 'sage', purpose: 'Venda', createdAt: '' },
-  { id: 'studio-vila-nova', title: 'Studio Vila Nova', district: 'Vila Nova', price: 'R$ 2.950/mês', meta: '1 quarto • mobiliado • 42 m²', match: 83, tone: 'sand', purpose: 'Aluguel', createdAt: '' },
-  { id: 'oliveiras', title: 'Parque das Oliveiras', district: 'Pinheiros', price: 'R$ 745.000', meta: '2 quartos • varanda • 76 m²', match: 81, tone: 'rose', purpose: 'Venda', createdAt: '' },
-  { id: 'ipe-amarelo', title: 'Casa Ipê Amarelo', district: 'Jardim Campestre', price: 'R$ 2.400/mês', meta: '2 quartos • quintal • 80 m²', match: 77, tone: 'slate', purpose: 'Aluguel', createdAt: '' },
+  { id: 'aurora', title: 'Residencial Aurora', district: 'Centro', price: 'R$ 575.000', meta: '3 quartos • 2 vagas • 98 m²', match: 96, tone: 'orchid', purpose: 'Venda', images: [], createdAt: '' },
+  { id: 'horizonte', title: 'Edifício Horizonte', district: 'Jardim Floresta', price: 'R$ 590.000', meta: '3 quartos • 1 vaga • 91 m²', match: 92, tone: 'sky', purpose: 'Venda', images: [], createdAt: '' },
+  { id: 'bosque-sereno', title: 'Casa Bosque Sereno', district: 'Alto da Serra', price: 'R$ 820.000', meta: '4 quartos • 3 vagas • 184 m²', match: 88, tone: 'sage', purpose: 'Venda', images: [], createdAt: '' },
+  { id: 'studio-vila-nova', title: 'Studio Vila Nova', district: 'Vila Nova', price: 'R$ 2.950/mês', meta: '1 quarto • mobiliado • 42 m²', match: 83, tone: 'sand', purpose: 'Aluguel', images: [], createdAt: '' },
+  { id: 'oliveiras', title: 'Parque das Oliveiras', district: 'Pinheiros', price: 'R$ 745.000', meta: '2 quartos • varanda • 76 m²', match: 81, tone: 'rose', purpose: 'Venda', images: [], createdAt: '' },
+  { id: 'ipe-amarelo', title: 'Casa Ipê Amarelo', district: 'Jardim Campestre', price: 'R$ 2.400/mês', meta: '2 quartos • quintal • 80 m²', match: 77, tone: 'slate', purpose: 'Aluguel', images: [], createdAt: '' },
 ];
 
 const initialAppointments: AppointmentRecord[] = [
@@ -98,6 +99,23 @@ const initialMessages: ChatMessage[] = [
   { id: 4, side: 'outgoing', text: 'Perfeito. Separei duas opções compatíveis com o seu perfil.' },
 ];
 
+async function preparePropertyImage(file: File) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error(`${file.name}: formato não aceito.`);
+  if (file.size > 12_000_000) throw new Error(`${file.name}: arquivo maior que 12 MB.`);
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / bitmap.width, 1200 / bitmap.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Não foi possível preparar a imagem.');
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const image = canvas.toDataURL('image/webp', 0.78);
+  if (image.length > 700_000) throw new Error(`${file.name}: a imagem ficou muito pesada. Use uma foto menor.`);
+  return image;
+}
+
 export default function DashboardClient() {
   const [view, setView] = useState<View>('overview');
   const [messages, setMessages] = useState(initialMessages);
@@ -110,6 +128,8 @@ export default function DashboardClient() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [savingProperty, setSavingProperty] = useState(false);
+  const [propertyImages, setPropertyImages] = useState<string[]>([]);
+  const [preparingImages, setPreparingImages] = useState(false);
   const [appointments, setAppointments] = useState(initialAppointments);
   const [toast, setToast] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -168,6 +188,7 @@ export default function DashboardClient() {
       if (event.key === 'Escape') {
         setPropertyModalOpen(false);
         setEditingProperty(null);
+        setPropertyImages([]);
         setSelectedProperty(null);
         setNotificationsOpen(false);
         setProfileOpen(false);
@@ -216,6 +237,7 @@ export default function DashboardClient() {
       match: editingProperty?.match || 80,
       tone: editingProperty?.tone || 'orchid',
       purpose: String(form.get('purpose')) === 'Aluguel' ? 'Aluguel' : 'Venda',
+      images: propertyImages,
     };
     setSavingProperty(true);
     try {
@@ -228,6 +250,7 @@ export default function DashboardClient() {
       setSelectedProperty(result.data);
       setPropertyModalOpen(false);
       setEditingProperty(null);
+      setPropertyImages([]);
       setView('properties');
       notify(editingProperty ? 'Imóvel atualizado' : 'Imóvel adicionado ao portfólio');
     } catch (error) {
@@ -252,7 +275,26 @@ export default function DashboardClient() {
 
   function openNewProperty() {
     setEditingProperty(null);
+    setPropertyImages([]);
     setPropertyModalOpen(true);
+  }
+
+  async function addPropertyImages(files: FileList | null) {
+    if (!files?.length) return;
+    const available = 5 - propertyImages.length;
+    if (available <= 0) return notify('Cada imóvel pode ter até 5 imagens.');
+    setPreparingImages(true);
+    try {
+      const prepared = await Promise.all(Array.from(files).slice(0, available).map(preparePropertyImage));
+      const next = [...propertyImages, ...prepared];
+      if (next.join('').length > 3_200_000) throw new Error('O conjunto de imagens ficou muito pesado. Remova uma foto ou use arquivos menores.');
+      setPropertyImages(next);
+      notify(`${prepared.length} ${prepared.length === 1 ? 'imagem adicionada' : 'imagens adicionadas'}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível preparar as imagens.');
+    } finally {
+      setPreparingImages(false);
+    }
   }
 
   function openView(nextView: View) {
@@ -303,19 +345,25 @@ export default function DashboardClient() {
       </section>
 
       {propertyModalOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => { setPropertyModalOpen(false); setEditingProperty(null); }}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => { setPropertyModalOpen(false); setEditingProperty(null); setPropertyImages([]); }}>
           <form className="modal-card" onSubmit={saveProperty} onMouseDown={(event) => event.stopPropagation()}>
-            <div className="modal-head"><div><p className="eyebrow">Portfólio imobiliário</p><h2>{editingProperty ? 'Editar imóvel' : 'Novo imóvel'}</h2></div><button type="button" aria-label="Fechar" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); }}>×</button></div>
+            <div className="modal-head"><div><p className="eyebrow">Portfólio imobiliário</p><h2>{editingProperty ? 'Editar imóvel' : 'Novo imóvel'}</h2></div><button type="button" aria-label="Fechar" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); setPropertyImages([]); }}>×</button></div>
             <label>Título<input name="title" defaultValue={editingProperty?.title} placeholder="Ex.: Residencial das Flores" autoFocus required /></label>
             <div className="form-grid"><label>Bairro<input name="district" defaultValue={editingProperty?.district} placeholder="Centro" required /></label><label>Preço<input name="price" defaultValue={editingProperty?.price} placeholder="R$ 650.000" required /></label></div>
             <label>Finalidade<select name="purpose" defaultValue={editingProperty?.purpose || 'Venda'}><option>Venda</option><option>Aluguel</option></select></label>
             <label>Descrição<textarea name="description" defaultValue={editingProperty?.meta} placeholder="Ex.: 3 quartos • 2 vagas • 98 m²" rows={3} required /></label>
-            <div className="modal-actions"><button type="button" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); }}>Cancelar</button><button className="primary-button" type="submit" disabled={savingProperty}>{savingProperty ? 'Salvando...' : 'Salvar imóvel'}</button></div>
+            <div className="property-image-field">
+              <div><strong>Imagens do imóvel</strong><span>Até 5 fotos em JPG, PNG ou WebP</span></div>
+              <input id="property-images" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { void addPropertyImages(event.target.files); event.target.value = ''; }} />
+              <button type="button" className="image-upload-button" disabled={preparingImages || propertyImages.length >= 5} onClick={() => document.getElementById('property-images')?.click()}>{preparingImages ? 'Preparando fotos...' : '＋ Adicionar imagens'}</button>
+              {propertyImages.length > 0 && <div className="property-image-previews">{propertyImages.map((image,index) => <div key={`${image.slice(-24)}-${index}`}><img src={image} alt={`Foto ${index + 1} do imóvel`} /><button type="button" aria-label={`Remover foto ${index + 1}`} onClick={() => setPropertyImages((current) => current.filter((_,imageIndex) => imageIndex !== index))}>×</button>{index === 0 && <span>Capa</span>}</div>)}</div>}
+            </div>
+            <div className="modal-actions"><button type="button" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); setPropertyImages([]); }}>Cancelar</button><button className="primary-button" type="submit" disabled={savingProperty || preparingImages}>{savingProperty ? 'Salvando...' : 'Salvar imóvel'}</button></div>
           </form>
         </div>
       )}
 
-      {selectedProperty && <PropertyDetail property={selectedProperty} close={() => setSelectedProperty(null)} notify={notify} openAgenda={() => openView('agenda')} edit={() => { setEditingProperty(selectedProperty); setPropertyModalOpen(true); }} remove={() => removeProperty(selectedProperty)} />}
+      {selectedProperty && <PropertyDetail property={selectedProperty} close={() => setSelectedProperty(null)} notify={notify} openAgenda={() => openView('agenda')} edit={() => { setEditingProperty(selectedProperty); setPropertyImages(selectedProperty.images); setPropertyModalOpen(true); }} remove={() => removeProperty(selectedProperty)} />}
       {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { setSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
@@ -421,12 +469,13 @@ function Properties({ properties, search, setSearch, add, onOpen }: { properties
   const [filterOpen, setFilterOpen] = useState(false);
   const [minMatch, setMinMatch] = useState(0);
   const visible = properties.filter((property) => `${property.title} ${property.district}`.toLowerCase().includes(search.toLowerCase()) && (purpose === 'Todos' || property.purpose === purpose) && property.match >= minMatch);
-  return <><div className="catalog-toolbar"><div className="search-field">⌕<input value={search} onChange={(event)=>setSearch(event.target.value)} aria-label="Buscar imóvel" placeholder="Buscar imóvel ou bairro"/></div><div className="catalog-actions"><select aria-label="Finalidade" value={purpose} onChange={(event) => setPurpose(event.target.value as typeof purpose)}><option>Todos</option><option>Venda</option><option>Aluguel</option></select><button type="button" className={filterOpen ? 'filter-active' : ''} onClick={() => setFilterOpen((open) => !open)}>Mais filtros</button><button type="button" className="primary-button" onClick={add}>＋ Adicionar</button></div></div>{filterOpen && <div className="filter-panel panel"><label>Compatibilidade mínima <strong>{minMatch}%</strong><input type="range" min="0" max="95" step="5" value={minMatch} onChange={(event) => setMinMatch(Number(event.target.value))}/></label><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setSearch(''); }}>Limpar filtros</button></div>}<div className="property-grid">{visible.map((property)=><article className="property-card" key={property.id}><button type="button" className={`property-visual ${property.tone}`} onClick={() => onOpen(property)} aria-label={`Abrir ${property.title}`}><span>▦</span><em>{property.match}% compatível</em></button><div className="property-copy"><small>{property.purpose} • {property.district}</small><h3>{property.title}</h3><p>{property.meta}</p><div><strong>{property.price}</strong><button type="button" aria-label={`Ver detalhes de ${property.title}`} onClick={() => onOpen(property)}>›</button></div></div></article>)}{visible.length === 0 && <div className="empty-catalog panel"><span>▦</span><h3>Nenhum imóvel encontrado</h3><p>Ajuste ou limpe os filtros para continuar.</p><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setSearch(''); }}>Limpar filtros</button></div>}</div></>;
+  return <><div className="catalog-toolbar"><div className="search-field">⌕<input value={search} onChange={(event)=>setSearch(event.target.value)} aria-label="Buscar imóvel" placeholder="Buscar imóvel ou bairro"/></div><div className="catalog-actions"><select aria-label="Finalidade" value={purpose} onChange={(event) => setPurpose(event.target.value as typeof purpose)}><option>Todos</option><option>Venda</option><option>Aluguel</option></select><button type="button" className={filterOpen ? 'filter-active' : ''} onClick={() => setFilterOpen((open) => !open)}>Mais filtros</button><button type="button" className="primary-button" onClick={add}>＋ Adicionar</button></div></div>{filterOpen && <div className="filter-panel panel"><label>Compatibilidade mínima <strong>{minMatch}%</strong><input type="range" min="0" max="95" step="5" value={minMatch} onChange={(event) => setMinMatch(Number(event.target.value))}/></label><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setSearch(''); }}>Limpar filtros</button></div>}<div className="property-grid">{visible.map((property)=><article className="property-card" key={property.id}><button type="button" className={`property-visual ${property.tone} ${property.images.length ? 'has-image' : ''}`} onClick={() => onOpen(property)} aria-label={`Abrir ${property.title}`}>{property.images[0] ? <img src={property.images[0]} alt="" /> : <span>▦</span>}<em>{property.match}% compatível</em>{property.images.length > 1 && <b className="image-count">▧ {property.images.length}</b>}</button><div className="property-copy"><small>{property.purpose} • {property.district}</small><h3>{property.title}</h3><p>{property.meta}</p><div><strong>{property.price}</strong><button type="button" aria-label={`Ver detalhes de ${property.title}`} onClick={() => onOpen(property)}>›</button></div></div></article>)}{visible.length === 0 && <div className="empty-catalog panel"><span>▦</span><h3>Nenhum imóvel encontrado</h3><p>Ajuste ou limpe os filtros para continuar.</p><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setSearch(''); }}>Limpar filtros</button></div>}</div></>;
 }
 
 function PropertyDetail({ property, close, notify, openAgenda, edit, remove }: { property:Property; close:()=>void; notify:(message:string)=>void; openAgenda:()=>void; edit:()=>void; remove:()=>void }) {
   const [saved, setSaved] = useState(false);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className="modal-card property-detail-modal" onMouseDown={(event) => event.stopPropagation()}><div className={`property-visual ${property.tone}`}><span>▦</span><em>{property.match}% compatível</em></div><div className="modal-head"><div><p className="eyebrow">{property.purpose} • {property.district}</p><h2>{property.title}</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><p>{property.meta}</p><strong className="detail-price">{property.price}</strong><div className="modal-actions"><button type="button" onClick={remove}>Excluir</button><button type="button" onClick={edit}>Editar</button><button type="button" className={saved ? 'saved-button' : ''} onClick={() => { setSaved((active) => !active); notify(saved ? 'Imóvel removido dos favoritos' : 'Imóvel salvo nos favoritos'); }}>{saved ? '♥ Salvo' : '♡ Salvar'}</button><button type="button" className="primary-button" onClick={() => { close(); openAgenda(); }}>Agendar visita</button></div></article></div>;
+  const [activeImage, setActiveImage] = useState(0);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className="modal-card property-detail-modal" onMouseDown={(event) => event.stopPropagation()}><div className={`property-visual ${property.tone} ${property.images.length ? 'has-image' : ''}`}>{property.images[activeImage] ? <img src={property.images[activeImage]} alt={`${property.title}, foto ${activeImage + 1}`} /> : <span>▦</span>}<em>{property.match}% compatível</em></div>{property.images.length > 1 && <div className="property-gallery-thumbs">{property.images.map((image,index) => <button type="button" className={activeImage === index ? 'active' : ''} key={`${image.slice(-24)}-${index}`} onClick={() => setActiveImage(index)} aria-label={`Ver foto ${index + 1}`}><img src={image} alt="" /></button>)}</div>}<div className="modal-head"><div><p className="eyebrow">{property.purpose} • {property.district}</p><h2>{property.title}</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><p>{property.meta}</p><strong className="detail-price">{property.price}</strong><div className="modal-actions"><button type="button" onClick={remove}>Excluir</button><button type="button" onClick={edit}>Editar</button><button type="button" className={saved ? 'saved-button' : ''} onClick={() => { setSaved((active) => !active); notify(saved ? 'Imóvel removido dos favoritos' : 'Imóvel salvo nos favoritos'); }}>{saved ? '♥ Salvo' : '♡ Salvar'}</button><button type="button" className="primary-button" onClick={() => { close(); openAgenda(); }}>Agendar visita</button></div></article></div>;
 }
 
 function ProfileModal({ profile, close, save }: { profile:{ name:string; company:string }; close:()=>void; save:(profile:{ name:string; company:string })=>void }) {

@@ -7,6 +7,7 @@ export type PropertyRecord = {
   match: number;
   tone: string;
   purpose: 'Venda' | 'Aluguel';
+  images: string[];
   createdAt: string;
 };
 
