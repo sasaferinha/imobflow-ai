@@ -334,3 +334,132 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .lead-import-modal{width:min(760px,100%);max-height:92vh;overflow:auto}.lead-import-intro{margin:-3px 0 16px;color:#667085;font-size:13px;line-height:1.55}.lead-import-drop{display:flex;align-items:center;justify-content:center;width:100%;min-height:125px;padding:20px;border:1px dashed #aebbd0;border-radius:10px;background:#f8fafc;color:#475467;flex-direction:column}.lead-import-drop:hover,.lead-import-drop.ready{border-color:#315fd4;background:#f2f6ff}.lead-import-drop>span{display:grid;place-items:center;width:38px;height:38px;margin-bottom:9px;border-radius:8px;background:#e7edfb;color:#315fd4;font-size:18px;font-weight:800}.lead-import-drop strong{font-size:14px}.lead-import-drop small{margin-top:5px;color:#7b8798;font-size:12px}.lead-import-columns{position:relative;margin-top:12px;padding:14px 145px 14px 14px;border:1px solid #e1e6ed;border-radius:9px}.lead-import-columns strong{color:#344054;font-size:12px}.lead-import-columns p{margin:4px 0 0;color:#667085;font-size:11px;line-height:1.45}.lead-import-columns button{position:absolute;top:50%;right:12px;padding:7px 9px;border:1px solid #d7dde5;border-radius:6px;background:#fff;color:#315fd4;font-size:11px;font-weight:650;transform:translateY(-50%)}.lead-import-error{padding:10px;border-radius:7px;background:#fff0f0;color:#b42318;font-size:12px}.lead-import-preview{margin-top:13px;overflow:hidden;border:1px solid #e1e6ed;border-radius:9px}.lead-import-preview>div{display:grid;grid-template-columns:1.2fr .9fr .9fr;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid #edf0f4;color:#475467;font-size:12px}.lead-import-preview>div:first-child{display:flex;justify-content:space-between;border-top:0;background:#f8fafc}.lead-import-preview>div:first-child strong{color:#344054}.lead-import-preview>div:first-child span{color:#667085;font-size:11px}.lead-import-preview>div>span{display:flex;min-width:0;flex-direction:column}.lead-import-preview b{overflow:hidden;color:#344054;text-overflow:ellipsis;white-space:nowrap}.lead-import-preview small{margin-top:3px;color:#98a2b3;font-size:10px}
 @media(max-width:1100px){.lead-diagnostic-grid{grid-template-columns:1fr 1fr}.lead-intelligence-head{align-items:flex-start;flex-direction:column}.lead-intelligence-head>div:last-child{width:100%;justify-content:space-between}}
 @media(max-width:720px){.lead-diagnostic-grid{grid-template-columns:1fr 1fr}.lead-diagnostic-card{min-height:126px;padding:14px}.lead-diagnosis-note{grid-template-columns:1fr}.lead-diagnosis-note>span{width:max-content}.lead-intelligence-head>div:last-child{align-items:stretch;flex-direction:column}.lead-intelligence-head .primary-button{font-size:13px!important}.lead-intelligence-head .primary-button::after{display:none}.lead-operational-fields,.lead-action-grid{grid-template-columns:1fr}.lead-import-columns{padding-right:14px}.lead-import-columns button{position:static;margin-top:10px;transform:none}.lead-import-preview{overflow:auto}.lead-import-preview>div{min-width:600px}}
+
+/* Responsive sizing and layout normalization */
+html,body{max-width:100%;overflow-x:clip}
+.app-shell{width:100%;max-width:100vw;overflow-x:clip}
+.app-shell .workspace{width:100%;max-width:1600px;margin-inline:auto}
+.app-shell .workspace>*,.app-shell .panel,.app-shell .performance-grid,.app-shell .performance-grid>*,.app-shell .lead-management,.app-shell .lead-management>*,.app-shell .inbox-layout,.app-shell .inbox-layout>*,.app-shell .agenda-layout,.app-shell .agenda-layout>*,.app-shell .automation-layout,.app-shell .automation-layout>*{min-width:0;max-width:100%}
+.app-shell .panel{overflow-wrap:anywhere}
+.app-shell .search-field,.app-shell input,.app-shell select,.app-shell textarea,.modal-backdrop input,.modal-backdrop select,.modal-backdrop textarea{max-width:100%}
+.app-shell .property-grid{grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr))}
+.app-shell .property-visual{height:auto;min-height:150px;aspect-ratio:16/9}
+.modal-backdrop{overflow:hidden}
+.modal-backdrop .modal-card{max-width:100%;max-height:calc(100dvh - 40px);overflow-y:auto;overscroll-behavior:contain}
+.modal-backdrop .property-detail-modal{width:min(520px,100%)}
+.modal-backdrop .modal-actions{align-items:center;flex-wrap:wrap}
+.app-shell .broker-performance,.app-shell .recent-sales,.app-shell .sales-history{min-width:0;overflow:hidden}
+.app-shell .broker-table,.app-shell .recent-sales-table,.app-shell .lead-table,.app-shell .lead-import-preview{max-width:100%;overscroll-behavior-x:contain}
+
+@media(max-width:1100px){
+  .app-shell .workspace{padding:30px 24px 40px}
+  .app-shell .performance-grid{grid-template-columns:minmax(0,1fr)}
+  .app-shell .broker-table,.app-shell .recent-sales-table{overflow-x:auto}
+}
+
+@media(max-width:720px){
+  .app-shell .workspace{padding:20px 14px 94px}
+  .app-shell .topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px;margin-bottom:22px}
+  .app-shell .topbar h1{font-size:clamp(25px,7vw,30px);line-height:1.08}
+  .app-shell .topbar p:last-child{max-width:34rem;margin-top:6px;line-height:1.45}
+  .app-shell .header-actions{gap:7px}
+  .app-shell .icon-button,.app-shell .primary-button{width:40px;height:40px;border-radius:9px}
+  .app-shell .panel{padding:16px;border-radius:12px}
+  .app-shell .panel-heading{align-items:flex-start;flex-wrap:wrap}
+  .app-shell .panel-heading h2{font-size:18px;line-height:1.25}
+  .app-shell .company-goal-card{padding:20px;border-radius:10px}
+  .app-shell .company-goal-copy strong{font-size:27px}
+  .app-shell .performance-kpis{gap:10px}
+  .app-shell .performance-kpis article{min-height:108px;padding:15px}
+  .app-shell .performance-kpis strong{font-size:22px}
+  .app-shell .performance-toolbar .primary-button,.app-shell .lead-intelligence-head .primary-button{width:auto;padding-inline:14px;font-size:13px}
+  .app-shell .performance-toolbar .primary-button::after,.app-shell .lead-intelligence-head .primary-button::after{display:none}
+  .app-shell .performance-grid{grid-template-columns:minmax(0,1fr)}
+  .app-shell .broker-table,.app-shell .recent-sales-table,.app-shell .lead-table{width:100%;overflow-x:auto}
+  .app-shell .broker-row{min-width:660px}
+  .app-shell .sale-row{min-width:700px}
+  .app-shell .catalog-actions{display:grid;grid-template-columns:minmax(110px,1fr) minmax(110px,1fr) 42px;width:100%;overflow:visible}
+  .app-shell .catalog-actions select,.app-shell .catalog-actions button{width:100%}
+  .app-shell .catalog-actions .primary-button{width:42px;padding:0;font-size:0}
+  .app-shell .catalog-actions .primary-button::after{display:block;content:'＋';font-size:18px}
+  .app-shell .filter-panel{margin-top:0;padding:15px}
+  .app-shell .property-grid{gap:12px}
+  .app-shell .property-card{border-radius:12px}
+  .app-shell .property-copy{padding:15px}
+  .app-shell .property-visual{min-height:180px}
+  .modal-backdrop{place-items:center;padding:8px}
+  .modal-backdrop .modal-card{width:100%;max-height:calc(100dvh - 16px);padding:18px;border-radius:13px}
+  .modal-backdrop .property-detail-modal{padding:0 18px 18px}
+  .modal-backdrop .property-detail-modal>.property-visual{width:calc(100% + 36px);margin-left:-18px}
+  .modal-backdrop .modal-head h2{font-size:22px;line-height:1.2}
+  .modal-backdrop .modal-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .modal-backdrop .modal-actions button{width:100%;min-width:0;padding-inline:10px}
+  .broker-profile-backdrop .broker-profile-modal{padding:0}
+  .app-shell .lead-filter-trigger{min-height:48px}
+  .app-shell .lead-diagnostic-grid{gap:9px}
+  .app-shell .lead-diagnostic-card{min-width:0}
+  .app-shell .agenda-layout,.app-shell .automation-layout,.app-shell .lead-management{grid-template-columns:minmax(0,1fr)}
+}
+
+@media(max-width:440px){
+  .app-shell .workspace{padding-inline:12px}
+  .app-shell .topbar h1{font-size:24px}
+  .app-shell .metric-grid,.app-shell .performance-kpis,.app-shell .lead-diagnostic-grid,.broker-profile-modal .broker-stat-grid{grid-template-columns:minmax(0,1fr)}
+  .app-shell .performance-kpis article:first-child{grid-column:auto}
+  .app-shell .catalog-actions{grid-template-columns:1fr 1fr}
+  .app-shell .catalog-actions .primary-button{grid-column:1/-1;width:100%;font-size:13px}
+  .app-shell .catalog-actions .primary-button::after{display:none}
+  .app-shell .property-visual{min-height:160px}
+  .modal-backdrop .modal-actions{grid-template-columns:minmax(0,1fr)}
+  .modal-backdrop .property-image-previews{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .broker-profile-modal .broker-profile-header{padding:15px}
+  .broker-profile-modal .broker-profile-person>span{width:42px;height:42px}
+  .broker-profile-modal .broker-profile-person h2{font-size:19px}
+}
+
+/* Optional dark appearance */
+.app-shell .theme-toggle{font-size:19px;line-height:1}
+.app-shell.dark-mode{
+  --ink:#edf2f7;
+  --muted:#a4afbf;
+  --line:#2b3748;
+  --paper:#141c28;
+  --canvas:#0b111a;
+  color-scheme:dark;
+  background:#0b111a;
+  color:#dbe3ee;
+}
+.app-shell.dark-mode .sidebar{border-color:#263246;background:#080e17}
+.app-shell.dark-mode .workspace{background:#0b111a}
+.app-shell.dark-mode .topbar{border-color:#273344}
+.app-shell.dark-mode .topbar h1,.app-shell.dark-mode .panel-heading h2,.app-shell.dark-mode .property-copy h3,.app-shell.dark-mode .property-copy strong,.app-shell.dark-mode .captured-head h2,.app-shell.dark-mode .empty-leads h3,.app-shell.dark-mode .empty-catalog h3,.app-shell.dark-mode .lead-filter-heading h2,.app-shell.dark-mode .lead-intelligence-head h2,.app-shell.dark-mode .broker-name>b,.app-shell.dark-mode .sale-row strong,.app-shell.dark-mode .sale-row b,.app-shell.dark-mode .modal-head h2,.app-shell.dark-mode .setting-row strong{color:#f2f5f9}
+.app-shell.dark-mode .topbar p:last-child,.app-shell.dark-mode .eyebrow,.app-shell.dark-mode .property-copy p,.app-shell.dark-mode .panel-heading>span,.app-shell.dark-mode .performance-live,.app-shell.dark-mode .performance-kpis span,.app-shell.dark-mode .performance-kpis small,.app-shell.dark-mode .broker-row,.app-shell.dark-mode .sale-row,.app-shell.dark-mode .lead-diagnostic-card>span,.app-shell.dark-mode .lead-diagnostic-card>small,.app-shell.dark-mode .lead-diagnosis-note p,.app-shell.dark-mode .lead-filter-heading>p:last-child,.app-shell.dark-mode .setting-row small{color:#9da9ba}
+.app-shell.dark-mode .performance-toolbar strong{color:#dbe3ee}
+.app-shell.dark-mode .performance-toolbar label{color:#9da9ba}
+.app-shell.dark-mode .panel,.app-shell.dark-mode .metric-card,.app-shell.dark-mode .conversation-card,.app-shell.dark-mode .property-card,.app-shell.dark-mode .popover,.app-shell.dark-mode .modal-card,.app-shell.dark-mode .performance-kpis article,.app-shell.dark-mode .broker-stat-grid article,.app-shell.dark-mode .broker-profile-content>article,.app-shell.dark-mode .lead-diagnostic-card,.app-shell.dark-mode .lead-filter-menu,.app-shell.dark-mode .filter-panel{border-color:#2b3748;background:#141c28;box-shadow:0 1px 2px #0005}
+.app-shell.dark-mode .icon-button,.app-shell.dark-mode .search-field,.app-shell.dark-mode input,.app-shell.dark-mode select,.app-shell.dark-mode textarea,.app-shell.dark-mode .toolbar>button,.app-shell.dark-mode .catalog-toolbar>div>button,.app-shell.dark-mode .catalog-actions select,.app-shell.dark-mode .modal-actions button,.app-shell.dark-mode .full-chat-head button,.app-shell.dark-mode .appointment-detail button,.app-shell.dark-mode .inline-form button,.app-shell.dark-mode .image-upload-button,.app-shell.dark-mode .lead-filter-groups fieldset>button{border-color:#334155;background:#101823;color:#dbe3ee}
+.app-shell.dark-mode .performance-toolbar input,.app-shell.dark-mode .performance-toolbar button{border-color:#334155;background:#101823;color:#dbe3ee}
+.app-shell.dark-mode .lead-filter-trigger,.app-shell.dark-mode .lead-action-grid button{border-color:#334155;background:#101823;color:#dbe3ee}
+.app-shell.dark-mode input::placeholder,.app-shell.dark-mode textarea::placeholder{color:#718096}
+.app-shell.dark-mode .primary-button,.app-shell.dark-mode .performance-toolbar .primary-button,.app-shell.dark-mode .modal-actions .primary-button,.app-shell.dark-mode .appointment-detail button:last-child{border-color:#3f6fe0;background:#3867d6;color:#fff}
+.app-shell.dark-mode .table-row,.app-shell.dark-mode .contact-row,.app-shell.dark-mode .appointment-row,.app-shell.dark-mode .notification-menu>button{border-color:#263244;background:#141c28;color:#c5cfdd}
+.app-shell.dark-mode .table-head,.app-shell.dark-mode .sale-head,.app-shell.dark-mode .broker-head{background:#101823;color:#8794a6}
+.app-shell.dark-mode .table-row:not(.table-head):hover,.app-shell.dark-mode .activity-button:hover,.app-shell.dark-mode .profile-menu button:hover{background:#1a2534}
+.app-shell.dark-mode .sale-row button{background:#202b3a;color:#aab6c6}
+.app-shell.dark-mode .table-row.selected,.app-shell.dark-mode .contact-row.selected,.app-shell.dark-mode .appointment-row.selected,.app-shell.dark-mode .lead-diagnostic-card.active{background:#17243b;box-shadow:inset 3px 0 #5f8cff}
+.app-shell.dark-mode .chat-area,.app-shell.dark-mode .full-chat-body,.app-shell.dark-mode .lead-signal,.app-shell.dark-mode .inbox-search,.app-shell.dark-mode .profile-explanation,.app-shell.dark-mode .property-image-field,.app-shell.dark-mode .lead-import-drop,.app-shell.dark-mode .lead-import-preview>div:first-child,.app-shell.dark-mode .appointment-detail,.app-shell.dark-mode .day-summary .summary-number,.app-shell.dark-mode .broker-empty{border-color:#2b3748;background:#0f1722}
+.app-shell.dark-mode .incoming,.app-shell.dark-mode .chat-date{border-color:#334155;background:#1a2534;color:#dbe3ee}
+.app-shell.dark-mode .outgoing{border-color:#3867d6;background:#3867d6;color:#fff}
+.app-shell.dark-mode .score-cell,.app-shell.dark-mode .history-chart>div>i,.app-shell.dark-mode .broker-history-bars i{background:#283548}
+.app-shell.dark-mode .property-copy>div,.app-shell.dark-mode .activity-row,.app-shell.dark-mode .broker-row,.app-shell.dark-mode .sale-row,.app-shell.dark-mode .captured-head,.app-shell.dark-mode .captured-profile dl>div,.app-shell.dark-mode .setting-row,.app-shell.dark-mode .lead-filter-menu-head,.app-shell.dark-mode .lead-filter-menu-actions,.app-shell.dark-mode .lead-active-filters{border-color:#293548}
+.app-shell.dark-mode .step-one,.app-shell.dark-mode .step-two,.app-shell.dark-mode .step-three,.app-shell.dark-mode .step-four{background:#172131;color:#dbe3ee}
+.app-shell.dark-mode .property-copy button,.app-shell.dark-mode .profile-explanation>span,.app-shell.dark-mode .automation-icon{background:#203257;color:#86a9ff}
+.app-shell.dark-mode .lead-filter-groups fieldset>button.selected,.app-shell.dark-mode .lead-active-filters button{border-color:#4f78d7;background:#1b2c4b;color:#a9c2ff}
+.app-shell.dark-mode .lead-action-grid .selected-recovery{border-color:#2f8f6a;background:#143226;color:#79d6ad}
+.app-shell.dark-mode .modal-head button,.app-shell.dark-mode .broker-profile-actions>button{background:#202b3a;color:#c2ccda}
+.app-shell.dark-mode .broker-profile-header{border-color:#2b3748;background:#141c28}
+.app-shell.dark-mode .broker-profile-person h2,.app-shell.dark-mode .broker-stat-grid strong,.app-shell.dark-mode .broker-profile-content h3,.app-shell.dark-mode .broker-sales-list li strong,.app-shell.dark-mode .broker-sales-list li>b{color:#f2f5f9}
+.app-shell.dark-mode .broker-profile-person p,.app-shell.dark-mode .broker-profile-person small,.app-shell.dark-mode .broker-stat-grid span,.app-shell.dark-mode .broker-stat-grid small,.app-shell.dark-mode .broker-profile-content p,.app-shell.dark-mode .broker-sales-list li small{color:#9da9ba}
+.app-shell.dark-mode .property-image-previews>div,.app-shell.dark-mode .property-gallery-thumbs button{border-color:#334155;background:#202b3a}
+.app-shell.dark-mode .modal-backdrop{background:#030712b8}
+.app-shell.dark-mode .toast{border-color:#3a475b;background:#101823;color:#fff}

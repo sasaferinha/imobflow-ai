@@ -6,6 +6,7 @@ import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
 
 const LOCAL_LEADS_KEY = 'imobflow_local_leads';
+const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
 
 type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations';
 type ChatMessage = { id: number; side: 'incoming' | 'outgoing'; text: string };
@@ -14,6 +15,7 @@ type DashboardLead = LeadProfile & { initials: string; intent: string; status: s
 type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
 type LeadFilterGroup = 'goal' | 'temperature' | 'property';
 type LeadMode = 'all' | 'inactive' | 'forgotten' | 'recovery';
+type DashboardSettings = { alerts: boolean; compact: boolean; dark: boolean };
 
 const leadFilterGroups: Array<{ id: LeadFilterGroup; label: string; options: Array<{ id: LeadFilter; label: string }> }> = [
   { id: 'goal', label: 'Interesse', options: [{ id: 'rent', label: 'Aluguel' }, { id: 'buy', label: 'Compra' }] },
@@ -210,7 +212,7 @@ export default function DashboardClient() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | null>(null);
   const [profile, setProfile] = useState({ name: 'Marina Oliveira', company: 'Imobiliária Horizonte' });
-  const [settings, setSettings] = useState({ alerts: true, compact: false });
+  const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: false });
   const [notifications, setNotifications] = useState([
     { id: 1, text: 'Lucas pediu uma visita', unread: true },
     { id: 2, text: 'Novo perfil comercial recebido', unread: true },
@@ -275,6 +277,35 @@ export default function DashboardClient() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, []);
 
+  useEffect(() => {
+    let storedValue: string | null = null;
+    let restoreTimer: number | null = null;
+    try {
+      storedValue = window.localStorage?.getItem(PANEL_SETTINGS_KEY) || null;
+    } catch {
+      // Alguns navegadores incorporados desativam o armazenamento local.
+    }
+    if (!storedValue) {
+      try {
+        const cookie = document.cookie.split('; ').find((item) => item.startsWith(`${PANEL_SETTINGS_KEY}=`));
+        storedValue = cookie ? decodeURIComponent(cookie.slice(PANEL_SETTINGS_KEY.length + 1)) : null;
+      } catch {
+        // Mantém as preferências padrão quando nenhum armazenamento estiver disponível.
+      }
+    }
+    if (storedValue) {
+      try {
+        const stored = JSON.parse(storedValue) as Partial<DashboardSettings>;
+        restoreTimer = window.setTimeout(() => setSettings((current) => ({ ...current, ...stored })), 0);
+      } catch {
+        // Ignora preferências antigas ou corrompidas.
+      }
+    }
+    return () => {
+      if (restoreTimer !== null) window.clearTimeout(restoreTimer);
+    };
+  }, []);
+
   const visibleLeads = useMemo(() => capturedLeads.filter((lead) => {
     const matchesSearch = `${lead.name} ${lead.intent} ${lead.region}`.toLowerCase().includes(leadSearch.toLowerCase());
     const open = lead.lifecycleStatus !== 'Convertido' && lead.lifecycleStatus !== 'Perdido';
@@ -291,6 +322,26 @@ export default function DashboardClient() {
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 2600);
+  }
+
+  function saveSettings(nextSettings: DashboardSettings) {
+    setSettings(nextSettings);
+    try {
+      window.localStorage?.setItem(PANEL_SETTINGS_KEY, JSON.stringify(nextSettings));
+    } catch {
+      // O cookie abaixo mantém a preferência quando o armazenamento local estiver bloqueado.
+    }
+    try {
+      document.cookie = `${PANEL_SETTINGS_KEY}=${encodeURIComponent(JSON.stringify(nextSettings))}; Max-Age=31536000; Path=/; SameSite=Lax`;
+    } catch {
+      // A preferência continua válida durante a sessão atual.
+    }
+  }
+
+  function toggleDarkMode() {
+    const nextSettings = { ...settings, dark: !settings.dark };
+    saveSettings(nextSettings);
+    notify(nextSettings.dark ? 'Modo escuro ativado' : 'Modo claro ativado');
   }
 
   function sendText(text: string) {
@@ -413,7 +464,7 @@ export default function DashboardClient() {
   }
 
   return (
-    <main className={`app-shell ${settings.compact ? 'compact-mode' : ''}`}>
+    <main className={`app-shell ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
       <aside className="sidebar">
         <button type="button" className="brand brand-button" onClick={() => openView('overview')} aria-label="Ir para a visão geral">
           <span className="brand-mark">I</span>
@@ -437,6 +488,7 @@ export default function DashboardClient() {
         <header className="topbar">
           <div><p className="eyebrow">{header.eyebrow}</p><h1>{headerTitle}</h1><p>{header.copy}</p></div>
           <div className="header-actions">
+            <button type="button" className="icon-button theme-toggle" aria-label={settings.dark ? 'Ativar modo claro' : 'Ativar modo escuro'} title={settings.dark ? 'Modo claro' : 'Modo escuro'} aria-pressed={settings.dark} onClick={toggleDarkMode}>{settings.dark ? '☀' : '☾'}</button>
             <div className="notification-wrap">
               <button type="button" className="icon-button" aria-label={`Notificações: ${unreadCount} não lidas`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>♢{settings.alerts && unreadCount > 0 && <i />}</button>
               {notificationsOpen && <div className="notification-menu popover"><div><strong>Notificações</strong><button type="button" onClick={() => setNotifications((items) => items.map((item) => ({ ...item, unread: false })))}>Marcar como lidas</button></div>{notifications.map((item) => <button type="button" className={item.unread ? 'unread' : ''} key={item.id} onClick={() => { setNotifications((items) => items.map((current) => current.id === item.id ? { ...current, unread: false } : current)); notify(item.text); }}><i />{item.text}</button>)}</div>}
@@ -472,9 +524,9 @@ export default function DashboardClient() {
         </div>
       )}
 
-      {selectedProperty && <PropertyDetail property={selectedProperty} close={() => setSelectedProperty(null)} notify={notify} openAgenda={() => openView('agenda')} edit={() => { setEditingProperty(selectedProperty); setPropertyImages(selectedProperty.images); setPropertyModalOpen(true); }} remove={() => removeProperty(selectedProperty)} />}
+      {selectedProperty && <PropertyDetail property={selectedProperty} close={() => setSelectedProperty(null)} notify={notify} openAgenda={() => openView('agenda')} edit={() => { setEditingProperty(selectedProperty); setPropertyImages(selectedProperty.images); setSelectedProperty(null); setPropertyModalOpen(true); }} remove={() => removeProperty(selectedProperty)} />}
       {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
-      {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { setSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
+      {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { saveSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
       {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
       {leadImportOpen && <LeadImportModal close={() => setLeadImportOpen(false)} notify={notify} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads((current) => [...decorated, ...current.filter((lead) => !lead.id.startsWith('seed-') && !decorated.some((item) => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
@@ -777,9 +829,9 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
   </article></div>;
 }
 
-function SettingsModal({ settings, close, save }: { settings:{ alerts:boolean; compact:boolean }; close:()=>void; save:(settings:{ alerts:boolean; compact:boolean })=>void }) {
+function SettingsModal({ settings, close, save }: { settings:DashboardSettings; close:()=>void; save:(settings:DashboardSettings)=>void }) {
   const [draft, setDraft] = useState(settings);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><form className="modal-card" onSubmit={(event) => { event.preventDefault(); save(draft); }} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Preferências</p><h2>Configurações</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><label className="setting-row"><span><strong>Alertas do painel</strong><small>Exibe avisos de leads e visitas.</small></span><input type="checkbox" checked={draft.alerts} onChange={(event) => setDraft((current) => ({ ...current, alerts:event.target.checked }))}/></label><label className="setting-row"><span><strong>Visualização compacta</strong><small>Prepara o painel para maior densidade.</small></span><input type="checkbox" checked={draft.compact} onChange={(event) => setDraft((current) => ({ ...current, compact:event.target.checked }))}/></label><div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="submit" className="primary-button">Salvar configurações</button></div></form></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><form className="modal-card" onSubmit={(event) => { event.preventDefault(); save(draft); }} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Preferências</p><h2>Configurações</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><label className="setting-row"><span><strong>Modo escuro</strong><small>Reduz o brilho e aplica contraste adequado em todo o painel.</small></span><input type="checkbox" checked={draft.dark} onChange={(event) => setDraft((current) => ({ ...current, dark:event.target.checked }))}/></label><label className="setting-row"><span><strong>Alertas do painel</strong><small>Exibe avisos de leads e visitas.</small></span><input type="checkbox" checked={draft.alerts} onChange={(event) => setDraft((current) => ({ ...current, alerts:event.target.checked }))}/></label><label className="setting-row"><span><strong>Visualização compacta</strong><small>Prepara o painel para maior densidade.</small></span><input type="checkbox" checked={draft.compact} onChange={(event) => setDraft((current) => ({ ...current, compact:event.target.checked }))}/></label><div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="submit" className="primary-button">Salvar configurações</button></div></form></div>;
 }
 
 function Agenda({ items, setItems, notify }: { items:AppointmentRecord[]; setItems:Dispatch<SetStateAction<AppointmentRecord[]>>; notify:(message:string)=>void }) {
