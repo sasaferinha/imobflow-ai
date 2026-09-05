@@ -28,3 +28,47 @@ export type AppointmentRecord = {
 };
 
 export type AppointmentInput = Omit<AppointmentRecord, 'id' | 'createdAt'>;
+
+export type SaleRecord = {
+  id: string;
+  date: string;
+  broker: string;
+  property: string;
+  client: string;
+  amount: number;
+  createdAt: string;
+};
+
+export type SaleInput = Omit<SaleRecord, 'id' | 'createdAt'>;
+
+export type BrokerPerformance = {
+  broker: string;
+  goal: number;
+  sold: number;
+  salesCount: number;
+  progress: number;
+};
+
+export type PerformanceSnapshot = {
+  month: string;
+  companyGoal: number;
+  totalSold: number;
+  salesCount: number;
+  averageTicket: number;
+  leadsReceived: number;
+  convertedLeads: number;
+  recoveredLeads: number;
+  conversionRate: number;
+  brokers: BrokerPerformance[];
+  history: Array<{ month: string; sold: number }>;
+  sales: SaleRecord[];
+};
+
+export type PerformanceSettingsInput = {
+  month: string;
+  companyGoal: number;
+  leadsReceived: number;
+  convertedLeads: number;
+  recoveredLeads: number;
+  brokerGoals: Array<{ broker: string; goal: number }>;
+};

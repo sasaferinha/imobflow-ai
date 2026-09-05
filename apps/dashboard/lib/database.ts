@@ -1,7 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import type { LeadInput, LeadProfile } from './leads';
 import { explainProfile, scoreLead } from './leads';
-import type { AppointmentInput, AppointmentRecord, PropertyInput, PropertyRecord } from './operations';
+import type { AppointmentInput, AppointmentRecord, PerformanceSettingsInput, PerformanceSnapshot, PropertyInput, PropertyRecord, SaleInput, SaleRecord } from './operations';
 
 function database() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL não configurada');
@@ -165,6 +165,122 @@ function mapAppointment(row: Record<string, unknown>): AppointmentRecord {
     id: String(row.id), date, time: String(row.appointment_time), name: String(row.name), property: String(row.property),
     broker: String(row.broker), status: row.status === 'Confirmada' ? 'Confirmada' : 'Aguardando', color: String(row.color),
     createdAt: new Date(String(row.created_at)).toISOString(),
+  };
+}
+
+async function ensurePerformanceSchema() {
+  const sql = database();
+  await sql`CREATE TABLE IF NOT EXISTS site_performance_months (
+    month TEXT PRIMARY KEY,
+    company_goal NUMERIC(14,2) NOT NULL DEFAULT 0,
+    leads_received INTEGER NOT NULL DEFAULT 0,
+    converted_leads INTEGER NOT NULL DEFAULT 0,
+    recovered_leads INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+  await sql`CREATE TABLE IF NOT EXISTS site_broker_goals (
+    month TEXT NOT NULL,
+    broker TEXT NOT NULL,
+    goal NUMERIC(14,2) NOT NULL DEFAULT 0,
+    PRIMARY KEY (month, broker)
+  )`;
+  await sql`CREATE TABLE IF NOT EXISTS site_sales (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reference_key TEXT UNIQUE,
+    sale_date DATE NOT NULL,
+    broker TEXT NOT NULL,
+    property TEXT NOT NULL,
+    client TEXT NOT NULL,
+    amount NUMERIC(14,2) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+  await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
+    VALUES ('2026-09', 3000000, 64, 18, 7) ON CONFLICT (month) DO NOTHING`;
+  await sql`INSERT INTO site_broker_goals (month, broker, goal) VALUES
+    ('2026-09', 'Marina Oliveira', 1200000), ('2026-09', 'Paulo Mendes', 1000000), ('2026-09', 'Camila Rocha', 800000)
+    ON CONFLICT (month, broker) DO NOTHING`;
+  await sql`INSERT INTO site_sales (reference_key, sale_date, broker, property, client, amount) VALUES
+    ('history-2026-04', '2026-04-18', 'Marina Oliveira', 'Residencial Alameda', 'Cliente abril', 1420000),
+    ('history-2026-05', '2026-05-21', 'Paulo Mendes', 'Parque Imperial', 'Cliente maio', 1750000),
+    ('history-2026-06', '2026-06-16', 'Camila Rocha', 'Vila do Lago', 'Cliente junho', 1980000),
+    ('history-2026-07', '2026-07-24', 'Marina Oliveira', 'Reserva das Flores', 'Cliente julho', 2210000),
+    ('history-2026-08', '2026-08-27', 'Paulo Mendes', 'Edifício Central', 'Cliente agosto', 2360000),
+    ('sale-marina-aurora', '2026-09-01', 'Marina Oliveira', 'Residencial Aurora', 'Lucas Carvalho', 575000),
+    ('sale-marina-horizonte', '2026-09-02', 'Marina Oliveira', 'Edifício Horizonte', 'Ana Martins', 590000),
+    ('sale-paulo-bosque', '2026-09-03', 'Paulo Mendes', 'Casa Bosque Sereno', 'Rafael Borges', 820000),
+    ('sale-paulo-vila', '2026-09-04', 'Paulo Mendes', 'Casa Vila Verde', 'Bruno Lima', 360000),
+    ('sale-camila-studio', '2026-09-05', 'Camila Rocha', 'Studio Vila Nova', 'Juliana Reis', 295000)
+    ON CONFLICT (reference_key) DO NOTHING`;
+}
+
+export async function getPerformance(month: string): Promise<PerformanceSnapshot> {
+  await ensurePerformanceSchema();
+  const sql = database();
+  await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
+    VALUES (${month}, 3000000, 0, 0, 0) ON CONFLICT (month) DO NOTHING`;
+  const defaultBrokers = ['Marina Oliveira', 'Paulo Mendes', 'Camila Rocha'];
+  for (const broker of defaultBrokers) {
+    await sql`INSERT INTO site_broker_goals (month, broker, goal) VALUES (${month}, ${broker}, 0) ON CONFLICT (month, broker) DO NOTHING`;
+  }
+  const settingsRows = await sql`SELECT company_goal, leads_received, converted_leads, recovered_leads FROM site_performance_months WHERE month=${month}`;
+  const goalRows = await sql`SELECT broker, goal FROM site_broker_goals WHERE month=${month} ORDER BY broker`;
+  const saleRows = await sql`SELECT id, sale_date, broker, property, client, amount, created_at FROM site_sales
+    WHERE TO_CHAR(sale_date, 'YYYY-MM')=${month} ORDER BY sale_date DESC, created_at DESC`;
+  const historyRows = await sql`SELECT TO_CHAR(sale_date, 'YYYY-MM') AS month, SUM(amount) AS sold FROM site_sales
+    WHERE sale_date < ((${month} || '-01')::date + INTERVAL '1 month')
+    GROUP BY TO_CHAR(sale_date, 'YYYY-MM') ORDER BY month DESC LIMIT 6`;
+  const sales = saleRows.map(mapSale);
+  const totalSold = sales.reduce((total, sale) => total + sale.amount, 0);
+  const settings = settingsRows[0];
+  const leadsReceived = Number(settings.leads_received);
+  const convertedLeads = Number(settings.converted_leads);
+  return {
+    month, companyGoal: Number(settings.company_goal), totalSold, salesCount: sales.length,
+    averageTicket: sales.length ? totalSold / sales.length : 0, leadsReceived, convertedLeads,
+    recoveredLeads: Number(settings.recovered_leads), conversionRate: leadsReceived ? (convertedLeads / leadsReceived) * 100 : 0,
+    brokers: goalRows.map((goal) => {
+      const brokerSales = sales.filter((sale) => sale.broker === String(goal.broker));
+      const sold = brokerSales.reduce((total, sale) => total + sale.amount, 0);
+      const target = Number(goal.goal);
+      return { broker: String(goal.broker), goal: target, sold, salesCount: brokerSales.length, progress: target ? (sold / target) * 100 : 0 };
+    }).sort((a, b) => b.sold - a.sold),
+    history: historyRows.map((row) => ({ month: String(row.month), sold: Number(row.sold) })).reverse(), sales,
+  };
+}
+
+export async function createSale(input: SaleInput): Promise<SaleRecord> {
+  await ensurePerformanceSchema();
+  const rows = await database()`INSERT INTO site_sales (sale_date, broker, property, client, amount)
+    VALUES (${input.date}, ${input.broker}, ${input.property}, ${input.client}, ${input.amount})
+    RETURNING id, sale_date, broker, property, client, amount, created_at`;
+  return mapSale(rows[0]);
+}
+
+export async function deleteSale(id: string): Promise<boolean> {
+  await ensurePerformanceSchema();
+  const rows = await database()`DELETE FROM site_sales WHERE id=${id} RETURNING id`;
+  return rows.length > 0;
+}
+
+export async function updatePerformanceSettings(input: PerformanceSettingsInput) {
+  await ensurePerformanceSchema();
+  const sql = database();
+  await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
+    VALUES (${input.month}, ${input.companyGoal}, ${input.leadsReceived}, ${input.convertedLeads}, ${input.recoveredLeads})
+    ON CONFLICT (month) DO UPDATE SET company_goal=EXCLUDED.company_goal, leads_received=EXCLUDED.leads_received,
+      converted_leads=EXCLUDED.converted_leads, recovered_leads=EXCLUDED.recovered_leads, updated_at=NOW()`;
+  for (const item of input.brokerGoals) {
+    await sql`INSERT INTO site_broker_goals (month, broker, goal) VALUES (${input.month}, ${item.broker}, ${item.goal})
+      ON CONFLICT (month, broker) DO UPDATE SET goal=EXCLUDED.goal`;
+  }
+  return getPerformance(input.month);
+}
+
+function mapSale(row: Record<string, unknown>): SaleRecord {
+  const date = row.sale_date instanceof Date ? row.sale_date.toISOString().slice(0, 10) : String(row.sale_date).slice(0, 10);
+  return {
+    id: String(row.id), date, broker: String(row.broker), property: String(row.property), client: String(row.client),
+    amount: Number(row.amount), createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }
 

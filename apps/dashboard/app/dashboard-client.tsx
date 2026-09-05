@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import type { LeadProfile } from '@/lib/leads';
-import type { AppointmentRecord, PropertyRecord } from '@/lib/operations';
+import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
 
 const LOCAL_LEADS_KEY = 'imobflow_local_leads';
 
@@ -114,6 +114,16 @@ async function preparePropertyImage(file: File) {
   const image = canvas.toDataURL('image/webp', 0.78);
   if (image.length > 700_000) throw new Error(`${file.name}: a imagem ficou muito pesada. Use uma foto menor.`);
   return image;
+}
+
+const money = new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL', maximumFractionDigits:0 });
+const compactMoney = new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL', notation:'compact', maximumFractionDigits:1 });
+
+async function loadPerformance(month: string) {
+  const response = await fetch(`/api/performance?month=${month}`);
+  const result = await response.json() as { data?:PerformanceSnapshot; error?:string };
+  if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível carregar os indicadores.');
+  return result.data;
 }
 
 export default function DashboardClient() {
@@ -336,7 +346,7 @@ export default function DashboardClient() {
           </div>
         </header>
 
-        {view === 'overview' && <Overview leadCount={capturedLeads.length} qualifiedCount={capturedLeads.filter((lead) => lead.score >= 60).length} hotLeadCount={capturedLeads.filter((lead) => lead.temperature.toLowerCase().includes('quente')).length} propertyCount={properties.length} visitCount={appointments.length} onOpen={() => openView('conversations')} onActivity={() => openView('leads')} notify={notify} sendText={sendText} />}
+        {view === 'overview' && <Overview notify={notify} />}
         {view === 'conversations' && <Conversations messages={messages} draft={draft} setDraft={setDraft} sendMessage={sendMessage} notify={notify} openAgenda={() => openView('agenda')} />}
         {view === 'leads' && <><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} />}
@@ -371,34 +381,110 @@ export default function DashboardClient() {
   );
 }
 
-function Overview({ leadCount, qualifiedCount, hotLeadCount, propertyCount, visitCount, onOpen, onActivity, notify, sendText }: { leadCount:number; qualifiedCount:number; hotLeadCount:number; propertyCount:number; visitCount:number; onOpen: () => void; onActivity: () => void; notify: (message: string) => void; sendText: (text: string) => boolean }) {
-  const [quickDraft, setQuickDraft] = useState('');
-  const [following, setFollowing] = useState(false);
-  const metrics = [
-    { label: 'Leads', value: String(leadCount).padStart(2, '0'), change: 'Base cadastrada', tone: 'violet' },
-    { label: 'Qualificados', value: String(qualifiedCount).padStart(2, '0'), change: 'Prioridade 60+', tone: 'mint' },
-    { label: 'Visitas marcadas', value: String(visitCount).padStart(2, '0'), change: 'Agenda atual', tone: 'amber' },
-    { label: 'Leads quentes', value: String(hotLeadCount).padStart(2, '0'), change: 'Atendimento prioritário', tone: 'blue' },
-  ];
-  const activity = [
-    { initials: 'LC', name: 'Lucas Carvalho', detail: 'Solicitou visita • Residencial Aurora', time: '2 min', tag: 'Muito quente' },
-    { initials: 'AM', name: 'Ana Martins', detail: '3 imóveis recomendados no Jardim Floresta', time: '8 min', tag: 'Qualificado' },
-    { initials: 'RB', name: 'Rafael Borges', detail: 'Pediu para falar com um corretor', time: '14 min', tag: 'Encaminhado' },
-  ];
-  function submitQuick(event: FormEvent) {
+function Overview({ notify }: { notify:(message:string)=>void }) {
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
+  const [modal, setModal] = useState<'sale' | 'goals' | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    loadPerformance(month).then((data) => {
+      if (active) {
+        setPerformance(data);
+        setLoadError(null);
+      }
+    }).catch((error) => active && setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os indicadores.')).finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [month]);
+
+  async function refresh() {
+    const data = await loadPerformance(month);
+    setPerformance(data);
+  }
+
+  async function registerSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (sendText(quickDraft)) {
-      setQuickDraft('');
-      notify('Mensagem adicionada à conversa');
-      onOpen();
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch('/api/performance', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:form.get('date'), broker:form.get('broker'), property:form.get('property'), client:form.get('client'), amount:Number(form.get('amount')) }) });
+      const result = await response.json() as { error?:string };
+      if (!response.ok) throw new Error(result.error || 'Não foi possível registrar a venda.');
+      await refresh();
+      setModal(null);
+      notify('Venda registrada no resultado da equipe');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível registrar a venda.');
     }
   }
+
+  async function saveGoals(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!performance) return;
+    const form = new FormData(event.currentTarget);
+    const brokerGoals = performance.brokers.map((broker,index) => ({ broker:broker.broker, goal:Number(form.get(`broker-goal-${index}`)) }));
+    try {
+      const response = await fetch('/api/performance', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ month, companyGoal:Number(form.get('companyGoal')), leadsReceived:Number(form.get('leadsReceived')), convertedLeads:Number(form.get('convertedLeads')), recoveredLeads:Number(form.get('recoveredLeads')), brokerGoals }) });
+      const result = await response.json() as { data?:PerformanceSnapshot; error?:string };
+      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível atualizar as metas.');
+      setPerformance(result.data);
+      setModal(null);
+      notify('Metas e indicadores atualizados');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível atualizar as metas.');
+    }
+  }
+
+  async function removeSale(id: string) {
+    if (!window.confirm('Excluir este registro de venda?')) return;
+    try {
+      const response = await fetch(`/api/performance/sales/${id}`, { method:'DELETE' });
+      if (!response.ok) throw new Error('Não foi possível excluir a venda.');
+      await refresh();
+      notify('Venda removida do resultado');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível excluir a venda.');
+    }
+  }
+
+  if (loading && !performance) return <div className="performance-loading panel">Carregando indicadores comerciais...</div>;
+  if (!performance) return <div className="performance-loading panel">{loadError || 'Os indicadores não estão disponíveis neste momento.'}</div>;
+
+  const goalProgress = performance.companyGoal ? Math.min(100, (performance.totalSold / performance.companyGoal) * 100) : 0;
+  const remaining = Math.max(0, performance.companyGoal - performance.totalSold);
+  const historyMax = Math.max(...performance.history.map((item) => item.sold), 1);
+  const monthTitle = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(`${month}-01T12:00:00Z`));
+  const defaultSaleDate = month === new Date().toISOString().slice(0, 7) ? new Date().toISOString().slice(0, 10) : `${month}-01`;
+
   return <>
-    <div className="metric-grid">{metrics.map((metric) => <article className={`metric-card ${metric.tone}`} key={metric.label}><div className="metric-icon">{metric.label.charAt(0)}</div><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.change}</small></article>)}</div>
-    <div className="main-grid"><div className="content-column">
-      <article className="panel pipeline-panel"><div className="panel-heading"><div><p className="eyebrow">Dados operacionais</p><h2>Visão atual da operação</h2></div><span className="period-filter">Atualização automática</span></div><div className="pipeline"><div className="pipeline-step step-one"><strong>{leadCount}</strong><span>Contatos cadastrados</span></div><div className="pipeline-step step-two"><strong>{qualifiedCount}</strong><span>Alta prioridade</span></div><div className="pipeline-step step-three"><strong>{propertyCount}</strong><span>Imóveis disponíveis</span></div><div className="pipeline-step step-four"><strong>{visitCount}</strong><span>Visitas agendadas</span></div></div></article>
-      <article className="panel activity-panel"><div className="panel-heading"><div><p className="eyebrow">Acontecendo agora</p><h2>Atividade recente</h2></div><button type="button" onClick={onActivity}>Ver todos →</button></div><div className="activity-list">{activity.map((item,index)=><button type="button" className="activity-row activity-button" onClick={() => { notify(`${item.name}: ${item.detail}`); onActivity(); }} key={item.name}><span className={`lead-avatar avatar-${index}`}>{item.initials}</span><span className="activity-copy"><strong>{item.name}</strong><span>{item.detail}</span></span><span className={`status-tag status-${index}`}>{item.tag}</span><time>{item.time}</time></button>)}</div></article>
-    </div><aside className="conversation-card"><div className="conversation-head"><span className="lead-avatar avatar-0">LC</span><div><strong>Lucas Carvalho</strong><span><i /> online agora</span></div><button type="button" className={following ? 'conversation-following' : ''} aria-label={following ? 'Remover acompanhamento' : 'Acompanhar conversa'} onClick={() => { setFollowing((active) => !active); notify(following ? 'Acompanhamento removido' : 'Conversa marcada para acompanhamento'); }}>{following ? '✓' : '•••'}</button></div><div className="lead-signal"><div><span>Prioridade comercial</span><strong>86<small>/100</small></strong></div><span className="hot-pill">Muito quente</span></div><div className="chat-area"><span className="chat-date">Hoje, 10:42</span><div className="bubble incoming">Oi! Estou procurando um apartamento de 3 quartos no Centro.</div><div className="bubble outgoing">Olá, Lucas. Qual valor máximo você pretende investir?</div><div className="bubble incoming">Até 600 mil. Pode ser financiamento.</div><div className="typing"><i/><i/><i/></div></div><form className="chat-composer" onSubmit={submitQuick}><input id="overview-attachment" className="visually-hidden" type="file" onChange={(event) => event.target.files?.[0] && notify(`Anexo selecionado: ${event.target.files[0].name}`)}/><button type="button" aria-label="Anexar arquivo" onClick={() => document.getElementById('overview-attachment')?.click()}>＋</button><input value={quickDraft} onChange={(event) => setQuickDraft(event.target.value)} aria-label="Mensagem rápida" placeholder="Escreva uma mensagem..."/><button className="send-button" type="submit" aria-label="Enviar mensagem">➜</button></form><button type="button" className="simulate-button" onClick={onOpen}>Abrir conversa completa</button></aside></div>
+    <section className="performance-toolbar"><div><span className="performance-live"><i/> Dados atualizados</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setLoadError(null); setMonth(event.target.value); }} /></label><button type="button" onClick={() => setModal('goals')}>Editar metas</button><button type="button" className="primary-button" onClick={() => setModal('sale')}>＋ Registrar venda</button></div></section>
+
+    <section className="company-goal-card">
+      <div className="company-goal-copy"><p>Meta mensal da imobiliária</p><strong>{money.format(performance.totalSold)}</strong><span>de {money.format(performance.companyGoal)}</span></div>
+      <div className="goal-progress"><div><span style={{ width:`${goalProgress}%` }}/></div><p><strong>{goalProgress.toFixed(1)}%</strong> da meta alcançada</p></div>
+      <div className="goal-side"><span>Falta para a meta</span><strong>{money.format(remaining)}</strong><small>{performance.salesCount} {performance.salesCount === 1 ? 'venda registrada' : 'vendas registradas'}</small></div>
+    </section>
+
+    <section className="performance-kpis">
+      <article><span>VGV vendido</span><strong>{compactMoney.format(performance.totalSold)}</strong><small>Resultado da empresa</small></article>
+      <article><span>Ticket médio</span><strong>{compactMoney.format(performance.averageTicket)}</strong><small>Por negócio fechado</small></article>
+      <article><span>Leads convertidos</span><strong>{performance.convertedLeads}</strong><small>{performance.conversionRate.toFixed(1)}% de conversão</small></article>
+      <article><span>Leads recuperados</span><strong>{performance.recoveredLeads}</strong><small>Retomados e convertidos</small></article>
+      <article><span>Leads recebidos</span><strong>{performance.leadsReceived}</strong><small>No período selecionado</small></article>
+    </section>
+
+    <section className="performance-grid">
+      <article className="panel broker-performance"><div className="panel-heading"><div><p className="eyebrow">Equipe comercial</p><h2>Desempenho por corretor</h2></div><span>VGV e metas individuais</span></div><div className="broker-table"><div className="broker-row broker-head"><span>Corretor</span><span>Vendido</span><span>Meta</span><span>Negócios</span><span>Progresso</span></div>{performance.brokers.map((broker,index) => <div className="broker-row" key={broker.broker}><span className="broker-name"><i className={`avatar-${index}`}>{broker.broker.split(' ').slice(0,2).map((part) => part[0]).join('')}</i><b>{broker.broker}<small>{index === 0 ? 'Líder do mês' : 'Equipe comercial'}</small></b></span><strong>{compactMoney.format(broker.sold)}</strong><span>{compactMoney.format(broker.goal)}</span><span>{broker.salesCount}</span><span className="broker-progress"><i><b style={{ width:`${Math.min(100, broker.progress)}%` }}/></i><em>{broker.progress.toFixed(0)}%</em></span></div>)}</div></article>
+
+      <article className="panel sales-history"><div className="panel-heading"><div><p className="eyebrow">Evolução comercial</p><h2>Vendas nos últimos meses</h2></div></div><div className="history-chart">{performance.history.map((item) => <div key={item.month}><span>{compactMoney.format(item.sold)}</span><i><b style={{ height:`${Math.max(8, (item.sold / historyMax) * 100)}%` }}/></i><small>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</small></div>)}</div></article>
+    </section>
+
+    <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Vendas registradas</h2></div><strong>{money.format(performance.totalSold)} no período</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}</span><b>{money.format(sale.amount)}</b><button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button></div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
+
+    {modal === 'sale' && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card" onSubmit={registerSale} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Resultado comercial</p><h2>Registrar venda</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><div className="form-grid"><label>Data<input name="date" type="date" defaultValue={defaultSaleDate} required /></label><label>Corretor<select name="broker" required>{performance.brokers.map((broker) => <option key={broker.broker}>{broker.broker}</option>)}</select></label></div><label>Cliente<input name="client" placeholder="Nome do comprador" required /></label><label>Imóvel<input name="property" placeholder="Imóvel vendido" required /></label><label>Valor da venda<input name="amount" type="number" min="1" step="1000" placeholder="575000" required /></label><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Registrar venda</button></div></form></div>}
+
+    {modal === 'goals' && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card performance-settings-modal" onSubmit={saveGoals} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Planejamento mensal</p><h2>Metas e conversão</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><label>Meta da imobiliária<input name="companyGoal" type="number" min="0" step="10000" defaultValue={performance.companyGoal} required /></label><div className="form-grid"><label>Leads recebidos<input name="leadsReceived" type="number" min="0" defaultValue={performance.leadsReceived} required /></label><label>Leads convertidos<input name="convertedLeads" type="number" min="0" defaultValue={performance.convertedLeads} required /></label></div><label>Leads recuperados<input name="recoveredLeads" type="number" min="0" defaultValue={performance.recoveredLeads} required /></label><div className="broker-goal-fields"><strong>Metas individuais</strong>{performance.brokers.map((broker,index) => <label key={broker.broker}>{broker.broker}<input name={`broker-goal-${index}`} type="number" min="0" step="10000" defaultValue={broker.goal} required /></label>)}</div><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar indicadores</button></div></form></div>}
   </>;
 }
 
