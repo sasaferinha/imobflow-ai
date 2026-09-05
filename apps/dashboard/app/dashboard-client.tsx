@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- previews use locally compressed data URLs */
 
 import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react';
-import type { LeadProfile } from '@/lib/leads';
+import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
 
 const LOCAL_LEADS_KEY = 'imobflow_local_leads';
@@ -13,6 +13,7 @@ type Property = PropertyRecord;
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
 type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
 type LeadFilterGroup = 'goal' | 'temperature' | 'property';
+type LeadMode = 'all' | 'inactive' | 'forgotten' | 'recovery';
 
 const leadFilterGroups: Array<{ id: LeadFilterGroup; label: string; options: Array<{ id: LeadFilter; label: string }> }> = [
   { id: 'goal', label: 'Interesse', options: [{ id: 'rent', label: 'Aluguel' }, { id: 'buy', label: 'Compra' }] },
@@ -39,10 +40,10 @@ const headers: Record<View, { eyebrow: string; title: string; copy: string }> = 
 };
 
 const seedLeadProfiles: LeadProfile[] = [
-  { id: 'seed-lucas', name: 'Lucas Carvalho', phone: '(35) 99992-4120', email: 'lucas@exemplo.com', goal: 'Comprar', propertyType: 'Apartamento', region: 'Centro', budget: 'R$ 300 mil a R$ 600 mil', details: '3 quartos e possibilidade de financiamento.', summary: 'Lucas deseja comprar um apartamento no Centro, com orçamento entre R$ 300 mil e R$ 600 mil.', score: 86, temperature: 'Muito quente', createdAt: '2026-09-01T10:42:00.000Z' },
-  { id: 'seed-ana', name: 'Ana Martins', phone: '(35) 98814-2031', email: 'ana@exemplo.com', goal: 'Comprar', propertyType: 'Apartamento', region: 'Jardim Floresta', budget: 'R$ 600 mil a R$ 1 milhão', details: 'Prefere varanda e duas vagas.', summary: 'Ana procura um apartamento no Jardim Floresta com varanda e duas vagas.', score: 74, temperature: 'Quente', createdAt: '2026-09-01T10:31:00.000Z' },
-  { id: 'seed-rafael', name: 'Rafael Borges', phone: '(35) 97751-0928', email: null, goal: 'Alugar', propertyType: 'Casa', region: 'Vila Nova', budget: 'Aluguel até R$ 3 mil/mês', details: 'Precisa aceitar pet.', summary: 'Rafael deseja alugar uma casa na Vila Nova por até R$ 3 mil mensais.', score: 61, temperature: 'Quente', createdAt: '2026-09-01T10:08:00.000Z' },
-  { id: 'seed-carla', name: 'Carla Souza', phone: '(35) 96632-7744', email: null, goal: 'Investir', propertyType: 'Terreno', region: 'Reserva Sul', budget: 'Até R$ 300 mil', details: null, summary: 'Carla busca um terreno na Reserva Sul para investimento.', score: 48, temperature: 'Morno', createdAt: '2026-09-01T09:42:00.000Z' },
+  { id: 'seed-lucas', name: 'Lucas Carvalho', phone: '(35) 99992-4120', email: 'lucas@exemplo.com', goal: 'Comprar', propertyType: 'Apartamento', region: 'Centro', budget: 'R$ 300 mil a R$ 600 mil', details: '3 quartos e possibilidade de financiamento.', summary: 'Lucas deseja comprar um apartamento no Centro, com orçamento entre R$ 300 mil e R$ 600 mil.', score: 96, temperature: 'Muito quente', source: 'Base demonstrativa', assignedTo: 'Marina Oliveira', lifecycleStatus: 'Proposta', lastContactAt: '2026-09-03T13:30:00.000Z', inactivityDays: 2, recoveryPotential: 'Baixo', scoreReasons: ['Telefone disponível', 'Objetivo definido', 'Orçamento informado', 'Proposta em andamento'], recoverySelected: false, createdAt: '2026-09-01T10:42:00.000Z' },
+  { id: 'seed-ana', name: 'Ana Martins', phone: '(35) 98814-2031', email: 'ana@exemplo.com', goal: 'Comprar', propertyType: 'Apartamento', region: 'Jardim Floresta', budget: 'R$ 600 mil a R$ 1 milhão', details: 'Prefere varanda e duas vagas.', summary: 'Ana procura um apartamento no Jardim Floresta com varanda e duas vagas.', score: 75, temperature: 'Quente', source: 'Portal imobiliário', assignedTo: 'Marina Oliveira', lifecycleStatus: 'Em atendimento', lastContactAt: '2026-07-15T14:00:00.000Z', inactivityDays: 52, recoveryPotential: 'Alto', scoreReasons: ['Perfil completo', 'Sem contato há 52 dias'], recoverySelected: true, createdAt: '2026-07-10T10:31:00.000Z' },
+  { id: 'seed-rafael', name: 'Rafael Borges', phone: '(35) 97751-0928', email: null, goal: 'Alugar', propertyType: 'Casa', region: 'Vila Nova', budget: 'Aluguel até R$ 3 mil/mês', details: 'Precisa aceitar pet.', summary: 'Rafael deseja alugar uma casa na Vila Nova por até R$ 3 mil mensais.', score: 67, temperature: 'Quente', source: 'Indicação', assignedTo: 'Paulo Mendes', lifecycleStatus: 'Novo', lastContactAt: '2026-05-20T09:00:00.000Z', inactivityDays: 108, recoveryPotential: 'Alto', scoreReasons: ['Telefone disponível', 'Objetivo definido', 'Inativo há 108 dias'], recoverySelected: false, createdAt: '2026-05-18T10:08:00.000Z' },
+  { id: 'seed-carla', name: 'Carla Souza', phone: '(35) 96632-7744', email: null, goal: 'Investir', propertyType: 'Terreno', region: 'Reserva Sul', budget: 'Até R$ 300 mil', details: null, summary: 'Carla busca um terreno na Reserva Sul para investimento.', score: 52, temperature: 'Morno', source: 'Planilha antiga', assignedTo: null, lifecycleStatus: 'Novo', lastContactAt: null, inactivityDays: null, recoveryPotential: 'Médio', scoreReasons: ['Telefone disponível', 'Sem histórico de contato'], recoverySelected: false, createdAt: '2026-04-09T09:42:00.000Z' },
 ];
 
 function decorateLead(lead: LeadProfile, index: number): DashboardLead {
@@ -116,6 +117,67 @@ async function preparePropertyImage(file: File) {
   return image;
 }
 
+function parseCsvLine(line: string, separator: string) {
+  const cells: string[] = [];
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') {
+      if (quoted && line[index + 1] === '"') { value += '"'; index += 1; }
+      else quoted = !quoted;
+    } else if (character === separator && !quoted) {
+      cells.push(value.trim()); value = '';
+    } else value += character;
+  }
+  cells.push(value.trim());
+  return cells;
+}
+
+function normalizeCsvHeader(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function parseImportedDate(value: string) {
+  if (!value) return null;
+  const brazilian = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const normalized = brazilian ? `${brazilian[3]}-${brazilian[2]}-${brazilian[1]}T12:00:00.000Z` : value;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function parseLeadCsv(text: string) {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) throw new Error('O arquivo precisa ter cabeçalho e pelo menos uma linha de dados.');
+  const separator = (lines[0].match(/;/g) || []).length >= (lines[0].match(/,/g) || []).length ? ';' : ',';
+  const headers = parseCsvLine(lines[0], separator).map(normalizeCsvHeader);
+  const aliases: Record<string, string[]> = {
+    name: ['nome', 'name', 'lead', 'cliente'], phone: ['telefone', 'phone', 'celular', 'whatsapp'], email: ['email'],
+    goal: ['objetivo', 'interesse', 'intencao', 'goal'], propertyType: ['tipoimovel', 'tipodeimovel', 'imovel', 'tipo'],
+    region: ['regiao', 'bairro', 'cidade'], budget: ['orcamento', 'faixa', 'valor', 'budget'], details: ['detalhes', 'observacoes', 'notas'],
+    source: ['origem', 'source', 'canal'], assignedTo: ['corretor', 'responsavel', 'assignedto'], lifecycleStatus: ['status', 'etapa', 'lifecycle'],
+    lastContactAt: ['ultimocontato', 'dataultimocontato', 'lastcontact', 'lastcontactat'],
+  };
+  const column = (key: string) => headers.findIndex((header) => aliases[key].includes(header));
+  const indexes = Object.fromEntries(Object.keys(aliases).map((key) => [key, column(key)]));
+  if (indexes.name < 0 || (indexes.phone < 0 && indexes.email < 0)) throw new Error('Inclua as colunas Nome e Telefone ou E-mail.');
+  const statuses: LeadLifecycleStatus[] = ['Novo', 'Em atendimento', 'Visita', 'Proposta', 'Convertido', 'Perdido'];
+  const read = (cells: string[], key: string) => indexes[key] >= 0 ? cells[indexes[key]] || '' : '';
+  return lines.slice(1).slice(0, 500).map((line) => {
+    const cells = parseCsvLine(line, separator);
+    const rawStatus = read(cells, 'lifecycleStatus');
+    const lifecycleStatus = statuses.find((status) => normalizeCsvHeader(status) === normalizeCsvHeader(rawStatus)) || 'Novo';
+    return {
+      name: read(cells, 'name'), phone: read(cells, 'phone'), email: read(cells, 'email') || null,
+      goal: read(cells, 'goal') || 'Não informado', propertyType: read(cells, 'propertyType') || 'Não informado',
+      region: read(cells, 'region') || 'Não informado', budget: read(cells, 'budget') || 'Não informado',
+      details: read(cells, 'details') || null, source: read(cells, 'source') || 'Importação CSV',
+      assignedTo: read(cells, 'assignedTo') || null, lifecycleStatus,
+      lastContactAt: parseImportedDate(read(cells, 'lastContactAt')),
+    };
+  }).filter((lead) => lead.name && (lead.phone || lead.email));
+}
+
 const money = new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL', maximumFractionDigits:0 });
 const compactMoney = new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL', notation:'compact', maximumFractionDigits:1 });
 
@@ -132,6 +194,8 @@ export default function DashboardClient() {
   const [draft, setDraft] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
   const [leadFilters, setLeadFilters] = useState<LeadFilter[]>([]);
+  const [leadMode, setLeadMode] = useState<LeadMode>('all');
+  const [leadImportOpen, setLeadImportOpen] = useState(false);
   const [properties, setProperties] = useState(initialProperties);
   const [propertySearch, setPropertySearch] = useState('');
   const [propertyModalOpen, setPropertyModalOpen] = useState(false);
@@ -160,7 +224,8 @@ export default function DashboardClient() {
     const finishLoading = (remoteLeads: LeadProfile[]) => {
       try {
         const stored = JSON.parse(window.localStorage.getItem(LOCAL_LEADS_KEY) || '[]') as LeadProfile[];
-        const unique = [...remoteLeads, ...stored, ...seedLeadProfiles].filter((lead, index, all) => all.findIndex((item) => item.id === lead.id) === index);
+        const available = [...remoteLeads, ...stored];
+        const unique = (available.length ? available : seedLeadProfiles).filter((lead, index, all) => all.findIndex((item) => item.id === lead.id) === index);
         const combined = unique.map(decorateLead);
         if (active) {
           setCapturedLeads(combined);
@@ -203,6 +268,7 @@ export default function DashboardClient() {
         setNotificationsOpen(false);
         setProfileOpen(false);
         setUtilityModal(null);
+        setLeadImportOpen(false);
       }
     }
     window.addEventListener('keydown', closeOnEscape);
@@ -211,8 +277,13 @@ export default function DashboardClient() {
 
   const visibleLeads = useMemo(() => capturedLeads.filter((lead) => {
     const matchesSearch = `${lead.name} ${lead.intent} ${lead.region}`.toLowerCase().includes(leadSearch.toLowerCase());
-    return matchesSearch && matchesLeadFilters(lead, leadFilters);
-  }), [capturedLeads, leadFilters, leadSearch]);
+    const open = lead.lifecycleStatus !== 'Convertido' && lead.lifecycleStatus !== 'Perdido';
+    const matchesMode = leadMode === 'all'
+      || (leadMode === 'inactive' && open && (lead.inactivityDays === null || lead.inactivityDays >= 30))
+      || (leadMode === 'forgotten' && open && (lead.inactivityDays === null || lead.inactivityDays >= 60))
+      || (leadMode === 'recovery' && open && lead.recoveryPotential !== 'Baixo');
+    return matchesSearch && matchesMode && matchesLeadFilters(lead, leadFilters);
+  }), [capturedLeads, leadFilters, leadMode, leadSearch]);
   const header = headers[view];
   const headerTitle = view === 'overview' ? `Bom dia, ${profile.name.split(/\s+/)[0]}` : header.title;
   const unreadCount = notifications.filter((item) => item.unread).length;
@@ -235,6 +306,33 @@ export default function DashboardClient() {
   function sendMessage(event: FormEvent) {
     event.preventDefault();
     if (sendText(draft)) setDraft('');
+  }
+
+  function replaceLead(updated: LeadProfile) {
+    const decorated = decorateLead(updated, capturedLeads.findIndex((lead) => lead.id === updated.id));
+    setCapturedLeads((current) => current.map((lead) => lead.id === updated.id ? decorated : lead));
+    setSelectedLead(decorated);
+  }
+
+  async function updateLead(lead: DashboardLead, changes: Partial<Pick<LeadProfile, 'lifecycleStatus' | 'lastContactAt' | 'recoverySelected' | 'assignedTo'>>) {
+    const optimistic = { ...lead, ...changes };
+    if (lead.id.startsWith('seed-')) {
+      replaceLead(optimistic);
+      notify('Lead demonstrativo atualizado no painel');
+      return;
+    }
+    try {
+      const response = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lifecycleStatus: optimistic.lifecycleStatus, lastContactAt: optimistic.lastContactAt, recoverySelected: optimistic.recoverySelected, assignedTo: optimistic.assignedTo }),
+      });
+      const result = await response.json() as { data?: LeadProfile; error?: string };
+      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível atualizar o lead.');
+      replaceLead(result.data);
+      notify('Lead atualizado');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível atualizar o lead.');
+    }
   }
 
   async function saveProperty(event: FormEvent<HTMLFormElement>) {
@@ -349,7 +447,7 @@ export default function DashboardClient() {
 
         {view === 'overview' && <Overview notify={notify} />}
         {view === 'conversations' && <Conversations messages={messages} draft={draft} setDraft={setDraft} sendMessage={sendMessage} notify={notify} openAgenda={() => openView('agenda')} />}
-        {view === 'leads' && <><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} /></>}
+        {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} onUpdate={updateLead} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} />}
         {view === 'automations' && <Automations notify={notify} />}
@@ -378,6 +476,7 @@ export default function DashboardClient() {
       {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { setSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
       {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
+      {leadImportOpen && <LeadImportModal close={() => setLeadImportOpen(false)} notify={notify} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads((current) => [...decorated, ...current.filter((lead) => !lead.id.startsWith('seed-') && !decorated.some((item) => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
     </main>
   );
@@ -509,6 +608,72 @@ function Conversations({ messages, draft, setDraft, sendMessage, notify, openAge
   </div>;
 }
 
+function LeadIntelligenceCenter({ leads, mode, onMode, onImport }: { leads: DashboardLead[]; mode: LeadMode; onMode: (mode: LeadMode) => void; onImport: () => void }) {
+  const openLeads = leads.filter((lead) => !['Convertido', 'Perdido'].includes(lead.lifecycleStatus));
+  const inactive = openLeads.filter((lead) => lead.inactivityDays === null || lead.inactivityDays >= 30);
+  const forgotten = openLeads.filter((lead) => lead.inactivityDays === null || lead.inactivityDays >= 60);
+  const high = openLeads.filter((lead) => lead.recoveryPotential === 'Alto');
+  const medium = openLeads.filter((lead) => lead.recoveryPotential === 'Médio');
+  const estimatedRecovery = Math.min(openLeads.length, Math.round(high.length * .3 + medium.length * .15));
+  const completeness = leads.length ? Math.round(leads.reduce((total, lead) => total + [lead.phone, lead.email, lead.goal !== 'Não informado', lead.propertyType !== 'Não informado', lead.region !== 'Não informado', lead.budget !== 'Não informado', lead.lastContactAt].filter(Boolean).length / 7, 0) / leads.length * 100) : 0;
+  const selected = leads.filter((lead) => lead.recoverySelected).length;
+
+  const cards: Array<{ id: LeadMode; label: string; value: number; detail: string; tone: string }> = [
+    { id: 'all', label: 'Base diagnosticada', value: leads.length, detail: `${completeness}% de completude média`, tone: 'blue' },
+    { id: 'inactive', label: 'Leads inativos', value: inactive.length, detail: '30 dias ou sem contato', tone: 'amber' },
+    { id: 'forgotten', label: 'Oportunidades esquecidas', value: forgotten.length, detail: '60 dias sem avanço', tone: 'slate' },
+    { id: 'recovery', label: 'Potencial de recuperação', value: high.length + medium.length, detail: `estimativa de ${estimatedRecovery} retomadas`, tone: 'green' },
+  ];
+
+  return <section className="lead-intelligence">
+    <div className="lead-intelligence-head"><div><p className="eyebrow">Inteligência da base</p><h2>Diagnóstico e recuperação</h2><p>Encontre oportunidades paradas antes de iniciar qualquer automação.</p></div><div><span>{selected} na carteira de recuperação</span><button type="button" className="primary-button" onClick={onImport}>＋ Importar base</button></div></div>
+    <div className="lead-diagnostic-grid">{cards.map((card) => <button type="button" className={`lead-diagnostic-card ${card.tone} ${mode === card.id ? 'active' : ''}`} onClick={() => onMode(card.id)} key={card.id}><span>{card.label}</span><strong>{card.value}</strong><small>{card.detail}</small><i>Ver leads →</i></button>)}</div>
+    <div className="lead-diagnosis-note"><span>Diagnóstico</span><p>{leads.length === 0 ? 'Importe uma base para iniciar a análise.' : inactive.length === 0 ? 'A base está ativa e não há oportunidades paradas no momento.' : `${Math.round(inactive.length / Math.max(openLeads.length, 1) * 100)}% da carteira aberta está inativa. Priorize os ${high.length} leads de alto potencial, revise dados ausentes e só depois programe reativação.`}</p><button type="button" onClick={() => onMode(mode === 'all' ? 'recovery' : 'all')}>{mode === 'all' ? 'Abrir oportunidades' : 'Voltar à base completa'}</button></div>
+  </section>;
+}
+
+function LeadImportModal({ close, notify, onImported }: { close: () => void; notify: (message: string) => void; onImported: (leads: LeadProfile[]) => void }) {
+  const [fileName, setFileName] = useState('');
+  const [preview, setPreview] = useState<ReturnType<typeof parseLeadCsv>>([]);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function chooseFile(file: File | undefined) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv') || file.size > 5_000_000) { setError('Selecione um CSV de até 5 MB.'); return; }
+    try {
+      const leads = parseLeadCsv(await file.text());
+      if (leads.length === 0) throw new Error('Nenhum lead válido foi encontrado no arquivo.');
+      setFileName(file.name); setPreview(leads); setError(null);
+    } catch (reason) {
+      setPreview([]); setFileName(''); setError(reason instanceof Error ? reason.message : 'Não foi possível ler o CSV.');
+    }
+  }
+
+  function downloadTemplate() {
+    const content = 'Nome;Telefone;Email;Objetivo;Tipo de imóvel;Região;Orçamento;Último contato;Status;Origem;Corretor;Observações\nAna Souza;(35) 99999-0000;ana@exemplo.com;Comprar;Apartamento;Centro;Até R$ 600 mil;15/07/2026;Em atendimento;Portal;Marina Oliveira;Prefere varanda';
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'modelo-leads-imobflow.csv'; link.click(); URL.revokeObjectURL(url);
+  }
+
+  async function submit() {
+    if (!preview.length) return;
+    setImporting(true);
+    try {
+      const response = await fetch('/api/leads/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leads: preview }) });
+      const result = await response.json() as { data?: { imported: number; skipped: number; leads: LeadProfile[] }; error?: string };
+      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível importar a base.');
+      onImported(result.data.leads);
+      notify(`${result.data.imported} leads importados${result.data.skipped ? ` e ${result.data.skipped} duplicados ignorados` : ''}`);
+      close();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível importar a base.');
+    } finally { setImporting(false); }
+  }
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className="modal-card lead-import-modal" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Entrada de dados</p><h2>Importar base de leads</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><p className="lead-import-intro">Envie uma planilha CSV. O ImobFlow identifica colunas, ignora duplicados e calcula prioridade, inatividade e potencial de recuperação.</p><input id="lead-csv-file" className="visually-hidden" type="file" accept=".csv,text/csv" onChange={(event) => void chooseFile(event.target.files?.[0])} /><button type="button" className={`lead-import-drop ${preview.length ? 'ready' : ''}`} onClick={() => document.getElementById('lead-csv-file')?.click()}><span>{preview.length ? '✓' : '⇧'}</span><strong>{fileName || 'Selecionar arquivo CSV'}</strong><small>{preview.length ? `${preview.length} registros válidos encontrados` : 'Até 500 leads por arquivo • máximo de 5 MB'}</small></button><div className="lead-import-columns"><strong>Colunas reconhecidas</strong><p>Nome, telefone, e-mail, objetivo, tipo de imóvel, região, orçamento, último contato, status, origem, corretor e observações.</p><button type="button" onClick={downloadTemplate}>Baixar modelo CSV</button></div>{error && <p className="lead-import-error">{error}</p>}{preview.length > 0 && <div className="lead-import-preview"><div><strong>Prévia da importação</strong><span>{preview.length} leads prontos</span></div>{preview.slice(0, 4).map((lead,index) => <div key={`${lead.phone}-${index}`}><span><b>{lead.name}</b><small>{lead.phone || lead.email}</small></span><span>{lead.goal}<small>{lead.propertyType}</small></span><span>{lead.region}<small>{lead.lastContactAt ? new Date(lead.lastContactAt).toLocaleDateString('pt-BR') : 'Sem último contato'}</small></span></div>)}</div>}<div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="button" className="primary-button" disabled={!preview.length || importing} onClick={() => void submit()}>{importing ? 'Analisando e importando...' : `Importar ${preview.length || ''} leads`}</button></div></article></div>;
+}
+
 function LeadFilterBar({ leads, active, onChange }: { leads: DashboardLead[]; active: LeadFilter[]; onChange: (filters: LeadFilter[]) => void }) {
   const [open, setOpen] = useState(false);
 
@@ -548,8 +713,9 @@ function LeadFilterBar({ leads, active, onChange }: { leads: DashboardLead[]; ac
   </section>;
 }
 
-function Leads({ leads, selected, onSelect, search, setSearch, onContinue, notify }: { leads: DashboardLead[]; selected: DashboardLead; onSelect:(lead:DashboardLead)=>void; search:string; setSearch:(value:string)=>void; onContinue:()=>void; notify:(message:string)=>void }) {
-  return <div className="lead-management"><section className="table-panel panel"><div className="toolbar"><div className="search-field">⌕<input value={search} onChange={(event)=>setSearch(event.target.value)} aria-label="Buscar lead" placeholder="Buscar por nome, região ou intenção"/></div><span className="live-leads"><i/> {leads.length} perfis cadastrados</span></div><div className="lead-table"><div className="table-row table-head"><span>Lead</span><span>Intenção</span><span>Região</span><span>Prioridade</span><span>Temperatura</span><span/></div>{leads.map((lead)=><button type="button" className={`table-row ${selected.id===lead.id?'selected':''}`} key={lead.id} onClick={()=>onSelect(lead)}><span className="lead-cell"><i className={`lead-avatar avatar-${lead.tone}`}>{lead.initials}</i><b>{lead.name}<small>{lead.phone}</small></b></span><span>{lead.intent}</span><span>{lead.region}</span><span className="score-cell"><i style={{width:`${lead.score}%`}}/><b>{lead.score}</b></span><span><em className={`temperature temp-${lead.tone}`}>{lead.status}</em></span><span>›</span></button>)}{leads.length===0&&<div className="empty-leads"><span>◎</span><h3>Nenhum resultado</h3><p>Limpe a busca para consultar os perfis cadastrados.</p></div>}</div></section><aside className="captured-profile panel"><div className="captured-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p className="eyebrow">Perfil completo</p><h2>{selected.name}</h2><span>{new Date(selected.createdAt).toLocaleString('pt-BR')}</span></div><em className={`temperature temp-${selected.tone}`}>{selected.status}</em></div><div className="profile-explanation"><span>i</span><div><strong>Resumo comercial</strong><p>{selected.summary}</p></div></div><dl><div><dt>Objetivo</dt><dd>{selected.goal}</dd></div><div><dt>Tipo de imóvel</dt><dd>{selected.propertyType}</dd></div><div><dt>Região desejada</dt><dd>{selected.region}</dd></div><div><dt>Faixa de investimento</dt><dd>{selected.budget}</dd></div><div><dt>Telefone</dt><dd>{selected.phone}</dd></div><div><dt>E-mail</dt><dd>{selected.email||'Não informado'}</dd></div><div className="profile-wide"><dt>Informações adicionais</dt><dd>{selected.details||'Nenhuma observação adicional.'}</dd></div></dl><div className="captured-score"><span>Prioridade comercial</span><strong>{selected.score}<small>/100</small></strong><i><b style={{width:`${selected.score}%`}}/></i></div><button type="button" className="profile-whatsapp demo-channel" onClick={() => { notify(`Atendimento aberto para ${selected.name}`); onContinue(); }}>Abrir atendimento →</button></aside></div>;
+function Leads({ leads, selected, onSelect, search, setSearch, onContinue, notify, onUpdate }: { leads: DashboardLead[]; selected: DashboardLead; onSelect:(lead:DashboardLead)=>void; search:string; setSearch:(value:string)=>void; onContinue:()=>void; notify:(message:string)=>void; onUpdate:(lead:DashboardLead, changes:Partial<Pick<LeadProfile, 'lifecycleStatus' | 'lastContactAt' | 'recoverySelected' | 'assignedTo'>>)=>void }) {
+  const statuses: LeadLifecycleStatus[] = ['Novo', 'Em atendimento', 'Visita', 'Proposta', 'Convertido', 'Perdido'];
+  return <div className="lead-management"><section className="table-panel panel"><div className="toolbar"><div className="search-field">⌕<input value={search} onChange={(event)=>setSearch(event.target.value)} aria-label="Buscar lead" placeholder="Buscar por nome, região ou intenção"/></div><span className="live-leads"><i/> {leads.length} {leads.length === 1 ? 'perfil encontrado' : 'perfis encontrados'}</span></div><div className="lead-table"><div className="table-row table-head intelligence-row"><span>Lead</span><span>Intenção</span><span>Etapa</span><span>Inatividade</span><span>Recuperação</span><span>Score</span><span/></div>{leads.map((lead)=><button type="button" className={`table-row intelligence-row ${selected.id===lead.id?'selected':''}`} key={lead.id} onClick={()=>onSelect(lead)}><span className="lead-cell"><i className={`lead-avatar avatar-${lead.tone}`}>{lead.initials}</i><b>{lead.name}<small>{lead.source}</small></b></span><span>{lead.intent}<small>{lead.region}</small></span><span><em className="lifecycle-badge">{lead.lifecycleStatus}</em></span><span className={lead.inactivityDays === null || lead.inactivityDays >= 30 ? 'inactive-days alert' : 'inactive-days'}>{lead.inactivityDays === null ? 'Sem registro' : `${lead.inactivityDays} dias`}</span><span><em className={`recovery-badge recovery-${normalizeCsvHeader(lead.recoveryPotential)}`}>{lead.recoveryPotential}</em></span><span className="score-cell"><i style={{width:`${lead.score}%`}}/><b>{lead.score}</b></span><span>›</span></button>)}{leads.length===0&&<div className="empty-leads"><span>◎</span><h3>Nenhum resultado</h3><p>Ajuste o diagnóstico, a busca ou os filtros para consultar a base.</p></div>}</div></section><aside className="captured-profile panel"><div className="captured-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p className="eyebrow">Análise individual</p><h2>{selected.name}</h2><span>{selected.source} • cadastrado em {new Date(selected.createdAt).toLocaleDateString('pt-BR')}</span></div><em className={`recovery-badge recovery-${normalizeCsvHeader(selected.recoveryPotential)}`}>{selected.recoveryPotential}</em></div><div className="profile-explanation"><span>i</span><div><strong>Diagnóstico comercial</strong><p>{selected.summary}</p></div></div><div className="lead-operational-fields"><label>Etapa comercial<select value={selected.lifecycleStatus} onChange={(event) => onUpdate(selected, { lifecycleStatus:event.target.value as LeadLifecycleStatus })}>{statuses.map((status) => <option key={status}>{status}</option>)}</select></label><label>Responsável<input value={selected.assignedTo || ''} placeholder="Sem responsável" onChange={(event) => onSelect({ ...selected, assignedTo:event.target.value })} onBlur={(event) => onUpdate(selected, { assignedTo:event.target.value || null })}/></label></div><dl><div><dt>Objetivo</dt><dd>{selected.goal}</dd></div><div><dt>Tipo de imóvel</dt><dd>{selected.propertyType}</dd></div><div><dt>Região desejada</dt><dd>{selected.region}</dd></div><div><dt>Faixa de investimento</dt><dd>{selected.budget}</dd></div><div><dt>Último contato</dt><dd>{selected.lastContactAt ? new Date(selected.lastContactAt).toLocaleDateString('pt-BR') : 'Não registrado'}</dd></div><div><dt>Tempo inativo</dt><dd>{selected.inactivityDays === null ? 'Sem histórico' : `${selected.inactivityDays} dias`}</dd></div></dl><div className="score-explanation"><div><span>Score de prioridade</span><strong>{selected.score}<small>/100</small></strong></div><i><b style={{width:`${selected.score}%`}}/></i><ul>{selected.scoreReasons.slice(0,5).map((reason) => <li key={reason}>✓ {reason}</li>)}</ul></div><div className="lead-action-grid"><button type="button" onClick={() => onUpdate(selected, { lastContactAt:new Date().toISOString(), lifecycleStatus:'Em atendimento' })}>Registrar contato agora</button><button type="button" className={selected.recoverySelected ? 'selected-recovery' : ''} onClick={() => onUpdate(selected, { recoverySelected:!selected.recoverySelected })}>{selected.recoverySelected ? '✓ Na carteira de recuperação' : '＋ Adicionar à recuperação'}</button></div><button type="button" className="profile-whatsapp demo-channel" onClick={() => { notify(`Atendimento aberto para ${selected.name}`); onContinue(); }}>Abrir atendimento →</button><p className="automation-boundary">Nenhuma mensagem será enviada automaticamente nesta etapa.</p></aside></div>;
 }
 
 function Properties({ properties, search, setSearch, add, onOpen }: { properties:Property[]; search:string; setSearch:(value:string)=>void; add:()=>void; onOpen:(property:Property)=>void }) {

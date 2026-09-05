@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import type { LeadInput, LeadProfile } from './leads';
-import { explainProfile, scoreLead } from './leads';
+import { analyzeLead, explainProfile } from './leads';
+import type { LeadLifecycleStatus } from './leads';
 import type { AppointmentInput, AppointmentRecord, PerformanceSettingsInput, PerformanceSnapshot, PropertyInput, PropertyRecord, SaleInput, SaleRecord } from './operations';
 
 function database() {
@@ -23,27 +24,86 @@ async function ensureLeadSchema() {
     summary TEXT NOT NULL,
     score INTEGER NOT NULL,
     temperature TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'Formulário do site',
+    assigned_to TEXT,
+    lifecycle_status TEXT NOT NULL DEFAULT 'Novo',
+    last_contact_at TIMESTAMPTZ,
+    score_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    recovery_selected BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'Formulário do site'`;
+  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS assigned_to TEXT`;
+  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'Novo'`;
+  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS last_contact_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS score_reasons JSONB NOT NULL DEFAULT '[]'::jsonb`;
+  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS recovery_selected BOOLEAN NOT NULL DEFAULT FALSE`;
 }
 
 export async function createLead(input: LeadInput): Promise<LeadProfile> {
   await ensureLeadSchema();
   const sql = database();
   const summary = explainProfile(input);
-  const { score, temperature } = scoreLead(input);
+  const lifecycleStatus = input.lifecycleStatus || 'Novo';
+  const analysis = analyzeLead({ ...input, lifecycleStatus });
   const rows = await sql`INSERT INTO site_leads
-    (name, phone, email, goal, property_type, region, budget, details, summary, score, temperature)
-    VALUES (${input.name}, ${input.phone}, ${input.email}, ${input.goal}, ${input.propertyType}, ${input.region}, ${input.budget}, ${input.details}, ${summary}, ${score}, ${temperature})
-    RETURNING id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, created_at`;
+    (name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected)
+    VALUES (${input.name}, ${input.phone}, ${input.email}, ${input.goal}, ${input.propertyType}, ${input.region}, ${input.budget}, ${input.details}, ${summary}, ${analysis.score}, ${analysis.temperature}, ${input.source || 'Formulário do site'}, ${input.assignedTo || null}, ${lifecycleStatus}, ${input.lastContactAt || null}, ${JSON.stringify(analysis.scoreReasons)}::jsonb, ${Boolean(input.recoverySelected)})
+    RETURNING id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at`;
   return mapLead(rows[0]);
 }
 
 export async function listLeads(): Promise<LeadProfile[]> {
   await ensureLeadSchema();
   const sql = database();
-  const rows = await sql`SELECT id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, created_at FROM site_leads ORDER BY created_at DESC LIMIT 100`;
+  const rows = await sql`SELECT id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at FROM site_leads ORDER BY created_at DESC LIMIT 1000`;
   return rows.map(mapLead);
+}
+
+export async function importLeads(inputs: LeadInput[]) {
+  await ensureLeadSchema();
+  const records = inputs.map((input) => {
+    const lifecycleStatus = input.lifecycleStatus || 'Novo';
+    const analysis = analyzeLead({ ...input, lifecycleStatus });
+    return {
+      name: input.name, phone: input.phone, email: input.email, goal: input.goal,
+      property_type: input.propertyType, region: input.region, budget: input.budget,
+      details: input.details, summary: explainProfile(input), score: analysis.score,
+      temperature: analysis.temperature, source: input.source || 'Importação CSV',
+      assigned_to: input.assignedTo || null, lifecycle_status: lifecycleStatus,
+      last_contact_at: input.lastContactAt || null, score_reasons: analysis.scoreReasons,
+      recovery_selected: Boolean(input.recoverySelected),
+    };
+  });
+  if (records.length === 0) return { imported: 0, skipped: 0, leads: [] as LeadProfile[] };
+
+  const rows = await database()`WITH incoming AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(regexp_replace(phone, '\\D', '', 'g'), ''), lower(email), lower(name))) *
+      FROM jsonb_to_recordset(${JSON.stringify(records)}::jsonb) AS item(
+        name TEXT, phone TEXT, email TEXT, goal TEXT, property_type TEXT, region TEXT, budget TEXT,
+        details TEXT, summary TEXT, score INTEGER, temperature TEXT, source TEXT, assigned_to TEXT,
+        lifecycle_status TEXT, last_contact_at TIMESTAMPTZ, score_reasons JSONB, recovery_selected BOOLEAN
+      )
+    )
+    INSERT INTO site_leads (name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected)
+    SELECT i.name, i.phone, i.email, i.goal, i.property_type, i.region, i.budget, i.details, i.summary, i.score, i.temperature, i.source, i.assigned_to, i.lifecycle_status, i.last_contact_at, i.score_reasons, i.recovery_selected
+    FROM incoming i
+    WHERE NOT EXISTS (
+      SELECT 1 FROM site_leads current
+      WHERE (regexp_replace(i.phone, '\\D', '', 'g') <> '' AND regexp_replace(current.phone, '\\D', '', 'g') = regexp_replace(i.phone, '\\D', '', 'g'))
+         OR (i.email IS NOT NULL AND current.email IS NOT NULL AND lower(current.email) = lower(i.email))
+    )
+    RETURNING id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at`;
+  const leads = rows.map(mapLead);
+  return { imported: leads.length, skipped: inputs.length - leads.length, leads };
+}
+
+export async function updateLeadIntelligence(id: string, input: { lifecycleStatus: LeadLifecycleStatus; lastContactAt: string | null; recoverySelected: boolean; assignedTo: string | null }) {
+  await ensureLeadSchema();
+  const rows = await database()`UPDATE site_leads SET lifecycle_status=${input.lifecycleStatus}, last_contact_at=${input.lastContactAt}, recovery_selected=${input.recoverySelected}, assigned_to=${input.assignedTo}
+    WHERE id=${id}
+    RETURNING id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at`;
+  return rows[0] ? mapLead(rows[0]) : null;
 }
 
 async function ensurePropertySchema() {
@@ -315,11 +375,25 @@ function mapSale(row: Record<string, unknown>): SaleRecord {
 }
 
 function mapLead(row: Record<string, unknown>): LeadProfile {
+  const lifecycleStatus = ['Novo', 'Em atendimento', 'Visita', 'Proposta', 'Convertido', 'Perdido'].includes(String(row.lifecycle_status))
+    ? String(row.lifecycle_status) as LeadLifecycleStatus
+    : 'Novo';
+  const lastContactAt = row.last_contact_at ? new Date(String(row.last_contact_at)).toISOString() : null;
+  const analysis = analyzeLead({
+    name: String(row.name), phone: String(row.phone), email: row.email ? String(row.email) : null,
+    goal: String(row.goal), propertyType: String(row.property_type), region: String(row.region),
+    budget: String(row.budget), details: row.details ? String(row.details) : null,
+    lifecycleStatus, lastContactAt,
+  });
   return {
     id: String(row.id), name: String(row.name), phone: String(row.phone),
     email: row.email ? String(row.email) : null, goal: String(row.goal),
     propertyType: String(row.property_type), region: String(row.region), budget: String(row.budget),
     details: row.details ? String(row.details) : null, summary: String(row.summary),
-    score: Number(row.score), temperature: String(row.temperature), createdAt: new Date(String(row.created_at)).toISOString(),
+    score: analysis.score, temperature: analysis.temperature, source: String(row.source || 'Formulário do site'),
+    assignedTo: row.assigned_to ? String(row.assigned_to) : null, lifecycleStatus, lastContactAt,
+    inactivityDays: analysis.inactivityDays, recoveryPotential: analysis.recoveryPotential,
+    scoreReasons: analysis.scoreReasons, recoverySelected: Boolean(row.recovery_selected),
+    createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }
