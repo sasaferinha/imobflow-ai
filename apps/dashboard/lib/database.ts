@@ -315,7 +315,7 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
   const leadsReceived = Number(settings.leads_received);
   const convertedLeads = Number(settings.converted_leads);
   return {
-    month, companyGoal: Number(settings.company_goal), totalSold, salesCount: sales.length,
+    dataMode: 'live', month, companyGoal: Number(settings.company_goal), totalSold, salesCount: sales.length,
     averageTicket: sales.length ? totalSold / sales.length : 0, leadsReceived, convertedLeads,
     recoveredLeads: Number(settings.recovered_leads), conversionRate: leadsReceived ? (convertedLeads / leadsReceived) * 100 : 0,
     brokers: goalRows.map((goal) => {

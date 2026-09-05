@@ -56,6 +56,7 @@ export type BrokerPerformance = {
 };
 
 export type PerformanceSnapshot = {
+  dataMode: 'live' | 'demo';
   month: string;
   companyGoal: number;
   totalSold: number;
