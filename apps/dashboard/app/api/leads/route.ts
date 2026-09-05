@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createLead, listLeads } from '@/lib/database';
 import type { LeadInput } from '@/lib/leads';
+import { isAdminRequest } from '@/lib/admin-auth';
 
 export const runtime = 'nodejs';
 
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  if (request.cookies.get('imobflow_admin')?.value !== process.env.ADMIN_PANEL_SECRET) {
+  if (!isAdminRequest(request)) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   }
   try {

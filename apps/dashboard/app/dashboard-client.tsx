@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import type { LeadProfile } from '@/lib/leads';
+import type { AppointmentRecord, PropertyRecord } from '@/lib/operations';
 
 const LOCAL_LEADS_KEY = 'imobflow_local_leads';
 
 type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations';
 type ChatMessage = { id: number; side: 'incoming' | 'outgoing'; text: string };
-type Property = { id: number; title: string; district: string; price: string; meta: string; match: number; tone: string; purpose: 'Venda' | 'Aluguel' };
+type Property = PropertyRecord;
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
 type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
 type LeadFilterGroup = 'goal' | 'temperature' | 'property';
@@ -75,12 +76,19 @@ function matchesLeadFilters(lead: DashboardLead, filters: LeadFilter[]) {
 }
 
 const initialProperties: Property[] = [
-  { id: 1, title: 'Residencial Aurora', district: 'Centro', price: 'R$ 575.000', meta: '3 quartos • 2 vagas • 98 m²', match: 96, tone: 'orchid', purpose: 'Venda' },
-  { id: 2, title: 'Edifício Horizonte', district: 'Jardim Floresta', price: 'R$ 590.000', meta: '3 quartos • 1 vaga • 91 m²', match: 92, tone: 'sky', purpose: 'Venda' },
-  { id: 3, title: 'Casa Bosque Sereno', district: 'Alto da Serra', price: 'R$ 820.000', meta: '4 quartos • 3 vagas • 184 m²', match: 88, tone: 'sage', purpose: 'Venda' },
-  { id: 4, title: 'Studio Vila Nova', district: 'Vila Nova', price: 'R$ 2.950/mês', meta: '1 quarto • mobiliado • 42 m²', match: 83, tone: 'sand', purpose: 'Aluguel' },
-  { id: 5, title: 'Parque das Oliveiras', district: 'Pinheiros', price: 'R$ 745.000', meta: '2 quartos • varanda • 76 m²', match: 81, tone: 'rose', purpose: 'Venda' },
-  { id: 6, title: 'Casa Ipê Amarelo', district: 'Jardim Campestre', price: 'R$ 2.400/mês', meta: '2 quartos • quintal • 80 m²', match: 77, tone: 'slate', purpose: 'Aluguel' },
+  { id: 'aurora', title: 'Residencial Aurora', district: 'Centro', price: 'R$ 575.000', meta: '3 quartos • 2 vagas • 98 m²', match: 96, tone: 'orchid', purpose: 'Venda', createdAt: '' },
+  { id: 'horizonte', title: 'Edifício Horizonte', district: 'Jardim Floresta', price: 'R$ 590.000', meta: '3 quartos • 1 vaga • 91 m²', match: 92, tone: 'sky', purpose: 'Venda', createdAt: '' },
+  { id: 'bosque-sereno', title: 'Casa Bosque Sereno', district: 'Alto da Serra', price: 'R$ 820.000', meta: '4 quartos • 3 vagas • 184 m²', match: 88, tone: 'sage', purpose: 'Venda', createdAt: '' },
+  { id: 'studio-vila-nova', title: 'Studio Vila Nova', district: 'Vila Nova', price: 'R$ 2.950/mês', meta: '1 quarto • mobiliado • 42 m²', match: 83, tone: 'sand', purpose: 'Aluguel', createdAt: '' },
+  { id: 'oliveiras', title: 'Parque das Oliveiras', district: 'Pinheiros', price: 'R$ 745.000', meta: '2 quartos • varanda • 76 m²', match: 81, tone: 'rose', purpose: 'Venda', createdAt: '' },
+  { id: 'ipe-amarelo', title: 'Casa Ipê Amarelo', district: 'Jardim Campestre', price: 'R$ 2.400/mês', meta: '2 quartos • quintal • 80 m²', match: 77, tone: 'slate', purpose: 'Aluguel', createdAt: '' },
+];
+
+const initialAppointments: AppointmentRecord[] = [
+  { id:'ana-horizonte', date:'2026-09-01', time:'09:00', name:'Ana Martins', property:'Edifício Horizonte', broker:'Marina Oliveira', status:'Confirmada', color:'mint', createdAt:'' },
+  { id:'lucas-aurora', date:'2026-09-01', time:'10:30', name:'Lucas Carvalho', property:'Residencial Aurora', broker:'Paulo Mendes', status:'Aguardando', color:'amber', createdAt:'' },
+  { id:'carla-reserva', date:'2026-09-01', time:'14:00', name:'Carla Souza', property:'Terreno Reserva Sul', broker:'Marina Oliveira', status:'Confirmada', color:'violet', createdAt:'' },
+  { id:'rafael-bosque', date:'2026-09-01', time:'16:30', name:'Rafael Borges', property:'Casa Bosque Sereno', broker:'Paulo Mendes', status:'Confirmada', color:'blue', createdAt:'' },
 ];
 
 const initialMessages: ChatMessage[] = [
@@ -100,6 +108,9 @@ export default function DashboardClient() {
   const [propertySearch, setPropertySearch] = useState('');
   const [propertyModalOpen, setPropertyModalOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [savingProperty, setSavingProperty] = useState(false);
+  const [appointments, setAppointments] = useState(initialAppointments);
   const [toast, setToast] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -137,9 +148,26 @@ export default function DashboardClient() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetch('/api/properties').then(async (response) => response.ok ? (await response.json() as { data: Property[] }).data : initialProperties),
+      fetch('/api/appointments').then(async (response) => response.ok ? (await response.json() as { data: AppointmentRecord[] }).data : initialAppointments),
+    ]).then(([remoteProperties, remoteAppointments]) => {
+      if (active) {
+        setProperties(remoteProperties);
+        setAppointments(remoteAppointments);
+      }
+    }).catch(() => {
+      // Os dados de referência mantêm o painel utilizável durante indisponibilidades temporárias.
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setPropertyModalOpen(false);
+        setEditingProperty(null);
         setSelectedProperty(null);
         setNotificationsOpen(false);
         setProfileOpen(false);
@@ -177,23 +205,54 @@ export default function DashboardClient() {
     if (sendText(draft)) setDraft('');
   }
 
-  function addProperty(event: FormEvent<HTMLFormElement>) {
+  async function saveProperty(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const property: Property = {
-      id: Date.now(),
+    const payload = {
       title: String(form.get('title') || 'Novo imóvel'),
       district: String(form.get('district') || 'Centro'),
       price: String(form.get('price') || 'R$ 0'),
       meta: String(form.get('description') || '2 quartos • 1 vaga • 72 m²'),
-      match: 80,
-      tone: 'orchid',
+      match: editingProperty?.match || 80,
+      tone: editingProperty?.tone || 'orchid',
       purpose: String(form.get('purpose')) === 'Aluguel' ? 'Aluguel' : 'Venda',
     };
-    setProperties((current) => [property, ...current]);
-    setPropertyModalOpen(false);
-    setView('properties');
-    notify('Imóvel adicionado ao portfólio');
+    setSavingProperty(true);
+    try {
+      const response = await fetch(editingProperty ? `/api/properties/${editingProperty.id}` : '/api/properties', {
+        method: editingProperty ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      const result = await response.json() as { data?: Property; error?: string };
+      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar o imóvel.');
+      setProperties((current) => editingProperty ? current.map((item) => item.id === result.data?.id ? result.data : item) as Property[] : [result.data!, ...current]);
+      setSelectedProperty(result.data);
+      setPropertyModalOpen(false);
+      setEditingProperty(null);
+      setView('properties');
+      notify(editingProperty ? 'Imóvel atualizado' : 'Imóvel adicionado ao portfólio');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel.');
+    } finally {
+      setSavingProperty(false);
+    }
+  }
+
+  async function removeProperty(property: Property) {
+    if (!window.confirm(`Excluir ${property.title} do portfólio?`)) return;
+    try {
+      const response = await fetch(`/api/properties/${property.id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Não foi possível excluir o imóvel.');
+      setProperties((current) => current.filter((item) => item.id !== property.id));
+      setSelectedProperty(null);
+      notify('Imóvel excluído do portfólio');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível excluir o imóvel.');
+    }
+  }
+
+  function openNewProperty() {
+    setEditingProperty(null);
+    setPropertyModalOpen(true);
   }
 
   function openView(nextView: View) {
@@ -219,7 +278,7 @@ export default function DashboardClient() {
         <div className="sidebar-card"><span className="live-dot" /><div><strong>Sistema operacional</strong><span>Serviços funcionando normalmente</span></div></div>
         <div className="profile-wrap">
           <div className="profile-row"><span className="avatar">{profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span><div><strong>{profile.name}</strong><span>{profile.company}</span></div><button type="button" aria-label="Abrir perfil" aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>•••</button></div>
-          {profileOpen && <div className="profile-menu popover"><strong>Perfil da equipe</strong><button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button></div>}
+          {profileOpen && <div className="profile-menu popover"><strong>Perfil da equipe</strong><button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
         </div>
       </aside>
 
@@ -231,32 +290,32 @@ export default function DashboardClient() {
               <button type="button" className="icon-button" aria-label={`Notificações: ${unreadCount} não lidas`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>♢{settings.alerts && unreadCount > 0 && <i />}</button>
               {notificationsOpen && <div className="notification-menu popover"><div><strong>Notificações</strong><button type="button" onClick={() => setNotifications((items) => items.map((item) => ({ ...item, unread: false })))}>Marcar como lidas</button></div>{notifications.map((item) => <button type="button" className={item.unread ? 'unread' : ''} key={item.id} onClick={() => { setNotifications((items) => items.map((current) => current.id === item.id ? { ...current, unread: false } : current)); notify(item.text); }}><i />{item.text}</button>)}</div>}
             </div>
-            <button type="button" className="primary-button" onClick={() => setPropertyModalOpen(true)}>＋ Novo imóvel</button>
+            <button type="button" className="primary-button" onClick={openNewProperty}>＋ Novo imóvel</button>
           </div>
         </header>
 
-        {view === 'overview' && <Overview onOpen={() => openView('conversations')} onActivity={() => openView('leads')} notify={notify} sendText={sendText} />}
+        {view === 'overview' && <Overview leadCount={capturedLeads.length} qualifiedCount={capturedLeads.filter((lead) => lead.score >= 60).length} hotLeadCount={capturedLeads.filter((lead) => lead.temperature.toLowerCase().includes('quente')).length} propertyCount={properties.length} visitCount={appointments.length} onOpen={() => openView('conversations')} onActivity={() => openView('leads')} notify={notify} sendText={sendText} />}
         {view === 'conversations' && <Conversations messages={messages} draft={draft} setDraft={setDraft} sendMessage={sendMessage} notify={notify} openAgenda={() => openView('agenda')} />}
         {view === 'leads' && <><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} /></>}
-        {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={() => setPropertyModalOpen(true)} onOpen={setSelectedProperty} />}
-        {view === 'agenda' && <Agenda notify={notify} />}
+        {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} />}
+        {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} />}
         {view === 'automations' && <Automations notify={notify} />}
       </section>
 
       {propertyModalOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setPropertyModalOpen(false)}>
-          <form className="modal-card" onSubmit={addProperty} onMouseDown={(event) => event.stopPropagation()}>
-            <div className="modal-head"><div><p className="eyebrow">Portfólio imobiliário</p><h2>Novo imóvel</h2></div><button type="button" aria-label="Fechar" onClick={() => setPropertyModalOpen(false)}>×</button></div>
-            <label>Título<input name="title" placeholder="Ex.: Residencial das Flores" autoFocus required /></label>
-            <div className="form-grid"><label>Bairro<input name="district" placeholder="Centro" required /></label><label>Preço<input name="price" placeholder="R$ 650.000" required /></label></div>
-            <label>Finalidade<select name="purpose" defaultValue="Venda"><option>Venda</option><option>Aluguel</option></select></label>
-            <label>Descrição<textarea name="description" placeholder="Ex.: 3 quartos • 2 vagas • 98 m²" rows={3} required /></label>
-            <div className="modal-actions"><button type="button" onClick={() => setPropertyModalOpen(false)}>Cancelar</button><button className="primary-button" type="submit">Salvar imóvel</button></div>
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => { setPropertyModalOpen(false); setEditingProperty(null); }}>
+          <form className="modal-card" onSubmit={saveProperty} onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-head"><div><p className="eyebrow">Portfólio imobiliário</p><h2>{editingProperty ? 'Editar imóvel' : 'Novo imóvel'}</h2></div><button type="button" aria-label="Fechar" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); }}>×</button></div>
+            <label>Título<input name="title" defaultValue={editingProperty?.title} placeholder="Ex.: Residencial das Flores" autoFocus required /></label>
+            <div className="form-grid"><label>Bairro<input name="district" defaultValue={editingProperty?.district} placeholder="Centro" required /></label><label>Preço<input name="price" defaultValue={editingProperty?.price} placeholder="R$ 650.000" required /></label></div>
+            <label>Finalidade<select name="purpose" defaultValue={editingProperty?.purpose || 'Venda'}><option>Venda</option><option>Aluguel</option></select></label>
+            <label>Descrição<textarea name="description" defaultValue={editingProperty?.meta} placeholder="Ex.: 3 quartos • 2 vagas • 98 m²" rows={3} required /></label>
+            <div className="modal-actions"><button type="button" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); }}>Cancelar</button><button className="primary-button" type="submit" disabled={savingProperty}>{savingProperty ? 'Salvando...' : 'Salvar imóvel'}</button></div>
           </form>
         </div>
       )}
 
-      {selectedProperty && <PropertyDetail property={selectedProperty} close={() => setSelectedProperty(null)} notify={notify} openAgenda={() => openView('agenda')} />}
+      {selectedProperty && <PropertyDetail property={selectedProperty} close={() => setSelectedProperty(null)} notify={notify} openAgenda={() => openView('agenda')} edit={() => { setEditingProperty(selectedProperty); setPropertyModalOpen(true); }} remove={() => removeProperty(selectedProperty)} />}
       {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { setSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
@@ -264,16 +323,14 @@ export default function DashboardClient() {
   );
 }
 
-function Overview({ onOpen, onActivity, notify, sendText }: { onOpen: () => void; onActivity: () => void; notify: (message: string) => void; sendText: (text: string) => boolean }) {
-  const [period, setPeriod] = useState('7');
+function Overview({ leadCount, qualifiedCount, hotLeadCount, propertyCount, visitCount, onOpen, onActivity, notify, sendText }: { leadCount:number; qualifiedCount:number; hotLeadCount:number; propertyCount:number; visitCount:number; onOpen: () => void; onActivity: () => void; notify: (message: string) => void; sendText: (text: string) => boolean }) {
   const [quickDraft, setQuickDraft] = useState('');
   const [following, setFollowing] = useState(false);
-  const factor = period === '30' ? 4 : period === '1' ? 0.3 : 1;
   const metrics = [
-    { label: 'Leads', value: String(Math.round(24 * factor)).padStart(2, '0'), change: '+18%', tone: 'violet' },
-    { label: 'Qualificados', value: String(Math.round(9 * factor)).padStart(2, '0'), change: '37,5%', tone: 'mint' },
-    { label: 'Visitas marcadas', value: String(Math.round(4 * factor)).padStart(2, '0'), change: '+2 hoje', tone: 'amber' },
-    { label: 'Conversas ativas', value: String(Math.round(37 * factor)).padStart(2, '0'), change: '6 agora', tone: 'blue' },
+    { label: 'Leads', value: String(leadCount).padStart(2, '0'), change: 'Base cadastrada', tone: 'violet' },
+    { label: 'Qualificados', value: String(qualifiedCount).padStart(2, '0'), change: 'Prioridade 60+', tone: 'mint' },
+    { label: 'Visitas marcadas', value: String(visitCount).padStart(2, '0'), change: 'Agenda atual', tone: 'amber' },
+    { label: 'Leads quentes', value: String(hotLeadCount).padStart(2, '0'), change: 'Atendimento prioritário', tone: 'blue' },
   ];
   const activity = [
     { initials: 'LC', name: 'Lucas Carvalho', detail: 'Solicitou visita • Residencial Aurora', time: '2 min', tag: 'Muito quente' },
@@ -291,7 +348,7 @@ function Overview({ onOpen, onActivity, notify, sendText }: { onOpen: () => void
   return <>
     <div className="metric-grid">{metrics.map((metric) => <article className={`metric-card ${metric.tone}`} key={metric.label}><div className="metric-icon">{metric.label.charAt(0)}</div><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.change}</small></article>)}</div>
     <div className="main-grid"><div className="content-column">
-      <article className="panel pipeline-panel"><div className="panel-heading"><div><p className="eyebrow">Jornada comercial</p><h2>Funil de leads</h2></div><label className="period-filter"><span>Período</span><select value={period} onChange={(event) => setPeriod(event.target.value)}><option value="1">Hoje</option><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option></select></label></div><div className="pipeline"><div className="pipeline-step step-one"><strong>{Math.round(68 * factor)}</strong><span>Novos contatos</span></div><div className="pipeline-step step-two"><strong>{Math.round(41 * factor)}</strong><span>Em qualificação</span></div><div className="pipeline-step step-three"><strong>{Math.round(19 * factor)}</strong><span>Imóveis enviados</span></div><div className="pipeline-step step-four"><strong>{Math.round(8 * factor)}</strong><span>Visita solicitada</span></div></div></article>
+      <article className="panel pipeline-panel"><div className="panel-heading"><div><p className="eyebrow">Dados operacionais</p><h2>Visão atual da operação</h2></div><span className="period-filter">Atualização automática</span></div><div className="pipeline"><div className="pipeline-step step-one"><strong>{leadCount}</strong><span>Contatos cadastrados</span></div><div className="pipeline-step step-two"><strong>{qualifiedCount}</strong><span>Alta prioridade</span></div><div className="pipeline-step step-three"><strong>{propertyCount}</strong><span>Imóveis disponíveis</span></div><div className="pipeline-step step-four"><strong>{visitCount}</strong><span>Visitas agendadas</span></div></div></article>
       <article className="panel activity-panel"><div className="panel-heading"><div><p className="eyebrow">Acontecendo agora</p><h2>Atividade recente</h2></div><button type="button" onClick={onActivity}>Ver todos →</button></div><div className="activity-list">{activity.map((item,index)=><button type="button" className="activity-row activity-button" onClick={() => { notify(`${item.name}: ${item.detail}`); onActivity(); }} key={item.name}><span className={`lead-avatar avatar-${index}`}>{item.initials}</span><span className="activity-copy"><strong>{item.name}</strong><span>{item.detail}</span></span><span className={`status-tag status-${index}`}>{item.tag}</span><time>{item.time}</time></button>)}</div></article>
     </div><aside className="conversation-card"><div className="conversation-head"><span className="lead-avatar avatar-0">LC</span><div><strong>Lucas Carvalho</strong><span><i /> online agora</span></div><button type="button" className={following ? 'conversation-following' : ''} aria-label={following ? 'Remover acompanhamento' : 'Acompanhar conversa'} onClick={() => { setFollowing((active) => !active); notify(following ? 'Acompanhamento removido' : 'Conversa marcada para acompanhamento'); }}>{following ? '✓' : '•••'}</button></div><div className="lead-signal"><div><span>Prioridade comercial</span><strong>86<small>/100</small></strong></div><span className="hot-pill">Muito quente</span></div><div className="chat-area"><span className="chat-date">Hoje, 10:42</span><div className="bubble incoming">Oi! Estou procurando um apartamento de 3 quartos no Centro.</div><div className="bubble outgoing">Olá, Lucas. Qual valor máximo você pretende investir?</div><div className="bubble incoming">Até 600 mil. Pode ser financiamento.</div><div className="typing"><i/><i/><i/></div></div><form className="chat-composer" onSubmit={submitQuick}><input id="overview-attachment" className="visually-hidden" type="file" onChange={(event) => event.target.files?.[0] && notify(`Anexo selecionado: ${event.target.files[0].name}`)}/><button type="button" aria-label="Anexar arquivo" onClick={() => document.getElementById('overview-attachment')?.click()}>＋</button><input value={quickDraft} onChange={(event) => setQuickDraft(event.target.value)} aria-label="Mensagem rápida" placeholder="Escreva uma mensagem..."/><button className="send-button" type="submit" aria-label="Enviar mensagem">➜</button></form><button type="button" className="simulate-button" onClick={onOpen}>Abrir conversa completa</button></aside></div>
   </>;
@@ -367,9 +424,9 @@ function Properties({ properties, search, setSearch, add, onOpen }: { properties
   return <><div className="catalog-toolbar"><div className="search-field">⌕<input value={search} onChange={(event)=>setSearch(event.target.value)} aria-label="Buscar imóvel" placeholder="Buscar imóvel ou bairro"/></div><div className="catalog-actions"><select aria-label="Finalidade" value={purpose} onChange={(event) => setPurpose(event.target.value as typeof purpose)}><option>Todos</option><option>Venda</option><option>Aluguel</option></select><button type="button" className={filterOpen ? 'filter-active' : ''} onClick={() => setFilterOpen((open) => !open)}>Mais filtros</button><button type="button" className="primary-button" onClick={add}>＋ Adicionar</button></div></div>{filterOpen && <div className="filter-panel panel"><label>Compatibilidade mínima <strong>{minMatch}%</strong><input type="range" min="0" max="95" step="5" value={minMatch} onChange={(event) => setMinMatch(Number(event.target.value))}/></label><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setSearch(''); }}>Limpar filtros</button></div>}<div className="property-grid">{visible.map((property)=><article className="property-card" key={property.id}><button type="button" className={`property-visual ${property.tone}`} onClick={() => onOpen(property)} aria-label={`Abrir ${property.title}`}><span>▦</span><em>{property.match}% compatível</em></button><div className="property-copy"><small>{property.purpose} • {property.district}</small><h3>{property.title}</h3><p>{property.meta}</p><div><strong>{property.price}</strong><button type="button" aria-label={`Ver detalhes de ${property.title}`} onClick={() => onOpen(property)}>›</button></div></div></article>)}{visible.length === 0 && <div className="empty-catalog panel"><span>▦</span><h3>Nenhum imóvel encontrado</h3><p>Ajuste ou limpe os filtros para continuar.</p><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setSearch(''); }}>Limpar filtros</button></div>}</div></>;
 }
 
-function PropertyDetail({ property, close, notify, openAgenda }: { property:Property; close:()=>void; notify:(message:string)=>void; openAgenda:()=>void }) {
+function PropertyDetail({ property, close, notify, openAgenda, edit, remove }: { property:Property; close:()=>void; notify:(message:string)=>void; openAgenda:()=>void; edit:()=>void; remove:()=>void }) {
   const [saved, setSaved] = useState(false);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className="modal-card property-detail-modal" onMouseDown={(event) => event.stopPropagation()}><div className={`property-visual ${property.tone}`}><span>▦</span><em>{property.match}% compatível</em></div><div className="modal-head"><div><p className="eyebrow">{property.purpose} • {property.district}</p><h2>{property.title}</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><p>{property.meta}</p><strong className="detail-price">{property.price}</strong><div className="modal-actions"><button type="button" className={saved ? 'saved-button' : ''} onClick={() => { setSaved((active) => !active); notify(saved ? 'Imóvel removido dos favoritos' : 'Imóvel salvo nos favoritos'); }}>{saved ? '♥ Salvo' : '♡ Salvar'}</button><button type="button" className="primary-button" onClick={() => { close(); openAgenda(); }}>Agendar visita</button></div></article></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className="modal-card property-detail-modal" onMouseDown={(event) => event.stopPropagation()}><div className={`property-visual ${property.tone}`}><span>▦</span><em>{property.match}% compatível</em></div><div className="modal-head"><div><p className="eyebrow">{property.purpose} • {property.district}</p><h2>{property.title}</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><p>{property.meta}</p><strong className="detail-price">{property.price}</strong><div className="modal-actions"><button type="button" onClick={remove}>Excluir</button><button type="button" onClick={edit}>Editar</button><button type="button" className={saved ? 'saved-button' : ''} onClick={() => { setSaved((active) => !active); notify(saved ? 'Imóvel removido dos favoritos' : 'Imóvel salvo nos favoritos'); }}>{saved ? '♥ Salvo' : '♡ Salvar'}</button><button type="button" className="primary-button" onClick={() => { close(); openAgenda(); }}>Agendar visita</button></div></article></div>;
 }
 
 function ProfileModal({ profile, close, save }: { profile:{ name:string; company:string }; close:()=>void; save:(profile:{ name:string; company:string })=>void }) {
@@ -386,28 +443,68 @@ function SettingsModal({ settings, close, save }: { settings:{ alerts:boolean; c
   return <div className="modal-backdrop" role="presentation" onMouseDown={close}><form className="modal-card" onSubmit={(event) => { event.preventDefault(); save(draft); }} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Preferências</p><h2>Configurações</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><label className="setting-row"><span><strong>Alertas do painel</strong><small>Exibe avisos de leads e visitas.</small></span><input type="checkbox" checked={draft.alerts} onChange={(event) => setDraft((current) => ({ ...current, alerts:event.target.checked }))}/></label><label className="setting-row"><span><strong>Visualização compacta</strong><small>Prepara o painel para maior densidade.</small></span><input type="checkbox" checked={draft.compact} onChange={(event) => setDraft((current) => ({ ...current, compact:event.target.checked }))}/></label><div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="submit" className="primary-button">Salvar configurações</button></div></form></div>;
 }
 
-function Agenda({ notify }: { notify:(message:string)=>void }) {
+function Agenda({ items, setItems, notify }: { items:AppointmentRecord[]; setItems:Dispatch<SetStateAction<AppointmentRecord[]>>; notify:(message:string)=>void }) {
   const weeks = ['24—30 ago', '31 ago—06 set', '07—13 set'];
-  const days = ['Seg 31','Ter 01','Qua 02','Qui 03','Sex 04','Sáb 05','Dom 06'];
+  const weekDates = [
+    ['2026-08-24','2026-08-25','2026-08-26','2026-08-27','2026-08-28','2026-08-29','2026-08-30'],
+    ['2026-08-31','2026-09-01','2026-09-02','2026-09-03','2026-09-04','2026-09-05','2026-09-06'],
+    ['2026-09-07','2026-09-08','2026-09-09','2026-09-10','2026-09-11','2026-09-12','2026-09-13'],
+  ];
   const [week, setWeek] = useState(1);
   const [selectedDay, setSelectedDay] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<number | null>(null);
-  const [items, setItems] = useState([
-    { id:1,time:'09:00',name:'Ana Martins',property:'Edifício Horizonte',broker:'Marina Oliveira',status:'Confirmada',color:'mint' },
-    { id:2,time:'10:30',name:'Lucas Carvalho',property:'Residencial Aurora',broker:'Paulo Mendes',status:'Aguardando',color:'amber' },
-    { id:3,time:'14:00',name:'Carla Souza',property:'Terreno Reserva Sul',broker:'Marina Oliveira',status:'Confirmada',color:'violet' },
-    { id:4,time:'16:30',name:'Rafael Borges',property:'Casa Bosque Sereno',broker:'Paulo Mendes',status:'Confirmada',color:'blue' },
-  ]);
-  function addAppointment(event: FormEvent<HTMLFormElement>) {
+  const [selectedAppointment, setSelectedAppointment] = useState<string | null>(null);
+  const dates = weekDates[week];
+  const days = dates.map((date) => {
+    const parts = new Intl.DateTimeFormat('pt-BR', { weekday:'short', day:'2-digit', timeZone:'UTC' }).format(new Date(`${date}T12:00:00Z`)).replace('.', '').split(' ');
+    return `${parts[0]} ${parts.at(-1)}`;
+  });
+  const activeDate = dates[selectedDay];
+  const visibleItems = items.filter((item) => item.date === activeDate).sort((a,b) => a.time.localeCompare(b.time));
+
+  async function addAppointment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    setItems((current) => [...current, { id:Date.now(), time:String(form.get('time')), name:String(form.get('name')), property:String(form.get('property')), broker:'Marina Oliveira', status:'Aguardando', color:'amber' }].sort((a,b) => a.time.localeCompare(b.time)));
-    setFormOpen(false);
-    notify('Novo horário adicionado à agenda');
+    try {
+      const response = await fetch('/api/appointments', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:activeDate, time:String(form.get('time')), name:String(form.get('name')), property:String(form.get('property')), broker:'Marina Oliveira', status:'Aguardando', color:'amber' }) });
+      const result = await response.json() as { data?:AppointmentRecord; error?:string };
+      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar o horário.');
+      setItems((current) => [...current, result.data!]);
+      setFormOpen(false);
+      notify('Novo horário adicionado à agenda');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível salvar o horário.');
+    }
   }
-  const activeAppointment = items.find((item) => item.id === selectedAppointment);
-  return <div className="agenda-layout"><section className="panel calendar-panel"><div className="calendar-head"><button type="button" aria-label="Semana anterior" disabled={week === 0} onClick={() => setWeek((current) => Math.max(0, current - 1))}>‹</button><div><p className="eyebrow">Setembro de 2026</p><h2>Semana {weeks[week]}</h2></div><button type="button" aria-label="Próxima semana" disabled={week === weeks.length - 1} onClick={() => setWeek((current) => Math.min(weeks.length - 1, current + 1))}>›</button></div><div className="week-strip">{days.map((day,index)=><button type="button" className={index===selectedDay?'today':''} onClick={() => { setSelectedDay(index); notify(`${day} selecionado`); }} key={day}><span>{day.split(' ')[0]}</span><strong>{day.split(' ')[1]}</strong>{index===selectedDay&&<i/>}</button>)}</div><div className="timeline">{items.map((appointment)=><button type="button" className={`appointment-row ${selectedAppointment === appointment.id ? 'selected' : ''}`} onClick={()=>setSelectedAppointment(appointment.id)} key={appointment.id}><time>{appointment.time}</time><i className={appointment.color}/><span><strong>{appointment.name}</strong><small>{appointment.property} • {appointment.broker}</small></span><em>{appointment.status}</em><b>›</b></button>)}</div>{activeAppointment && <div className="appointment-detail"><div><strong>{activeAppointment.name}</strong><span>{activeAppointment.time} • {activeAppointment.property}</span></div><button type="button" onClick={() => setSelectedAppointment(null)}>Fechar</button><button type="button" onClick={() => { setItems((current) => current.map((item) => item.id === activeAppointment.id ? { ...item, status:'Confirmada' } : item)); notify('Visita confirmada'); }}>Confirmar visita</button></div>}</section><aside className="panel day-summary"><p className="eyebrow">Resumo do dia</p><h2>{days[selectedDay]}</h2><div className="summary-number"><strong>{items.length}</strong><span>visitas<br/>agendadas</span></div><ul><li><i className="mint"/>{items.filter((item) => item.status === 'Confirmada').length} confirmadas</li><li><i className="amber"/>{items.filter((item) => item.status === 'Aguardando').length} aguardando</li><li><i className="violet"/>2 corretores</li></ul><button type="button" className="primary-button" onClick={()=>setFormOpen((open) => !open)}>＋ Novo horário</button>{formOpen && <form className="inline-form" onSubmit={addAppointment}><label>Horário<input name="time" type="time" required/></label><label>Cliente<input name="name" placeholder="Nome do cliente" required/></label><label>Imóvel<input name="property" placeholder="Nome do imóvel" required/></label><div><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div></form>}</aside></div>;
+
+  async function confirmAppointment(appointment: AppointmentRecord) {
+    try {
+      const response = await fetch(`/api/appointments/${appointment.id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ status:'Confirmada' }) });
+      const result = await response.json() as { data?:AppointmentRecord; error?:string };
+      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível confirmar a visita.');
+      setItems((current) => current.map((item) => item.id === appointment.id ? result.data! : item));
+      notify('Visita confirmada');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível confirmar a visita.');
+    }
+  }
+
+  async function removeAppointment(appointment: AppointmentRecord) {
+    if (!window.confirm(`Cancelar a visita de ${appointment.name}?`)) return;
+    try {
+      const response = await fetch(`/api/appointments/${appointment.id}`, { method:'DELETE' });
+      if (!response.ok) throw new Error('Não foi possível cancelar a visita.');
+      setItems((current) => current.filter((item) => item.id !== appointment.id));
+      setSelectedAppointment(null);
+      notify('Visita removida da agenda');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível cancelar a visita.');
+    }
+  }
+
+  const activeAppointment = visibleItems.find((item) => item.id === selectedAppointment);
+  const brokerCount = new Set(visibleItems.map((item) => item.broker)).size;
+  return <div className="agenda-layout"><section className="panel calendar-panel"><div className="calendar-head"><button type="button" aria-label="Semana anterior" disabled={week === 0} onClick={() => { setWeek((current) => Math.max(0, current - 1)); setSelectedDay(0); setSelectedAppointment(null); }}>‹</button><div><p className="eyebrow">Agenda persistente</p><h2>Semana {weeks[week]}</h2></div><button type="button" aria-label="Próxima semana" disabled={week === weeks.length - 1} onClick={() => { setWeek((current) => Math.min(weeks.length - 1, current + 1)); setSelectedDay(0); setSelectedAppointment(null); }}>›</button></div><div className="week-strip">{days.map((day,index)=><button type="button" className={index===selectedDay?'today':''} onClick={() => { setSelectedDay(index); setSelectedAppointment(null); }} key={dates[index]}><span>{day.split(' ')[0]}</span><strong>{day.split(' ')[1]}</strong>{index===selectedDay&&<i/>}</button>)}</div><div className="timeline">{visibleItems.map((appointment)=><button type="button" className={`appointment-row ${selectedAppointment === appointment.id ? 'selected' : ''}`} onClick={()=>setSelectedAppointment(appointment.id)} key={appointment.id}><time>{appointment.time}</time><i className={appointment.color}/><span><strong>{appointment.name}</strong><small>{appointment.property} • {appointment.broker}</small></span><em>{appointment.status}</em><b>›</b></button>)}{visibleItems.length === 0 && <div className="empty-filter">Nenhuma visita agendada para este dia.</div>}</div>{activeAppointment && <div className="appointment-detail"><div><strong>{activeAppointment.name}</strong><span>{activeAppointment.time} • {activeAppointment.property}</span></div><button type="button" onClick={() => setSelectedAppointment(null)}>Fechar</button><button type="button" onClick={() => removeAppointment(activeAppointment)}>Cancelar visita</button>{activeAppointment.status !== 'Confirmada' && <button type="button" onClick={() => confirmAppointment(activeAppointment)}>Confirmar visita</button>}</div>}</section><aside className="panel day-summary"><p className="eyebrow">Resumo do dia</p><h2>{days[selectedDay]}</h2><div className="summary-number"><strong>{visibleItems.length}</strong><span>visitas<br/>agendadas</span></div><ul><li><i className="mint"/>{visibleItems.filter((item) => item.status === 'Confirmada').length} confirmadas</li><li><i className="amber"/>{visibleItems.filter((item) => item.status === 'Aguardando').length} aguardando</li><li><i className="violet"/>{brokerCount} {brokerCount === 1 ? 'corretor' : 'corretores'}</li></ul><button type="button" className="primary-button" onClick={()=>setFormOpen((open) => !open)}>＋ Novo horário</button>{formOpen && <form className="inline-form" onSubmit={addAppointment}><span>Data selecionada: {new Date(`${activeDate}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</span><label>Horário<input name="time" type="time" required/></label><label>Cliente<input name="name" placeholder="Nome do cliente" required/></label><label>Imóvel<input name="property" placeholder="Nome do imóvel" required/></label><div><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div></form>}</aside></div>;
 }
 
 function Automations({ notify }: { notify:(message:string)=>void }) {
