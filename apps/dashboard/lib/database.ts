@@ -182,8 +182,16 @@ async function ensurePerformanceSchema() {
     month TEXT NOT NULL,
     broker TEXT NOT NULL,
     goal NUMERIC(14,2) NOT NULL DEFAULT 0,
+    leads_received INTEGER NOT NULL DEFAULT 0,
+    converted_leads INTEGER NOT NULL DEFAULT 0,
+    recovered_leads INTEGER NOT NULL DEFAULT 0,
+    visits INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (month, broker)
   )`;
+  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS leads_received INTEGER NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS converted_leads INTEGER NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS recovered_leads INTEGER NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS visits INTEGER NOT NULL DEFAULT 0`;
   await sql`CREATE TABLE IF NOT EXISTS site_sales (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     reference_key TEXT UNIQUE,
@@ -196,9 +204,17 @@ async function ensurePerformanceSchema() {
   )`;
   await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
     VALUES ('2026-09', 3000000, 64, 18, 7) ON CONFLICT (month) DO NOTHING`;
-  await sql`INSERT INTO site_broker_goals (month, broker, goal) VALUES
-    ('2026-09', 'Marina Oliveira', 1200000), ('2026-09', 'Paulo Mendes', 1000000), ('2026-09', 'Camila Rocha', 800000)
+  await sql`INSERT INTO site_broker_goals (month, broker, goal, leads_received, converted_leads, recovered_leads, visits) VALUES
+    ('2026-09', 'Marina Oliveira', 1200000, 26, 9, 4, 7),
+    ('2026-09', 'Paulo Mendes', 1000000, 22, 6, 2, 5),
+    ('2026-09', 'Camila Rocha', 800000, 16, 3, 1, 4)
     ON CONFLICT (month, broker) DO NOTHING`;
+  await sql`UPDATE site_broker_goals SET leads_received=26, converted_leads=9, recovered_leads=4, visits=7
+    WHERE month='2026-09' AND broker='Marina Oliveira' AND leads_received=0 AND converted_leads=0 AND recovered_leads=0 AND visits=0`;
+  await sql`UPDATE site_broker_goals SET leads_received=22, converted_leads=6, recovered_leads=2, visits=5
+    WHERE month='2026-09' AND broker='Paulo Mendes' AND leads_received=0 AND converted_leads=0 AND recovered_leads=0 AND visits=0`;
+  await sql`UPDATE site_broker_goals SET leads_received=16, converted_leads=3, recovered_leads=1, visits=4
+    WHERE month='2026-09' AND broker='Camila Rocha' AND leads_received=0 AND converted_leads=0 AND recovered_leads=0 AND visits=0`;
   await sql`INSERT INTO site_sales (reference_key, sale_date, broker, property, client, amount) VALUES
     ('history-2026-04', '2026-04-18', 'Marina Oliveira', 'Residencial Alameda', 'Cliente abril', 1420000),
     ('history-2026-05', '2026-05-21', 'Paulo Mendes', 'Parque Imperial', 'Cliente maio', 1750000),
@@ -223,12 +239,16 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
     await sql`INSERT INTO site_broker_goals (month, broker, goal) VALUES (${month}, ${broker}, 0) ON CONFLICT (month, broker) DO NOTHING`;
   }
   const settingsRows = await sql`SELECT company_goal, leads_received, converted_leads, recovered_leads FROM site_performance_months WHERE month=${month}`;
-  const goalRows = await sql`SELECT broker, goal FROM site_broker_goals WHERE month=${month} ORDER BY broker`;
+  const goalRows = await sql`SELECT broker, goal, leads_received, converted_leads, recovered_leads, visits FROM site_broker_goals WHERE month=${month} ORDER BY broker`;
   const saleRows = await sql`SELECT id, sale_date, broker, property, client, amount, created_at FROM site_sales
     WHERE TO_CHAR(sale_date, 'YYYY-MM')=${month} ORDER BY sale_date DESC, created_at DESC`;
-  const historyRows = await sql`SELECT TO_CHAR(sale_date, 'YYYY-MM') AS month, SUM(amount) AS sold FROM site_sales
-    WHERE sale_date < ((${month} || '-01')::date + INTERVAL '1 month')
-    GROUP BY TO_CHAR(sale_date, 'YYYY-MM') ORDER BY month DESC LIMIT 6`;
+  const historyRows = await sql`WITH recent_months AS (
+      SELECT DISTINCT TO_CHAR(sale_date, 'YYYY-MM') AS month FROM site_sales
+      WHERE sale_date < ((${month} || '-01')::date + INTERVAL '1 month') ORDER BY month DESC LIMIT 6
+    )
+    SELECT TO_CHAR(sale_date, 'YYYY-MM') AS month, broker, SUM(amount) AS sold FROM site_sales
+    WHERE TO_CHAR(sale_date, 'YYYY-MM') IN (SELECT month FROM recent_months)
+    GROUP BY TO_CHAR(sale_date, 'YYYY-MM'), broker ORDER BY month`;
   const sales = saleRows.map(mapSale);
   const totalSold = sales.reduce((total, sale) => total + sale.amount, 0);
   const settings = settingsRows[0];
@@ -242,9 +262,19 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
       const brokerSales = sales.filter((sale) => sale.broker === String(goal.broker));
       const sold = brokerSales.reduce((total, sale) => total + sale.amount, 0);
       const target = Number(goal.goal);
-      return { broker: String(goal.broker), goal: target, sold, salesCount: brokerSales.length, progress: target ? (sold / target) * 100 : 0 };
+      const brokerLeads = Number(goal.leads_received);
+      const brokerConverted = Number(goal.converted_leads);
+      return {
+        broker: String(goal.broker), goal: target, sold, salesCount: brokerSales.length, progress: target ? (sold / target) * 100 : 0,
+        leadsReceived: brokerLeads, convertedLeads: brokerConverted, recoveredLeads: Number(goal.recovered_leads), visits: Number(goal.visits),
+        conversionRate: brokerLeads ? (brokerConverted / brokerLeads) * 100 : 0,
+        history: historyRows.filter((row) => String(row.broker) === String(goal.broker)).map((row) => ({ month: String(row.month), sold: Number(row.sold) })),
+      };
     }).sort((a, b) => b.sold - a.sold),
-    history: historyRows.map((row) => ({ month: String(row.month), sold: Number(row.sold) })).reverse(), sales,
+    history: Array.from(new Set(historyRows.map((row) => String(row.month)))).map((historyMonth) => ({
+      month: historyMonth,
+      sold: historyRows.filter((row) => String(row.month) === historyMonth).reduce((total, row) => total + Number(row.sold), 0),
+    })), sales,
   };
 }
 

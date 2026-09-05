@@ -47,6 +47,12 @@ export type BrokerPerformance = {
   sold: number;
   salesCount: number;
   progress: number;
+  leadsReceived: number;
+  convertedLeads: number;
+  recoveredLeads: number;
+  visits: number;
+  conversionRate: number;
+  history: Array<{ month: string; sold: number }>;
 };
 
 export type PerformanceSnapshot = {
