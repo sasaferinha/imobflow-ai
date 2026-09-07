@@ -237,6 +237,53 @@
 .app-shell.dark-mode :is(.panel, .metric-card, .conversation-card, .property-card,
   .performance-kpis article, .lead-diagnostic-card) { box-shadow: none; }
 .app-shell.dark-mode .broker-name > i { color: #31559f; }
+
+/* Explicit foregrounds must follow the theme as well as their surfaces. */
+.app-shell.dark-mode :is(.metric-card > strong, .lead-diagnostic-card,
+  .lead-diagnostic-card > strong, .lead-import-drop, .lead-import-columns strong,
+  .lead-import-preview strong, .lead-import-preview b) { color: var(--ink); }
+.app-shell.dark-mode :is(.metric-card > span, .modal-card label,
+  .lead-operational-fields label, .inline-form label, .filter-panel label,
+  .lead-intelligence-head p:last-child, .lead-intelligence-head > div:last-child > span,
+  .inactive-days, .lead-import-intro, .lead-import-columns p,
+  .lead-import-preview > div, .lead-import-preview small, .broker-profile-loading,
+  .broker-history-bars span, .broker-history-bars small, .profile-menu button,
+  .conversation-head span, .full-chat-head span, .contact-row small,
+  .score-ring span, .lead-profile dt, .property-copy > small,
+  .property-detail-modal > p, .week-strip button, .appointment-detail span,
+  .summary-number span, .health-panel dt, .period-filter,
+  .lead-filter-trigger small, .lead-filter-trigger > i, .lead-filter-menu-head span,
+  .lead-filter-groups legend, .lead-filter-menu-actions > span,
+  .lead-active-filters .clear-all, .automation-meta,
+  .automation-card footer > div button:last-child) { color: var(--muted); }
+.app-shell.dark-mode .broker-profile-actions label { color: var(--muted) !important; }
+.app-shell.dark-mode :is(.lead-diagnostic-card > i, .lead-diagnosis-note button,
+  .notification-menu > div button, .score-ring strong, .filter-panel strong,
+  .summary-number strong, .automation-card footer button,
+  .lead-filter-menu-head > button) { color: #a9c2ff; }
+.app-shell.dark-mode .inactive-days.alert { color: #ffca85; }
+.app-shell.dark-mode :is(.filter-panel button, .empty-catalog button,
+  .calendar-head button, .lead-import-columns button) {
+  border-color: var(--line);
+  background: #101823;
+  color: var(--ink);
+}
+.app-shell.dark-mode .inbox-tabs button { color: var(--muted); }
+.app-shell.dark-mode .inbox-tabs button.selected {
+  background: #1b2c4b;
+  color: #a9c2ff;
+}
+.app-shell.dark-mode .week-strip button.today { color: #fff; }
+.app-shell.dark-mode :is(.full-composer button, .chat-composer button) { color: var(--ink); }
+.app-shell.dark-mode :is(.full-composer, .chat-composer) .send-button { color: #fff; }
+.app-shell.dark-mode :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+.app-shell.dark-mode .bubble small { color: inherit; opacity: 1; }
+.app-shell.dark-mode .automation-card.paused { opacity: 1; }
+.app-shell.dark-mode .lead-import-error {
+  border-color: #754047;
+  background: #391f28;
+  color: #ffb4bd;
+}
 .app-shell.compact-mode { --panel-space: 16px; }
 .app-shell.compact-mode .performance-kpis article { min-height: 112px; padding: 16px; }
 
