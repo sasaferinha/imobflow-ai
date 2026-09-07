@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
+import { runAutomationsAfterEvent } from '@/lib/automations';
 import { createLead, listLeads } from '@/lib/database';
 import type { LeadInput } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 function clean(value: unknown, max = 500): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -20,7 +22,9 @@ export async function POST(request: NextRequest) {
     if (!input.name || !input.phone || !input.goal || !input.propertyType || !input.region || !input.budget) {
       return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     }
-    return NextResponse.json({ data: await createLead(input) }, { status: 201 });
+    const data = await createLead(input);
+    after(runAutomationsAfterEvent);
+    return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     console.error('lead_create_failed', error);
     return NextResponse.json({ error: 'Não foi possível registrar sua solicitação.' }, { status: 500 });

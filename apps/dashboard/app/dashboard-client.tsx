@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
+import AutomationCenter from './automation-center';
 
 const LOCAL_LEADS_KEY = 'imobflow_local_leads';
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
@@ -514,7 +515,7 @@ export default function DashboardClient() {
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} onUpdate={updateLead} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} />}
-        {view === 'automations' && <Automations notify={notify} />}
+        {view === 'automations' && <AutomationCenter notify={notify} />}
       </section>
 
       {propertyModalOpen && (
@@ -926,21 +927,4 @@ function Agenda({ items, setItems, notify }: { items:AppointmentRecord[]; setIte
   const activeAppointment = visibleItems.find((item) => item.id === selectedAppointment);
   const brokerCount = new Set(visibleItems.map((item) => item.broker)).size;
   return <div className="agenda-layout"><section className="panel calendar-panel"><div className="calendar-head"><button type="button" aria-label="Semana anterior" disabled={week === 0} onClick={() => { setWeek((current) => Math.max(0, current - 1)); setSelectedDay(0); setSelectedAppointment(null); }}>‹</button><div><p className="eyebrow">Agenda persistente</p><h2>Semana {weeks[week]}</h2></div><button type="button" aria-label="Próxima semana" disabled={week === weeks.length - 1} onClick={() => { setWeek((current) => Math.min(weeks.length - 1, current + 1)); setSelectedDay(0); setSelectedAppointment(null); }}>›</button></div><div className="week-strip">{days.map((day,index)=><button type="button" className={index===selectedDay?'today':''} onClick={() => { setSelectedDay(index); setSelectedAppointment(null); }} key={dates[index]}><span>{day.split(' ')[0]}</span><strong>{day.split(' ')[1]}</strong>{index===selectedDay&&<i/>}</button>)}</div><div className="timeline">{visibleItems.map((appointment)=><button type="button" className={`appointment-row ${selectedAppointment === appointment.id ? 'selected' : ''}`} onClick={()=>setSelectedAppointment(appointment.id)} key={appointment.id}><time>{appointment.time}</time><i className={appointment.color}/><span><strong>{appointment.name}</strong><small>{appointment.property} • {appointment.broker}</small></span><em>{appointment.status}</em><b>›</b></button>)}{visibleItems.length === 0 && <div className="empty-filter">Nenhuma visita agendada para este dia.</div>}</div>{activeAppointment && <div className="appointment-detail"><div><strong>{activeAppointment.name}</strong><span>{activeAppointment.time} • {activeAppointment.property}</span></div><button type="button" onClick={() => setSelectedAppointment(null)}>Fechar</button><button type="button" onClick={() => removeAppointment(activeAppointment)}>Cancelar visita</button>{activeAppointment.status !== 'Confirmada' && <button type="button" onClick={() => confirmAppointment(activeAppointment)}>Confirmar visita</button>}</div>}</section><aside className="panel day-summary"><p className="eyebrow">Resumo do dia</p><h2>{days[selectedDay]}</h2><div className="summary-number"><strong>{visibleItems.length}</strong><span>visitas<br/>agendadas</span></div><ul><li><i className="mint"/>{visibleItems.filter((item) => item.status === 'Confirmada').length} confirmadas</li><li><i className="amber"/>{visibleItems.filter((item) => item.status === 'Aguardando').length} aguardando</li><li><i className="violet"/>{brokerCount} {brokerCount === 1 ? 'corretor' : 'corretores'}</li></ul><button type="button" className="primary-button" onClick={()=>setFormOpen((open) => !open)}>＋ Novo horário</button>{formOpen && <form className="inline-form" onSubmit={addAppointment}><span>Data selecionada: {new Date(`${activeDate}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</span><label>Horário<input name="time" type="time" required/></label><label>Cliente<input name="name" placeholder="Nome do cliente" required/></label><label>Imóvel<input name="property" placeholder="Nome do imóvel" required/></label><div><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div></form>}</aside></div>;
-}
-
-function Automations({ notify }: { notify:(message:string)=>void }) {
-  const [flows, setFlows] = useState([
-    { id:1,icon:'◌',name:'Qualificação automática',detail:'Identifica intenção, perfil e orçamento do novo lead.',count:'37 conversas',active:true },
-    { id:2,icon:'◇',name:'Recomendação de imóveis',detail:'Busca e ordena os imóveis disponíveis no portfólio.',count:'19 recomendações',active:true },
-    { id:3,icon:'↗',name:'Follow-up em 48 horas',detail:'Retoma leads que receberam imóveis e não responderam.',count:'8 agendados',active:true },
-    { id:4,icon:'◎',name:'Aviso de lead prioritário',detail:'Notifica o corretor quando a prioridade comercial passa de 80.',count:'4 alertas hoje',active:true },
-  ]);
-  const [selected, setSelected] = useState(flows[0]);
-  function toggleFlow(id:number) {
-    setFlows((current) => current.map((flow) => flow.id === id ? { ...flow, active:!flow.active } : flow));
-    const target = flows.find((flow) => flow.id === id);
-    if (target) notify(`${target.name} ${target.active ? 'pausada' : 'ativada'}`);
-  }
-  const currentSelected = flows.find((flow) => flow.id === selected.id) || flows[0];
-  return <div className="automation-layout"><section className="automation-grid">{flows.map((automation)=><article className={`automation-card panel ${automation.active ? '' : 'paused'}`} key={automation.id}><div className="automation-icon">{automation.icon}</div><span className="automation-state"><i/>{automation.active ? 'Ativa' : 'Pausada'}</span><h3>{automation.name}</h3><p>{automation.detail}</p><footer><strong>{automation.count}</strong><div><button type="button" onClick={()=>setSelected(automation)}>Ver fluxo</button><button type="button" onClick={()=>toggleFlow(automation.id)}>{automation.active ? 'Pausar' : 'Ativar'}</button></div></footer></article>)}</section><aside className="panel health-panel flow-detail"><div className="health-orbit"><span>{flows.filter((flow) => flow.active).length}<small>/4</small></span></div><h3>{currentSelected.name}</h3><p>{currentSelected.detail}</p><dl><div><dt>Status</dt><dd>{currentSelected.active ? 'Executando' : 'Pausado'}</dd></div><div><dt>Execuções</dt><dd>{currentSelected.count}</dd></div><div><dt>Falhas</dt><dd>0</dd></div></dl><button type="button" className="profile-action" onClick={() => notify(`${currentSelected.name} executada com sucesso`)}>Executar agora</button></aside></div>;
 }

@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
+import { runAutomationsAfterEvent } from '@/lib/automations';
 import { updateLeadIntelligence } from '@/lib/database';
 import type { LeadLifecycleStatus } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 const statuses: LeadLifecycleStatus[] = ['Novo', 'Em atendimento', 'Visita', 'Proposta', 'Convertido', 'Perdido'];
 
@@ -20,6 +22,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       assignedTo: typeof body.assignedTo === 'string' && body.assignedTo.trim() ? body.assignedTo.trim().slice(0, 120) : null,
     });
     if (!data) return NextResponse.json({ error: 'Lead não encontrado.' }, { status: 404 });
+    after(runAutomationsAfterEvent);
     return NextResponse.json({ data });
   } catch (error) {
     console.error('lead_update_failed', error);

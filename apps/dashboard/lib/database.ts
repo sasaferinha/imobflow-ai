@@ -53,10 +53,10 @@ export async function createLead(input: LeadInput): Promise<LeadProfile> {
   return mapLead(rows[0]);
 }
 
-export async function listLeads(): Promise<LeadProfile[]> {
+export async function listLeads(limit = 1000): Promise<LeadProfile[]> {
   await ensureLeadSchema();
   const sql = database();
-  const rows = await sql`SELECT id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at FROM site_leads ORDER BY created_at DESC LIMIT 1000`;
+  const rows = await sql`SELECT id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at FROM site_leads ORDER BY created_at DESC LIMIT ${limit}`;
   return rows.map(mapLead);
 }
 
@@ -106,7 +106,7 @@ export async function updateLeadIntelligence(id: string, input: { lifecycleStatu
   return rows[0] ? mapLead(rows[0]) : null;
 }
 
-async function ensurePropertySchema() {
+async function ensurePropertySchema(seed = true) {
   const sql = database();
   await sql`CREATE TABLE IF NOT EXISTS site_properties (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -122,7 +122,7 @@ async function ensurePropertySchema() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
   await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb`;
-  await sql`INSERT INTO site_properties (reference_key, title, district, price, meta, match, tone, purpose) VALUES
+  if (seed) await sql`INSERT INTO site_properties (reference_key, title, district, price, meta, match, tone, purpose) VALUES
     ('aurora', 'Residencial Aurora', 'Centro', 'R$ 575.000', '3 quartos • 2 vagas • 98 m²', 96, 'orchid', 'Venda'),
     ('horizonte', 'Edifício Horizonte', 'Jardim Floresta', 'R$ 590.000', '3 quartos • 1 vaga • 91 m²', 92, 'sky', 'Venda'),
     ('bosque-sereno', 'Casa Bosque Sereno', 'Alto da Serra', 'R$ 820.000', '4 quartos • 3 vagas • 184 m²', 88, 'sage', 'Venda'),
@@ -132,9 +132,9 @@ async function ensurePropertySchema() {
     ON CONFLICT (reference_key) DO NOTHING`;
 }
 
-export async function listProperties(): Promise<PropertyRecord[]> {
-  await ensurePropertySchema();
-  const rows = await database()`SELECT id, title, district, price, meta, match, tone, purpose, images, created_at FROM site_properties ORDER BY created_at DESC`;
+export async function listProperties(forAutomation = false): Promise<PropertyRecord[]> {
+  await ensurePropertySchema(!forAutomation);
+  const rows = await database()`SELECT id, title, district, price, meta, match, tone, purpose, images, created_at FROM site_properties WHERE (${forAutomation}=FALSE OR reference_key IS NULL) ORDER BY created_at DESC`;
   return rows.map(mapProperty);
 }
 

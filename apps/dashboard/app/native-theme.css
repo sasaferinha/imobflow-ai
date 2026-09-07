@@ -11,6 +11,23 @@
 body { font-family: var(--native-font); }
 /* Optical sizing keeps the native font crisp without downloading a substitute. */
 body { -webkit-font-smoothing: antialiased; }
+.automation-center { display: grid; gap: 24px; }
+.app-shell.app-shell .automation-warning { padding: 16px; border: 1px solid #b77727; background: #fff4df; color: #70410c; line-height: 1.6; }
+.app-shell.dark-mode .automation-warning { background: #392b1e; color: #ffda9b; }
+.automation-notice { padding: 16px; background: var(--secondary); color: var(--muted); line-height: 1.6; }
+.app-shell.app-shell .automation-center .automation-card { padding-top: 54px; }
+.automation-center .flow-detail p { color: var(--muted); line-height: 1.6; }
+.automation-results > article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; padding: 24px 0; border-top: 1px solid var(--line); }
+.automation-results h3 { font-size: 16px; margin-block: 8px; }
+.automation-results p, .automation-results small, .automation-history p { color: var(--muted); line-height: 1.6; }
+.automation-results > article > div:last-child { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.automation-results button { border: 1px solid var(--line); padding: 10px 14px; background: var(--secondary); color: var(--ink); }
+.automation-history ul { padding: 0; margin: 0; list-style: none; }
+.automation-history li { display: grid; grid-template-columns: 160px 1fr 1fr 1.5fr; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.automation-center button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 720px) {
+  .automation-results > article, .automation-history li { grid-template-columns: 1fr; gap: 12px; }
+}
 .app-shell {
   --ink: #1d1d1f;
   --muted: #64646b;

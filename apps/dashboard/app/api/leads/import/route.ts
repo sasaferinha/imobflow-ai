@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
+import { runAutomationsAfterEvent } from '@/lib/automations';
 import { importLeads } from '@/lib/database';
 import type { LeadInput, LeadLifecycleStatus } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 const statuses: LeadLifecycleStatus[] = ['Novo', 'Em atendimento', 'Visita', 'Proposta', 'Convertido', 'Perdido'];
 
@@ -31,7 +33,9 @@ export async function POST(request: NextRequest) {
     }).filter((lead) => lead.name && (lead.phone || lead.email));
 
     if (leads.length === 0) return NextResponse.json({ error: 'Nenhum lead válido encontrado. Informe nome e telefone ou e-mail.' }, { status: 400 });
-    return NextResponse.json({ data: await importLeads(leads) }, { status: 201 });
+    const data = await importLeads(leads);
+    after(runAutomationsAfterEvent);
+    return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     console.error('lead_import_failed', error);
     return NextResponse.json({ error: 'Não foi possível importar a base de leads.' }, { status: 500 });
