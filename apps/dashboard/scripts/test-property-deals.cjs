@@ -13,7 +13,12 @@ async function sql(parts, ...values) {
   if (query.includes('SELECT id, sale_date')) return [sale, { ...sale, id: 'rent', amount: 2500, deal_type: 'Aluguel' }];
   if (query.includes('WITH recent_months')) { assert.equal(query.split("deal_type='Venda'").length - 1, 2); return [{ month: '2026-09', broker: 'Corretor', sold: 100000 }]; }
   if (query.includes('INSERT INTO site_sales (sale_date')) { assert.ok(query.includes('deal_type')); return [{ ...sale, amount: values[4], deal_type: values[5] }]; }
-  if (query.includes('SELECT id, title')) return [{ id: 'p1', title: 'Casa', district: 'Centro', price: 'R$ 100.000', meta: '2 quartos', match: 80, tone: 'sky', purpose: 'Venda', status: 'Vendido', images: [], created_at: date }];
+  if (query.includes('INSERT INTO site_properties (title') || query.includes('UPDATE site_properties SET title=')) {
+    assert.ok(query.includes('property_type'));
+    assert.equal(values[8], 'Apartamento');
+    return [{ id: 'p2', title: 'Central', district: 'Centro', price: '500 mil', meta: '2 quartos', property_type: values[8], match: 80, tone: 'sky', purpose: 'Venda', status: 'Disponível', images: [], created_at: date }];
+  }
+  if (query.includes('SELECT id, title')) return [{ id: 'p1', title: 'Casa', district: 'Centro', price: 'R$ 100.000', meta: '2 quartos', property_type: 'Casa', match: 80, tone: 'sky', purpose: 'Venda', status: 'Vendido', images: [], created_at: date }];
   return [];
 }
 const source = fs.readFileSync(require('node:path').join(__dirname, '../lib/database.ts'), 'utf8');
@@ -37,5 +42,9 @@ vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, pr
   const properties = await api.listProperties(true);
   assert.equal(properties[0].status, 'Vendido');
   assert.ok(!calls.some((query) => query.includes('INSERT INTO site_properties')));
+  assert.equal(properties[0].propertyType, 'Casa');
+  const propertyInput = { title: 'Central', district: 'Centro', price: '500 mil', meta: '2 quartos', match: 80, tone: 'sky', purpose: 'Venda', status: 'Disponível', propertyType: 'Apartamento', images: [] };
+  assert.equal((await api.createProperty(propertyInput)).propertyType, 'Apartamento');
+  assert.equal((await api.updateProperty('p2', propertyInput)).propertyType, 'Apartamento');
   console.log('PASS: rental/sale separation, legacy records, broker totals, history query filters, rental mapping, sold status, no demo seeding for automations.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

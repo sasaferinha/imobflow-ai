@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { deleteProperty, updateProperty } from '@/lib/database';
 import type { PropertyInput } from '@/lib/operations';
 
+import { runAutomationsAfterEvent } from '@/lib/automations';
+
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 function clean(value: unknown, max = 300) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -22,10 +25,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const input: PropertyInput = {
       title: clean(body.title, 160), district: clean(body.district, 120), price: clean(body.price, 80), meta: clean(body.meta, 500),
       match: Math.max(0, Math.min(100, Number(body.match) || 80)), tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
+      propertyType: clean(body.propertyType, 80),
       status: body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
     };
     if (!input.title || !input.district || !input.price || !input.meta) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     const data = await updateProperty((await context.params).id, input);
+    if (data) after(runAutomationsAfterEvent);
     return data ? NextResponse.json({ data }) : NextResponse.json({ error: 'Imóvel não encontrado.' }, { status: 404 });
   } catch (error) {
     console.error('property_update_failed', error);

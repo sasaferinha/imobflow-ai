@@ -121,6 +121,7 @@ async function ensurePropertySchema(seed = true) {
     images JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS property_type TEXT`;
   await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Disponível'`;
   await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb`;
   if (seed) await sql`INSERT INTO site_properties (reference_key, title, district, price, meta, match, tone, purpose) VALUES
@@ -135,22 +136,22 @@ async function ensurePropertySchema(seed = true) {
 
 export async function listProperties(forAutomation = false): Promise<PropertyRecord[]> {
   await ensurePropertySchema(!forAutomation);
-  const rows = await database()`SELECT id, title, district, price, meta, match, tone, purpose, status, images, created_at FROM site_properties WHERE (${forAutomation}=FALSE OR reference_key IS NULL) ORDER BY created_at DESC`;
+  const rows = await database()`SELECT id, title, district, price, meta, match, tone, purpose, status, property_type, images, created_at FROM site_properties WHERE (${forAutomation}=FALSE OR reference_key IS NULL) ORDER BY created_at DESC`;
   return rows.map(mapProperty);
 }
 
 export async function createProperty(input: PropertyInput): Promise<PropertyRecord> {
   await ensurePropertySchema();
-  const rows = await database()`INSERT INTO site_properties (title, district, price, meta, match, tone, purpose, status, images)
-    VALUES (${input.title}, ${input.district}, ${input.price}, ${input.meta}, ${input.match}, ${input.tone}, ${input.purpose}, ${input.status || 'Disponível'}, ${JSON.stringify(input.images)}::jsonb)
-    RETURNING id, title, district, price, meta, match, tone, purpose, status, images, created_at`;
+  const rows = await database()`INSERT INTO site_properties (title, district, price, meta, match, tone, purpose, status, property_type, images)
+    VALUES (${input.title}, ${input.district}, ${input.price}, ${input.meta}, ${input.match}, ${input.tone}, ${input.purpose}, ${input.status || 'Disponível'}, ${input.propertyType || null}, ${JSON.stringify(input.images)}::jsonb)
+    RETURNING id, title, district, price, meta, match, tone, purpose, status, property_type, images, created_at`;
   return mapProperty(rows[0]);
 }
 
 export async function updateProperty(id: string, input: PropertyInput): Promise<PropertyRecord | null> {
   await ensurePropertySchema();
-  const rows = await database()`UPDATE site_properties SET title=${input.title}, district=${input.district}, price=${input.price}, meta=${input.meta}, match=${input.match}, tone=${input.tone}, purpose=${input.purpose}, status=${input.status || 'Disponível'}, images=${JSON.stringify(input.images)}::jsonb
-    WHERE id=${id} RETURNING id, title, district, price, meta, match, tone, purpose, status, images, created_at`;
+  const rows = await database()`UPDATE site_properties SET title=${input.title}, district=${input.district}, price=${input.price}, meta=${input.meta}, match=${input.match}, tone=${input.tone}, purpose=${input.purpose}, status=${input.status || 'Disponível'}, property_type=${input.propertyType || null}, images=${JSON.stringify(input.images)}::jsonb
+    WHERE id=${id} RETURNING id, title, district, price, meta, match, tone, purpose, status, property_type, images, created_at`;
   return rows[0] ? mapProperty(rows[0]) : null;
 }
 
@@ -164,6 +165,7 @@ function mapProperty(row: Record<string, unknown>): PropertyRecord {
   const images = Array.isArray(row.images) ? row.images.filter((image): image is string => typeof image === 'string') : [];
   return {
     id: String(row.id), title: String(row.title), district: String(row.district), price: String(row.price),
+    propertyType: row.property_type ? String(row.property_type) : undefined,
     meta: String(row.meta), match: Number(row.match), tone: String(row.tone),
     status: row.status === 'Vendido' ? 'Vendido' : row.status === 'Alugado' ? 'Alugado' : 'Disponível',
     purpose: row.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images, createdAt: new Date(String(row.created_at)).toISOString(),

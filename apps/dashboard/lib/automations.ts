@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { neon } from '@neondatabase/serverless';
 import { listLeads, listProperties } from './database';
 import { automationFlows, evaluateAutomation, type FlowId } from './automation-rules';
+import { newPropertyCandidates, whatsappNumber } from './property-matching';
 
 function database() {
   if (!process.env.DATABASE_URL) throw new Error('Banco de dados não configurado.');
@@ -32,7 +33,9 @@ export async function automationSnapshot() {
   const [settings, counts, results, runs] = await Promise.all([
     sql`SELECT * FROM site_automation_settings`,
     sql`SELECT flow_id, count(*)::int AS total FROM site_automation_results GROUP BY flow_id`,
-    sql`SELECT id, flow_id, summary, detail, status, created_at FROM site_automation_results ORDER BY created_at DESC LIMIT 100`,
+    sql`SELECT id, flow_id, summary, detail, status, created_at FROM (
+      SELECT *, row_number() OVER (PARTITION BY flow_id ORDER BY created_at DESC) AS position FROM site_automation_results
+    ) recent WHERE position <= 100 ORDER BY created_at DESC`,
     sql`SELECT * FROM site_automation_runs ORDER BY created_at DESC LIMIT 40`,
   ]);
   return { configured: true, schedulerConfigured: Boolean(process.env.CRON_SECRET), flows: automationFlows.map((flow) => ({ ...flow, active: settings.find((setting) => setting.id === flow.id)?.active === true, total: Number(counts.find((count) => count.flow_id === flow.id)?.total || 0) })), results, runs };
@@ -46,6 +49,21 @@ export async function setAutomationActive(id: FlowId, active: boolean) {
 export async function completeAutomationResult(id: string) {
   await ensureSchema();
   return database()`UPDATE site_automation_results SET status='done' WHERE id=${id} AND status='open' RETURNING id`;
+}
+
+// A fresh read prevents an old draft from offering a sold property or a profile
+// that has changed. Opening WhatsApp is a handoff, never an automatic send.
+export async function prepareMatchMessage(id: string) {
+  await ensureSchema();
+  const rows = await database()`SELECT lead_id, detail FROM site_automation_results
+    WHERE id=${id} AND flow_id='new-property' AND status='open'`;
+  if (!rows.length) return { error: 'Este rascunho não está mais disponível.' };
+  const [leads, properties] = await Promise.all([listLeads(10001), listProperties(true)]);
+  const lead = leads.find((item) => item.id === rows[0].lead_id);
+  const candidate = lead && newPropertyCandidates(lead, properties).find((item) => item.detail.propertyId === rows[0].detail.propertyId);
+  if (!candidate || !lead) return { error: 'O perfil, a disponibilidade ou a janela de novidade mudou. Não envie este rascunho.' };
+  const phone = whatsappNumber(lead.phone);
+  return { message: String(candidate.detail.message), phone };
 }
 
 export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selected?: FlowId) {
@@ -63,7 +81,7 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
     if (leads.length > 10000) throw new Error('Lote acima do limite seguro.');
     const settings = await sql`SELECT id FROM site_automation_settings WHERE active=TRUE`;
     const active = automationFlows.filter((flow) => (!selected || flow.id === selected) && settings.some((setting) => setting.id === flow.id));
-    const properties = active.some((flow) => flow.id === 'recommendations') ? await listProperties(true) : [];
+    const properties = active.some((flow) => flow.id === 'recommendations' || flow.id === 'new-property') ? await listProperties(true) : [];
     // Close obsolete reminders after a recorded contact or change of commercial stage.
     await sql`UPDATE site_automation_results r SET status='cancelled' FROM site_leads l
       WHERE r.lead_id=l.id AND r.flow_id='followup' AND r.status='open'
@@ -71,7 +89,7 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
         (r.detail->>'contactVersion')::timestamptz IS DISTINCT FROM COALESCE(l.last_contact_at, l.created_at))`;
     for (const flow of active) {
       try {
-        const candidates = leads.map((lead) => evaluateAutomation(flow.id, lead, properties)).filter((result) => result !== null)
+        const candidates = leads.flatMap((lead) => flow.id === 'new-property' ? newPropertyCandidates(lead, properties) : [evaluateAutomation(flow.id, lead, properties)]).filter((result) => result !== null)
           .map((result) => ({ lead_id: result.leadId, fingerprint: createHash('sha256').update(result.version).digest('hex'), summary: result.summary, detail: result.detail }));
         // Effect, deduplication and success accounting commit together. A pause is
         // rechecked under a row lock, so it also applies to queued executions.

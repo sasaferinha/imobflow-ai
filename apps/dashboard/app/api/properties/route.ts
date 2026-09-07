@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { createProperty, listProperties } from '@/lib/database';
 import type { PropertyInput } from '@/lib/operations';
 
+import { runAutomationsAfterEvent } from '@/lib/automations';
+
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 function clean(value: unknown, max = 300) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -20,6 +23,7 @@ function propertyInput(body: Record<string, unknown>): PropertyInput {
     title: clean(body.title, 160), district: clean(body.district, 120), price: clean(body.price, 80),
     meta: clean(body.meta, 500), match: Math.max(0, Math.min(100, Number(body.match) || 80)),
     tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
+    propertyType: clean(body.propertyType, 80),
     status: body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
   };
 }
@@ -39,7 +43,9 @@ export async function POST(request: NextRequest) {
   try {
     const input = propertyInput(await request.json() as Record<string, unknown>);
     if (!input.title || !input.district || !input.price || !input.meta) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
-    return NextResponse.json({ data: await createProperty(input) }, { status: 201 });
+    const data = await createProperty(input);
+    after(runAutomationsAfterEvent);
+    return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     console.error('property_create_failed', error);
     return NextResponse.json({ error: 'Não foi possível salvar o imóvel.' }, { status: 500 });

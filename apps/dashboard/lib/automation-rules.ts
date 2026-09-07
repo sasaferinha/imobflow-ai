@@ -1,11 +1,13 @@
 import { analyzeLead, explainProfile, type LeadProfile } from './leads';
 import type { PropertyRecord } from './operations';
+import { newPropertyCandidates } from './property-matching';
 
 export const automationFlows = [
   { id: 'qualification', name: 'Qualificação automática', detail: 'Atualiza o resumo, a pontuação e os motivos de prioridade dos leads.' },
   { id: 'recommendations', name: 'Recomendação de imóveis', detail: 'Separa imóveis por finalidade e região para revisão do corretor.' },
   { id: 'followup', name: 'Lembrete após 48 horas', detail: 'Cria uma tarefa interna após 48 horas sem contato registrado. Não envia mensagens.' },
   { id: 'priority', name: 'Aviso de lead prioritário', detail: 'Cria um alerta interno para leads com pontuação a partir de 80.' },
+  { id: 'new-property', name: 'Novo imóvel compatível', detail: 'Cruza novos imóveis com o perfil dos leads e prepara uma mensagem personalizada para cada oportunidade.' },
 ] as const;
 export type FlowId = typeof automationFlows[number]['id'];
 export const isFlowId = (value: unknown): value is FlowId => automationFlows.some((flow) => flow.id === value);
@@ -13,6 +15,7 @@ export type AutomationCandidate = { leadId: string; version: string; summary: st
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
 export function evaluateAutomation(flow: FlowId, lead: LeadProfile, properties: PropertyRecord[], now = new Date()): AutomationCandidate | null {
+  if (flow === 'new-property') return newPropertyCandidates(lead, properties, now)[0] || null;
   const analysis = analyzeLead(lead, now);
   const source = { goal: lead.goal, propertyType: lead.propertyType, region: lead.region, budget: lead.budget, details: lead.details, lastContactAt: lead.lastContactAt, lifecycleStatus: lead.lifecycleStatus, assignedTo: lead.assignedTo };
   if (flow === 'qualification') {

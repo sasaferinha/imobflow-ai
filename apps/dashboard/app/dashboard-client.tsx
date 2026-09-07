@@ -411,6 +411,7 @@ export default function DashboardClient() {
       tone: editingProperty?.tone || 'orchid',
       purpose: String(form.get('purpose')) === 'Aluguel' ? 'Aluguel' : 'Venda',
       status: String(form.get('status') || 'Disponível'),
+      propertyType: String(form.get('propertyType') || ''),
       images: propertyImages,
     };
     setSavingProperty(true);
@@ -526,7 +527,9 @@ export default function DashboardClient() {
             <label>Título<input name="title" defaultValue={editingProperty?.title} placeholder="Ex.: Residencial das Flores" autoFocus required /></label>
             <div className="form-grid"><label>Bairro<input name="district" defaultValue={editingProperty?.district} placeholder="Centro" required /></label><label>Preço<input name="price" defaultValue={editingProperty?.price} placeholder="R$ 650.000" required /></label></div>
             <div className="form-grid"><label>Finalidade<select name="purpose" defaultValue={editingProperty?.purpose || 'Venda'}><option>Venda</option><option>Aluguel</option></select></label><label>Situação<select name="status" defaultValue={editingProperty?.status || 'Disponível'}><option>Disponível</option><option>Vendido</option><option>Alugado</option></select></label></div>
+            <label>Tipo do imóvel<select name="propertyType" defaultValue={editingProperty?.propertyType || ''}><option value="">Não informado</option><option>Apartamento</option><option>Casa</option><option>Studio</option><option>Terreno</option><option>Comercial</option></select></label>
             <label>Descrição<textarea name="description" defaultValue={editingProperty?.meta} placeholder="Ex.: 3 quartos • 2 vagas • 98 m²" rows={3} required /></label>
+            <p className="deal-help">Para encontrar leads compatíveis, informe o tipo e a quantidade de quartos na descrição.</p>
             <div className="property-image-field">
               <div><strong>Imagens do imóvel</strong><span>Até 5 fotos em JPG, PNG ou WebP</span></div>
               <input id="property-images" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { void addPropertyImages(event.target.files); event.target.value = ''; }} />
@@ -893,17 +896,22 @@ function SettingsModal({ settings, close, save }: { settings:DashboardSettings; 
 }
 
 function Agenda({ items, setItems, notify }: { items:AppointmentRecord[]; setItems:Dispatch<SetStateAction<AppointmentRecord[]>>; notify:(message:string)=>void }) {
-  const weeks = ['24—30 ago', '31 ago—06 set', '07—13 set'];
-  const weekDates = [
-    ['2026-08-24','2026-08-25','2026-08-26','2026-08-27','2026-08-28','2026-08-29','2026-08-30'],
-    ['2026-08-31','2026-09-01','2026-09-02','2026-09-03','2026-09-04','2026-09-05','2026-09-06'],
-    ['2026-09-07','2026-09-08','2026-09-09','2026-09-10','2026-09-11','2026-09-12','2026-09-13'],
-  ];
-  const [week, setWeek] = useState(1);
-  const [selectedDay, setSelectedDay] = useState(1);
+  const [week, setWeek] = useState(0);
+  const [selectedDay, setSelectedDay] = useState(() => (new Date().getDay() + 6) % 7);
   const [formOpen, setFormOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<string | null>(null);
-  const dates = weekDates[week];
+  const monday = new Date();
+  monday.setHours(12, 0, 0, 0);
+  monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7 + week * 7);
+  const dates = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(monday);
+    date.setDate(date.getDate() + index);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
+  const weekLabel = `${new Date(dates[0] + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })} — ${new Date(dates[6] + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  function changeWeek(offset: number) {
+    setWeek((current) => current + offset); setSelectedAppointment(null);
+  }
   const days = dates.map((date) => {
     const parts = new Intl.DateTimeFormat('pt-BR', { weekday:'short', day:'2-digit', timeZone:'UTC' }).format(new Date(`${date}T12:00:00Z`)).replace('.', '').split(' ');
     return `${parts[0]} ${parts.at(-1)}`;
@@ -953,5 +961,36 @@ function Agenda({ items, setItems, notify }: { items:AppointmentRecord[]; setIte
 
   const activeAppointment = visibleItems.find((item) => item.id === selectedAppointment);
   const brokerCount = new Set(visibleItems.map((item) => item.broker)).size;
-  return <div className="agenda-layout"><section className="panel calendar-panel"><div className="calendar-head"><button type="button" aria-label="Semana anterior" disabled={week === 0} onClick={() => { setWeek((current) => Math.max(0, current - 1)); setSelectedDay(0); setSelectedAppointment(null); }}>‹</button><div><p className="eyebrow">Agenda persistente</p><h2>Semana {weeks[week]}</h2></div><button type="button" aria-label="Próxima semana" disabled={week === weeks.length - 1} onClick={() => { setWeek((current) => Math.min(weeks.length - 1, current + 1)); setSelectedDay(0); setSelectedAppointment(null); }}>›</button></div><div className="week-strip">{days.map((day,index)=><button type="button" className={index===selectedDay?'today':''} onClick={() => { setSelectedDay(index); setSelectedAppointment(null); }} key={dates[index]}><span>{day.split(' ')[0]}</span><strong>{day.split(' ')[1]}</strong>{index===selectedDay&&<i/>}</button>)}</div><div className="timeline">{visibleItems.map((appointment)=><button type="button" className={`appointment-row ${selectedAppointment === appointment.id ? 'selected' : ''}`} onClick={()=>setSelectedAppointment(appointment.id)} key={appointment.id}><time>{appointment.time}</time><i className={appointment.color}/><span><strong>{appointment.name}</strong><small>{appointment.property} • {appointment.broker}</small></span><em>{appointment.status}</em><b>›</b></button>)}{visibleItems.length === 0 && <div className="empty-filter">Nenhuma visita agendada para este dia.</div>}</div>{activeAppointment && <div className="appointment-detail"><div><strong>{activeAppointment.name}</strong><span>{activeAppointment.time} • {activeAppointment.property}</span></div><button type="button" onClick={() => setSelectedAppointment(null)}>Fechar</button><button type="button" onClick={() => removeAppointment(activeAppointment)}>Cancelar visita</button>{activeAppointment.status !== 'Confirmada' && <button type="button" onClick={() => confirmAppointment(activeAppointment)}>Confirmar visita</button>}</div>}</section><aside className="panel day-summary"><p className="eyebrow">Resumo do dia</p><h2>{days[selectedDay]}</h2><div className="summary-number"><strong>{visibleItems.length}</strong><span>visitas<br/>agendadas</span></div><ul><li><i className="mint"/>{visibleItems.filter((item) => item.status === 'Confirmada').length} confirmadas</li><li><i className="amber"/>{visibleItems.filter((item) => item.status === 'Aguardando').length} aguardando</li><li><i className="violet"/>{brokerCount} {brokerCount === 1 ? 'corretor' : 'corretores'}</li></ul><button type="button" className="primary-button" onClick={()=>setFormOpen((open) => !open)}>＋ Novo horário</button>{formOpen && <form className="inline-form" onSubmit={addAppointment}><span>Data selecionada: {new Date(`${activeDate}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</span><label>Horário<input name="time" type="time" required/></label><label>Cliente<input name="name" placeholder="Nome do cliente" required/></label><label>Imóvel<input name="property" placeholder="Nome do imóvel" required/></label><div><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div></form>}</aside></div>;
+  return <div className="agenda-layout native-agenda">
+    <section className="panel calendar-panel">
+      <div className="calendar-head">
+        <div><p className="eyebrow">Calendário de visitas</p><h2>{weekLabel}</h2></div>
+        <nav className="calendar-navigation" aria-label="Navegação da agenda">
+          <button type="button" onClick={() => { setWeek(0); setSelectedDay((new Date().getDay() + 6) % 7); setSelectedAppointment(null); }}>Hoje</button>
+          <button type="button" aria-label="Semana anterior" onClick={() => changeWeek(-1)}>‹</button>
+          <button type="button" aria-label="Próxima semana" onClick={() => changeWeek(1)}>›</button>
+        </nav>
+      </div>
+      <div className="week-strip" aria-label="Dias da semana">
+        {days.map((day,index) => <button type="button" className={index === selectedDay ? 'today' : ''} aria-pressed={index === selectedDay} aria-label={new Date(dates[index] + 'T12:00:00').toLocaleDateString('pt-BR', { dateStyle: 'full' })} onClick={() => { setSelectedDay(index); setSelectedAppointment(null); }} key={dates[index]}>
+          <span>{day.split(' ')[0]}</span><strong>{day.split(' ')[1]}</strong>
+          <small>{items.filter((item) => item.date === dates[index]).length || '—'}</small>
+        </button>)}
+      </div>
+      <div className="agenda-day-heading"><h3>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</h3><span>{visibleItems.length} {visibleItems.length === 1 ? 'visita' : 'visitas'}</span></div>
+      <div className="timeline">
+        {visibleItems.map((appointment) => <button type="button" aria-expanded={selectedAppointment === appointment.id} className={`appointment-row ${selectedAppointment === appointment.id ? 'selected' : ''}`} onClick={() => setSelectedAppointment(appointment.id)} key={appointment.id}>
+          <time>{appointment.time}</time><i className={appointment.color}/><span><strong>{appointment.name}</strong><small>{appointment.property}</small><small>{appointment.broker}</small></span><em>{appointment.status}</em><b aria-hidden="true">›</b>
+        </button>)}
+        {visibleItems.length === 0 && <div className="agenda-empty"><span aria-hidden="true">＋</span><h3>Seu dia está livre</h3><p>Nenhuma visita agendada para esta data.</p><button type="button" className="profile-action" onClick={() => setFormOpen(true)}>Agendar uma visita</button></div>}
+      </div>
+      {activeAppointment && <div className="appointment-detail"><div><strong>{activeAppointment.name}</strong><span>{activeAppointment.time} • {activeAppointment.property}</span></div><div className="appointment-detail-actions"><button type="button" onClick={() => setSelectedAppointment(null)}>Fechar</button><button type="button" className="cancel-visit" onClick={() => removeAppointment(activeAppointment)}>Cancelar visita</button>{activeAppointment.status !== 'Confirmada' && <button type="button" className="confirm-visit" onClick={() => confirmAppointment(activeAppointment)}>Confirmar visita</button>}</div></div>}
+    </section>
+    <aside className="panel day-summary"><p className="eyebrow">Resumo do dia</p><h2>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}</h2>
+      <div className="summary-number"><strong>{visibleItems.length}</strong><span>visitas agendadas</span></div>
+      <ul><li><span><i className="mint"/>Confirmadas</span><strong>{visibleItems.filter((item) => item.status === 'Confirmada').length}</strong></li><li><span><i className="amber"/>Aguardando</span><strong>{visibleItems.filter((item) => item.status === 'Aguardando').length}</strong></li><li><span><i className="blue"/>Corretores</span><strong>{brokerCount}</strong></li></ul>
+      <button type="button" className="primary-button" aria-expanded={formOpen} onClick={() => setFormOpen((open) => !open)}>＋ Novo horário</button>
+      {formOpen && <form className="inline-form" onSubmit={addAppointment}><h3>Nova visita</h3><span>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR')}</span><label>Horário<input name="time" type="time" required/></label><label>Cliente<input name="name" placeholder="Nome do cliente" required/></label><label>Imóvel<input name="property" placeholder="Nome do imóvel" required/></label><div><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div></form>}
+    </aside>
+  </div>;
 }
