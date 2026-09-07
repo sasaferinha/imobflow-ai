@@ -621,3 +621,44 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell :is(.history-chart b, .broker-history-bars b, .score-cell i, .score-explanation > i b, .goal-progress > div span, .broker-progress > i b, .health-orbit, .metric-card, .lead-diagnostic-card, .automation-card, .property-card, .day-summary) { animation: none !important; transform: none; }
   .app-shell.app-shell .property-card { transition: none; }
 }
+
+/* Conversation context uses the same hierarchy as the performance surface:
+   commercial signal first, then the criteria a broker needs to answer well. */
+.app-shell.app-shell .conversation-demo .inbox-layout { grid-template-columns: minmax(200px, .76fr) minmax(360px, 1.45fr) minmax(250px, .92fr); gap: 18px; }
+.app-shell.app-shell .conversation-demo .lead-profile { display: flex; min-width: 0; flex-direction: column; padding: 20px; overflow-y: auto; }
+.conversation-lead-header { display: flex; align-items: center; gap: 12px; }
+.conversation-lead-header > div { min-width: 0; }
+.conversation-lead-header p { margin: 0 0 3px; color: var(--muted); font-size: 12px; }
+.conversation-lead-header h3 { margin: 0; color: var(--ink); font-size: 18px; font-weight: 600; letter-spacing: -.025em; }
+.conversation-lead-header .conversation-data-source { display: block; margin-top: 4px; line-height: 1.45; }
+.app-shell.app-shell .conversation-demo .conversation-classifications { justify-content: flex-start; margin: 16px 0; }
+.app-shell.app-shell .conversation-demo .conversation-classifications .conversation-badge { border: 1px solid var(--line); font-size: 12px; font-weight: 500; }
+.conversation-priority-card { margin-bottom: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(135deg, color-mix(in srgb, #eaf3ff 72%, var(--paper)), var(--paper)); animation: data-reveal .45s cubic-bezier(.16, 1, .3, 1) both; }
+.conversation-priority-card > div { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.conversation-priority-card span { color: var(--muted); font-size: 12px; }
+.conversation-priority-card strong { color: var(--ink); font-size: 28px; font-weight: 600; letter-spacing: -.045em; }
+.conversation-priority-card strong small { margin-left: 2px; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0; }
+.conversation-priority-card > i { display: block; height: 7px; margin: 12px 0 10px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.conversation-priority-card > i b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #0066df, #58d5ae); transform-origin: left; animation: data-bar-rise .7s cubic-bezier(.16, 1, .3, 1) both; }
+.conversation-priority-card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.conversation-lead-highlights { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.conversation-lead-highlights > div { display: flex; min-width: 0; min-height: 82px; padding: 13px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); flex-direction: column; gap: 7px; }
+.conversation-lead-highlights span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.conversation-lead-highlights strong { color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.conversation-lead-details { margin-top: 18px; }
+.conversation-lead-details h4 { margin: 0 0 7px; color: var(--ink); font-size: 14px; font-weight: 600; }
+.conversation-lead-details dl { margin: 0; }
+.conversation-lead-details dl > div { display: flex; align-items: start; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+.conversation-lead-details dt { color: var(--muted); font-size: 12px; }
+.conversation-lead-details dd { max-width: 62%; margin: 0; color: var(--ink); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; text-align: right; }
+.app-shell.app-shell .conversation-demo .lead-profile .profile-action { width: 100%; min-height: 43px; margin-top: auto; border-radius: 8px; background: #0066df; color: #fff; }
+.app-shell.app-shell .conversation-demo .lead-profile .conversation-profile-note { margin: 10px 0 0; font-size: 12px; text-align: center; }
+.app-shell.dark-mode .conversation-priority-card { background: linear-gradient(135deg, #202c3d, var(--paper)); }
+@media (max-width: 900px) {
+  .app-shell.app-shell .conversation-demo .inbox-layout { grid-template-columns: minmax(0, 1fr); }
+  .app-shell.app-shell .conversation-demo .lead-profile { display: flex; grid-column: auto; min-height: 0; max-height: none; }
+}
+@media (max-width: 520px) {
+  .app-shell.app-shell .conversation-demo .lead-profile { padding: 16px; }
+  .conversation-lead-highlights > div { min-height: 74px; padding: 11px; }
+}

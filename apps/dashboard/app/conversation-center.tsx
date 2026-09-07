@@ -49,10 +49,13 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
   });
   const stage = lead?.lifecycleStatus || selected.stage;
   const temperature = lead ? liveTemperature(lead.temperature) : demoTemperature(selected.score);
-  const profileFields = lead
-    ? [['Intenção', lead.goal], ['Tipo de imóvel', lead.propertyType], ['Região desejada', lead.region], ['Investimento disponível', lead.budget], ['Preferências', lead.details || 'Não informado'], ['Responsável', lead.assignedTo || 'Sem responsável'], ['Último contato', formatDate(lead.lastContactAt)], ['Origem', lead.source], ['Telefone', lead.phone], ...(lead.email ? [['E-mail', lead.email]] : [])]
-    : [['Intenção', selected.goal], ['Tipo', selected.propertyType], ['Região', selected.region], ['Orçamento', selected.budget], ['Quartos', selected.rooms], ['Pagamento', selected.payment], ['Estilo de atendimento', selected.style]];
   const sourceLabel = lead ? (lead.source === 'Base demonstrativa' ? 'Perfil demonstrativo salvo no painel' : 'Dados do banco de leads') : 'Cliente fictício';
+  const leadHighlights = lead
+    ? [['Objetivo', lead.goal], ['Tipo de imóvel', lead.propertyType], ['Região desejada', lead.region], ['Investimento', lead.budget]]
+    : [['Objetivo', selected.goal], ['Tipo de imóvel', selected.propertyType], ['Região desejada', selected.region], ['Investimento', selected.budget]];
+  const leadOperationalData = lead
+    ? [['Preferências', lead.details || 'Não informado'], ['Responsável', lead.assignedTo || 'Sem responsável'], ['Último contato', formatDate(lead.lastContactAt)], ['Telefone', lead.phone], ...(lead.email ? [['E-mail', lead.email]] : [])]
+    : [['Quartos', selected.rooms], ['Pagamento', selected.payment], ['Estilo de atendimento', selected.style]];
 
   function send(event: FormEvent) {
     event.preventDefault();
@@ -83,11 +86,15 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
         <div className="conversation-suggestion"><span>Resposta sugerida · {lead ? 'Dados do lead' : selected.style}</span><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div>
         <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" onClick={() => notify('Anexos não são enviados nesta demonstração.')}>＋</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>
       </section>
-      <aside className="lead-profile panel"><div className="profile-hero"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><h3>{selected.name}</h3><p className="conversation-data-source">{sourceLabel} · {lead?.source || selected.category}</p>
+      <aside className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
+        <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><h3>{selected.name}</h3><span className="conversation-data-source">{sourceLabel} · {lead?.source || selected.category}</span></div></header>
         <div className="conversation-classifications" aria-label="Classificação do cliente"><span className="conversation-stage conversation-badge" aria-label={`Etapa: ${stage}`}>{stage}</span><span className="conversation-temperature conversation-badge" data-temperature={temperature} aria-label={`Temperatura: ${temperature}`}>{temperature}</span></div>
-      </div><div className="score-ring"><strong>{lead?.score || selected.score}</strong><span>{lead ? 'Prioridade do lead' : 'Prioridade ilustrativa'}</span></div>
-        <dl className="lead-profile-details">{profileFields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-        <button type="button" className="profile-action" onClick={openAgenda}>Abrir agenda</button><p className="conversation-profile-note">{lead ? 'Use estes dados para personalizar o atendimento antes de responder.' : 'Este exemplo não cria leads nem compromissos no banco de dados.'}</p>
+        <section className="conversation-priority-card" key={`${selected.id}-${lead?.score || selected.score}`} aria-label="Prioridade comercial">
+          <div><span>Prioridade comercial</span><strong>{lead?.score || selected.score}<small>/100</small></strong></div><i aria-hidden="true"><b style={{ width: `${lead?.score || selected.score}%` }}/></i><p>{lead ? 'Base de leads sincronizada para este atendimento.' : 'Informações ilustrativas deste perfil.'}</p>
+        </section>
+        <section className="conversation-lead-highlights" aria-label="Critérios de busca do lead">{leadHighlights.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</section>
+        <section className="conversation-lead-details"><h4>Contexto do atendimento</h4><dl>{leadOperationalData.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
+        <button type="button" className="profile-action" onClick={openAgenda}>Agendar visita</button><p className="conversation-profile-note">{lead ? 'Consulte esta ficha antes de responder no canal conectado.' : 'Este exemplo não cria leads nem compromissos no banco de dados.'}</p>
       </aside>
     </div>
   </div>;
