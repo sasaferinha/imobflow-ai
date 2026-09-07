@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type Dispatch, type FormEvent } from 'react';
-import { demoContacts, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
+import { demoContacts, demoTemperature, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
 
 export default function ConversationCenter({ state, dispatch, notify, openAgenda }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
@@ -47,7 +47,12 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
         <div className="conversation-suggestion"><span>Resposta sugerida · {selected.style}</span><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div>
         <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos de demonstração" onClick={() => notify('Anexos não são enviados nesta demonstração.')}>＋</button><input ref={composerRef} value={thread.draft} onChange={event => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem de exemplo para ${selected.name}`} placeholder="Escreva uma resposta de exemplo…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem ao exemplo">➜</button></form>
       </section>
-      <aside className="lead-profile panel"><div className="profile-hero"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><h3>{selected.name}</h3><p>Cliente fictício · {selected.category}</p><span className="conversation-stage">{selected.temperature}</span></div><div className="score-ring"><strong>{selected.score}</strong><span>Prioridade ilustrativa</span></div>
+      <aside className="lead-profile panel"><div className="profile-hero"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><h3>{selected.name}</h3><p>Cliente fictício · {selected.category}</p>
+        <div className="conversation-classifications" aria-label="Classificação do cliente">
+          <span className="conversation-stage conversation-badge" aria-label={`Etapa: ${selected.stage}`}>{selected.stage}</span>
+          <span className="conversation-temperature conversation-badge" data-temperature={demoTemperature(selected.score)} aria-label={`Temperatura: ${demoTemperature(selected.score)}`}>{demoTemperature(selected.score)}</span>
+        </div>
+      </div><div className="score-ring"><strong>{selected.score}</strong><span>Prioridade ilustrativa</span></div>
         <dl>{[['Intenção', selected.goal], ['Tipo', selected.propertyType], ['Região', selected.region], ['Orçamento', selected.budget], ['Quartos', selected.rooms], ['Pagamento', selected.payment], ['Estilo de atendimento', selected.style]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         <button type="button" className="profile-action" onClick={openAgenda}>Abrir agenda</button><p className="conversation-profile-note">Este exemplo não cria leads nem compromissos no banco de dados.</p>
       </aside>

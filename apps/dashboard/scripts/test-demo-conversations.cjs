@@ -19,7 +19,14 @@ function load(file) {
   modules.set(file, module.exports);
   return module.exports;
 }
-const { demoContacts, createDemoConversationState, demoConversationReducer: reduce } = load('lib/demo-conversations.ts');
+const { demoContacts, demoTemperature, createDemoConversationState, demoConversationReducer: reduce } = load('lib/demo-conversations.ts');
+assert.equal(demoTemperature(44), 'Frio');
+assert.equal(demoTemperature(45), 'Morno');
+assert.equal(demoTemperature(64), 'Morno');
+assert.equal(demoTemperature(65), 'Quente');
+assert.equal(demoTemperature(100), 'Quente');
+assert.equal(new Set(demoContacts.map(contact => demoTemperature(contact.score))).size, 3);
+assert.equal(demoContacts.find(contact => contact.id === 'ana').stage, 'Visita');
 assert.equal(demoContacts.length, 10);
 assert.equal(new Set(demoContacts.map(contact => contact.id)).size, 10);
 assert.equal(new Set(demoContacts.map(contact => contact.messages.map(message => message.text).join(' '))).size, 10);
@@ -61,6 +68,9 @@ for (const contact of demoContacts) {
   assert.ok(html.includes('perfis fictícios'));
   assert.ok(html.includes('Cliente fictício'));
   assert.ok(html.includes('Usar resposta'));
+  assert.ok(html.includes('Etapa: ' + contact.stage));
+  assert.ok(html.includes('Temperatura: ' + demoTemperature(contact.score)));
+  assert.ok(html.includes('data-temperature="' + demoTemperature(contact.score) + '"'));
   assert.ok(html.includes(contact.messages[0].text));
   assert.ok(html.includes(contact.suggestion));
   assert.ok(!html.includes('Atendimento online'));
