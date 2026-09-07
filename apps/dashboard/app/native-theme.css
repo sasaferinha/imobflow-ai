@@ -1,0 +1,209 @@
+/* ImobFlow native visual system. Presentation only; application flows stay intact. */
+:root {
+  --ink: #1d1d1f;
+  --muted: #64646b;
+  --line: #e5e5ea;
+  --violet: #0066df;
+  --paper: #fff;
+  --canvas: #f5f5f7;
+  --native-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+}
+body { font-family: var(--native-font); }
+.app-shell {
+  --ink: #1d1d1f;
+  --muted: #64646b;
+  --line: #e5e5ea;
+  --violet: #0066df;
+  --paper: #fff;
+  --canvas: #fff;
+  --secondary: #f5f5f7;
+  --selection: #eaf1fc;
+  --accent-text: #005bc4;
+  --panel-space: 28px;
+  background: var(--canvas);
+  font-family: var(--native-font);
+}
+.app-shell.dark-mode {
+  --ink: #f5f5f7;
+  --muted: #b0b0ba;
+  --line: #38383e;
+  --paper: #1c1c1e;
+  --canvas: #161618;
+  --secondary: #252528;
+  --selection: #22334e;
+  --accent-text: #9bc7ff;
+  color: var(--ink);
+  background: var(--canvas);
+}
+.app-shell.app-shell :is(button, input, select, textarea, h1, h2, h3,
+  .metric-card > strong, .health-orbit span, .summary-number strong) { font-family: var(--native-font); }
+.app-shell.app-shell :is(button, input, select, textarea) { border-radius: 7px; }
+.app-shell.app-shell .workspace { max-width: none; background: var(--canvas); padding-top: 38px; }
+.app-shell.app-shell .sidebar {
+  background: var(--secondary);
+  color: var(--ink);
+  border-right: 1px solid var(--line);
+  padding-inline: 14px;
+}
+.app-shell.app-shell .brand { color: var(--ink); padding: 0 8px 38px; }
+.app-shell.app-shell .brand strong { font-size: 23px; font-weight: 650; letter-spacing: -.7px; }
+.app-shell.app-shell .brand-mark {
+  width: 32px; height: 42px; background: transparent; color: var(--accent-text);
+  box-shadow: none; border: 0; font-family: var(--native-font); font-weight: 300; font-size: 38px;
+}
+.app-shell.app-shell :is(.brand span:not(.brand-mark), .sidebar-card span, .profile-row span) {
+  color: var(--muted); font-size: 12px;
+}
+.app-shell.app-shell .nav-list { gap: 8px; }
+.app-shell.app-shell .nav-item { font-weight: 400; color: var(--muted); min-height: 48px; border-radius: 7px; }
+.app-shell.app-shell .nav-item:hover { background: var(--line); color: var(--ink); }
+.app-shell.app-shell .nav-item.active { color: var(--accent-text); background: var(--selection); box-shadow: none; }
+.app-shell.app-shell .nav-icon svg { width: 23px; height: 23px; stroke-width: 1.5; }
+.app-shell.app-shell .nav-item b { background: var(--line); color: var(--ink); border-radius: 5px; }
+.app-shell.app-shell .sidebar-card { border: 0; padding: 24px 8px 12px; background: transparent; }
+.app-shell.app-shell .sidebar-card strong { font-size: 12px; font-weight: 500; }
+.app-shell.app-shell .profile-row { border-color: var(--line); padding: 20px 8px 0; }
+.app-shell.app-shell .profile-row strong { color: var(--ink); font-size: 14px; font-weight: 500; }
+.app-shell.app-shell :is(.avatar, .lead-avatar, .broker-name > i, .broker-profile-person > span) { border-radius: 50%; }
+.app-shell.app-shell .avatar { background: var(--selection); color: var(--accent-text); }
+.app-shell.app-shell .topbar { border: 0; padding-bottom: 16px; margin-bottom: 24px; }
+.app-shell.app-shell .topbar h1 { font-weight: 650; font-size: clamp(28px, 3vw, 38px); letter-spacing: -.045em; }
+.app-shell.app-shell .eyebrow { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.app-shell.app-shell .icon-button { background: transparent; border-color: var(--line); color: var(--ink); }
+.app-shell.app-shell .primary-button { background: #0066df; color: #fff; border-color: #0066df; font-weight: 500; box-shadow: none; }
+.app-shell.app-shell .primary-button:hover { background: #0055bc; }
+.app-shell.app-shell :is(.panel, .conversation-card, .property-card) {
+  background: var(--paper); border: 0; border-top: 1px solid var(--line); box-shadow: none;
+}
+.app-shell.app-shell .panel-heading h2 { color: var(--ink); font-weight: 600; font-size: 19px; letter-spacing: -.025em; }
+.app-shell.app-shell :is(.performance-kpis, .metric-grid) { gap: 0; padding-block: 14px 28px; border-bottom: 1px solid var(--line); }
+.app-shell.app-shell :is(.performance-kpis article, .metric-card) {
+  background: transparent; border: 0; border-left: 1px solid var(--line);
+  padding: 12px 24px; min-height: 122px; box-shadow: none;
+}
+.app-shell.app-shell :is(.performance-kpis article, .metric-card):first-child { border-left: 0; }
+.app-shell.app-shell .metric-card::after { content: none; }
+.app-shell.app-shell :is(.performance-kpis strong, .metric-card > strong) { font-size: 32px; font-weight: 550; letter-spacing: -.045em; color: var(--ink); }
+.app-shell.app-shell .company-goal-card { background: var(--secondary); color: var(--ink); border: 0; padding: 28px; }
+.app-shell.app-shell :is(.company-goal-copy p, .company-goal-copy span, .goal-progress p, .goal-side span, .goal-side small) { color: var(--muted); }
+.app-shell.app-shell .goal-progress p strong { color: var(--ink); }
+.app-shell.app-shell .goal-side { border-color: var(--line); }
+.app-shell.app-shell .goal-progress > div { background: var(--line); height: 6px; }
+.app-shell.app-shell .goal-progress > div span { background: #0066df; box-shadow: none; }
+.app-shell.app-shell .performance-grid { gap: 0; }
+.app-shell.app-shell .sales-history { border-left: 1px solid var(--line); }
+.app-shell.app-shell .history-chart > div > i { background: var(--secondary); }
+.app-shell.app-shell .history-chart b { background: #0066df; border-radius: 3px 3px 0 0; }
+.app-shell.app-shell .history-chart > div:last-child b { background: #24845c; }
+.app-shell.app-shell :is(.table-row, .broker-row, .sale-row, .contact-row, .appointment-row) { border-color: var(--line); background: var(--paper); }
+.app-shell.app-shell :is(.table-head, .broker-head, .sale-head) { background: transparent; color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 13px; }
+.app-shell.app-shell :is(.table-row.selected, .contact-row.selected, .appointment-row.selected) { background: var(--selection); box-shadow: inset 2px 0 #0066df; }
+.app-shell.app-shell :is(.table-row:not(.table-head):hover, .broker-row:not(.broker-head):hover, .contact-row:hover) { background: var(--secondary); }
+.app-shell.app-shell :is(.search-field, .inbox-search, .performance-toolbar input, .performance-toolbar button, .lead-filter-trigger) {
+  border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 7px;
+}
+.app-shell.app-shell .performance-toolbar .primary-button { background: #0066df; color: #fff; }
+.app-shell.app-shell .lead-diagnostic-grid { gap: 0; border-block: 1px solid var(--line); }
+.app-shell.app-shell .lead-diagnostic-card { background: var(--paper); border: 0; border-right: 1px solid var(--line); box-shadow: none; }
+.app-shell.app-shell .lead-diagnostic-card.active { background: var(--selection); box-shadow: inset 0 -2px #0066df; }
+.app-shell.app-shell :is(.lead-diagnosis-note, .profile-explanation, .lead-signal, .appointment-detail, .day-summary .summary-number) { background: var(--secondary); border-color: var(--line); }
+.app-shell.app-shell .captured-profile { border-left: 1px solid var(--line); }
+.app-shell.app-shell :is(.captured-head, .captured-profile dl > div, .setting-row, .lead-filter-menu-head, .lead-filter-menu-actions) { border-color: var(--line); }
+.app-shell.app-shell .full-chat { border-inline: 1px solid var(--line); }
+.app-shell.app-shell :is(.chat-area, .full-chat-body) { background: var(--secondary); background-image: none; }
+.app-shell.app-shell :is(.incoming, .chat-date) { background: var(--paper); color: var(--ink); border-color: var(--line); }
+.app-shell.app-shell .bubble { border-radius: 12px; box-shadow: none; }
+.app-shell.app-shell .outgoing { background: #0066df; color: #fff; }
+.app-shell.app-shell .bubble small { color: inherit; opacity: 1; }
+.app-shell.app-shell :is(.full-chat-head, .full-composer, .conversation-head, .chat-composer) { border-color: var(--line); background: var(--paper); }
+.app-shell.app-shell .inbox-tabs button.selected { background: var(--selection); color: var(--accent-text); }
+.app-shell.app-shell .property-grid { gap: 28px; }
+.app-shell.app-shell .property-visual { border-radius: 8px; }
+.app-shell.app-shell .property-copy { padding: 20px 0; }
+.app-shell.app-shell .property-copy h3 { font-weight: 600; font-size: 19px; }
+.app-shell.app-shell .property-copy button { background: var(--selection); color: var(--accent-text); }
+.app-shell.app-shell .calendar-head { padding: 24px; }
+.app-shell.app-shell .week-strip button.today { background: #0066df; color: #fff; box-shadow: none; }
+.app-shell.app-shell .appointment-row { padding: 20px 12px; }
+.app-shell.app-shell .day-summary { border-left: 1px solid var(--line); }
+.app-shell.app-shell .automation-grid { gap: 0; }
+.app-shell.app-shell .automation-card { padding: 28px; border-right: 1px solid var(--line); }
+.app-shell.app-shell .automation-card h3 { font-weight: 600; letter-spacing: -.025em; }
+.app-shell.app-shell .automation-card footer { border-color: var(--line); }
+.app-shell.app-shell .automation-icon { background: var(--selection); color: var(--accent-text); border-radius: 8px; }
+.app-shell.app-shell .automation-card.paused { opacity: 1; }
+.app-shell.app-shell .health-orbit { background: conic-gradient(#0066df 0 99.8%, var(--line) 99.8%); box-shadow: none; }
+.app-shell.app-shell .health-orbit::before { background: var(--paper); }
+.app-shell.app-shell :is(.modal-card, .popover, .lead-filter-menu) {
+  background: var(--paper); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: 0 18px 64px #00000024;
+}
+.app-shell.app-shell .modal-head h2 { font-weight: 600; letter-spacing: -.03em; }
+.app-shell.app-shell :is(.modal-card label, .lead-operational-fields label, .filter-panel label) { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 14px; }
+.app-shell.app-shell :is(input, select, textarea) { background-color: var(--paper); color: var(--ink); border-color: var(--line); }
+.app-shell.app-shell :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+.app-shell.app-shell :is(.broker-profile-header, .broker-stat-grid article, .broker-profile-content > article) { background: var(--paper); border-color: var(--line); }
+.app-shell.app-shell :is(.lead-import-drop, .lead-import-preview > div:first-child) { background: var(--secondary); border-color: var(--line); }
+.app-shell.app-shell :is(.profile-menu button, .notification-menu > button) { color: var(--ink); background: var(--paper); }
+.app-shell.app-shell .notification-menu > button.unread { background: var(--selection); }
+.app-shell.app-shell :is(button, a, input, select, textarea):focus-visible { outline: 3px solid #78acfa; outline-offset: 3px; }
+.app-shell.app-shell.compact-mode :is(.performance-kpis article, .metric-card, .lead-diagnostic-card) { padding: 14px 16px; min-height: 108px; }
+.app-shell.app-shell.compact-mode .automation-card { padding: 18px; }
+
+/* The public pages and sign-in share the same typography and neutral materials. */
+.landing-shell.landing-shell, .admin-login { background: #fff; color: #1d1d1f; font-family: var(--native-font); }
+.landing-shell.landing-shell :is(h1, h2, h3, strong, input, select, textarea, button),
+.admin-login :is(h1, input, button) { font-family: var(--native-font); }
+.landing-shell.landing-shell :is(.hero-copy h1, .section-intro h2, .form-promise h2) { font-weight: 650; letter-spacing: -.05em; line-height: 1.08; }
+.landing-shell.landing-shell .hero-copy h1 em { font-style: normal; font-weight: inherit; color: #0066df; }
+.landing-shell.landing-shell :is(.landing-primary, .mini-brand, .phone-in, .phone-input span, .landing-brand > span) { background: #0066df; color: #fff; box-shadow: none; }
+.landing-shell.landing-shell :is(.landing-primary, .landing-secondary, .nav-cta, .lead-form input, .lead-form select, .lead-form textarea, .lead-form > button) { border-radius: 8px; }
+.landing-shell.landing-shell .landing-nav { border-bottom: 1px solid #e5e5ea; }
+.landing-shell.landing-shell :is(.landing-brand, .landing-secondary, .nav-cta) { color: #1d1d1f; }
+.landing-shell.landing-shell :is(.landing-kicker, .nav-cta span) { color: #005bc4; }
+.landing-shell.landing-shell .hero-visual::before { background: radial-gradient(circle at 40% 35%, #f5f9ff, #d3e5ff); box-shadow: none; }
+.landing-shell.landing-shell .phone-body { background: #f5f5f7; background-image: none; }
+.landing-shell.landing-shell :is(.benefit-strip, .lead-section, .landing-footer) { background: #f5f5f7; color: #1d1d1f; }
+.landing-shell.landing-shell .benefit-strip strong { color: #1d1d1f; font-family: var(--native-font); font-weight: 600; }
+.landing-shell.landing-shell :is(.benefit-strip span, .benefit-strip p, .form-promise > p:not(.landing-kicker), .form-promise li, .landing-footer p) { color: #64646b; font-family: var(--native-font); }
+.landing-shell.landing-shell .form-promise { background: transparent; border: 0; box-shadow: none; color: #1d1d1f; }
+.landing-shell.landing-shell .form-promise h2 { color: #1d1d1f; }
+.landing-shell.landing-shell .form-quote { background: #fff; border-color: #e5e5ea; color: #64646b; }
+.landing-shell.landing-shell .form-quote :is(p, strong, span) { color: #64646b; }
+.landing-shell.landing-shell :is(.steps-grid article, .lead-form) { background: #fff; border: 1px solid #e5e5ea; border-radius: 8px; box-shadow: none; }
+.landing-shell.landing-shell .steps-grid article::after { content: none; }
+.landing-shell.landing-shell .steps-grid h3 { font-weight: 600; }
+.landing-shell.landing-shell .landing-footer .landing-brand strong { color: #1d1d1f; }
+.landing-shell.landing-shell .landing-footer > a:last-child { color: #005bc4; }
+.admin-login form { background: #fff; border: 1px solid #e5e5ea; border-radius: 12px; box-shadow: 0 16px 64px #0000000c; }
+.admin-login input { border-radius: 7px; background: #f5f5f7; color: #1d1d1f; }
+.admin-login button { border-radius: 7px; background: #0066df; color: #fff; }
+
+@media (max-width: 1320px) {
+  .app-shell.app-shell .sales-history { border-left: 0; }
+  .app-shell.app-shell .goal-side { border-color: var(--line); }
+}
+@media (max-width: 1050px) and (min-width: 721px) {
+  .app-shell.app-shell .brand { padding-inline: 0; }
+  .app-shell.app-shell .sidebar { padding-inline: 8px; }
+  .app-shell.app-shell .nav-item { font-size: 11px; }
+}
+@media (max-width: 900px) {
+  .app-shell.app-shell .inbox-layout .lead-profile { display: block; grid-column: 1 / -1; }
+  .app-shell.app-shell .full-chat { border-inline: 0; }
+}
+@media (max-width: 720px) {
+  .app-shell.app-shell .workspace { padding-top: 24px; }
+  .app-shell.app-shell .sidebar { border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .app-shell.app-shell .nav-list { gap: 0; }
+  .app-shell.app-shell .nav-item { min-height: 52px; font-size: 10px; }
+  .app-shell.app-shell .nav-item.active { box-shadow: none; }
+  .app-shell.app-shell :is(.performance-kpis article, .metric-card) { padding: 16px; border-bottom: 1px solid var(--line); }
+  .app-shell.app-shell .performance-kpis strong { font-size: 28px; }
+  .app-shell.app-shell .company-goal-card { padding: 20px; }
+  .app-shell.app-shell :is(.captured-profile, .day-summary) { border-left: 0; }
+  .app-shell.app-shell .automation-card { border-right: 0; padding: 24px 16px; }
+  .app-shell.app-shell .property-grid { gap: 20px; }
+  .app-shell.app-shell :is(input, select, textarea) { font-size: 16px; }
+  .landing-shell.landing-shell .hero-copy h1 { font-size: clamp(36px, 10vw, 54px); }
+}

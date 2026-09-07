@@ -479,7 +479,7 @@ export default function DashboardClient() {
     <main className={`app-shell ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
       <aside className="sidebar">
         <button type="button" className="brand brand-button" onClick={() => openView('overview')} aria-label="Ir para a visão geral">
-          <span className="brand-mark">I</span>
+          <span className="brand-mark"><svg viewBox="0 0 32 44" width="32" height="44" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 41V24l8-4v21M11 20V7l12-5v39M23 16h6v25" /></svg></span>
           <div><strong>ImobFlow</strong><span>Gestão Imobiliária</span></div>
         </button>
         <nav className="nav-list" aria-label="Navegação principal">
