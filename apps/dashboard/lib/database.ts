@@ -121,6 +121,7 @@ async function ensurePropertySchema(seed = true) {
     images JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Disponível'`;
   await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb`;
   if (seed) await sql`INSERT INTO site_properties (reference_key, title, district, price, meta, match, tone, purpose) VALUES
     ('aurora', 'Residencial Aurora', 'Centro', 'R$ 575.000', '3 quartos • 2 vagas • 98 m²', 96, 'orchid', 'Venda'),
@@ -134,22 +135,22 @@ async function ensurePropertySchema(seed = true) {
 
 export async function listProperties(forAutomation = false): Promise<PropertyRecord[]> {
   await ensurePropertySchema(!forAutomation);
-  const rows = await database()`SELECT id, title, district, price, meta, match, tone, purpose, images, created_at FROM site_properties WHERE (${forAutomation}=FALSE OR reference_key IS NULL) ORDER BY created_at DESC`;
+  const rows = await database()`SELECT id, title, district, price, meta, match, tone, purpose, status, images, created_at FROM site_properties WHERE (${forAutomation}=FALSE OR reference_key IS NULL) ORDER BY created_at DESC`;
   return rows.map(mapProperty);
 }
 
 export async function createProperty(input: PropertyInput): Promise<PropertyRecord> {
   await ensurePropertySchema();
-  const rows = await database()`INSERT INTO site_properties (title, district, price, meta, match, tone, purpose, images)
-    VALUES (${input.title}, ${input.district}, ${input.price}, ${input.meta}, ${input.match}, ${input.tone}, ${input.purpose}, ${JSON.stringify(input.images)}::jsonb)
-    RETURNING id, title, district, price, meta, match, tone, purpose, images, created_at`;
+  const rows = await database()`INSERT INTO site_properties (title, district, price, meta, match, tone, purpose, status, images)
+    VALUES (${input.title}, ${input.district}, ${input.price}, ${input.meta}, ${input.match}, ${input.tone}, ${input.purpose}, ${input.status || 'Disponível'}, ${JSON.stringify(input.images)}::jsonb)
+    RETURNING id, title, district, price, meta, match, tone, purpose, status, images, created_at`;
   return mapProperty(rows[0]);
 }
 
 export async function updateProperty(id: string, input: PropertyInput): Promise<PropertyRecord | null> {
   await ensurePropertySchema();
-  const rows = await database()`UPDATE site_properties SET title=${input.title}, district=${input.district}, price=${input.price}, meta=${input.meta}, match=${input.match}, tone=${input.tone}, purpose=${input.purpose}, images=${JSON.stringify(input.images)}::jsonb
-    WHERE id=${id} RETURNING id, title, district, price, meta, match, tone, purpose, images, created_at`;
+  const rows = await database()`UPDATE site_properties SET title=${input.title}, district=${input.district}, price=${input.price}, meta=${input.meta}, match=${input.match}, tone=${input.tone}, purpose=${input.purpose}, status=${input.status || 'Disponível'}, images=${JSON.stringify(input.images)}::jsonb
+    WHERE id=${id} RETURNING id, title, district, price, meta, match, tone, purpose, status, images, created_at`;
   return rows[0] ? mapProperty(rows[0]) : null;
 }
 
@@ -164,6 +165,7 @@ function mapProperty(row: Record<string, unknown>): PropertyRecord {
   return {
     id: String(row.id), title: String(row.title), district: String(row.district), price: String(row.price),
     meta: String(row.meta), match: Number(row.match), tone: String(row.tone),
+    status: row.status === 'Vendido' ? 'Vendido' : row.status === 'Alugado' ? 'Alugado' : 'Disponível',
     purpose: row.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images, createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }
@@ -262,6 +264,7 @@ async function ensurePerformanceSchema() {
     amount NUMERIC(14,2) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
+  await sql`ALTER TABLE site_sales ADD COLUMN IF NOT EXISTS deal_type TEXT NOT NULL DEFAULT 'Venda'`;
   await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
     VALUES ('2026-09', 3000000, 64, 18, 7) ON CONFLICT (month) DO NOTHING`;
   await sql`INSERT INTO site_broker_goals (month, broker, goal, leads_received, converted_leads, recovered_leads, visits) VALUES
@@ -300,26 +303,27 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
   }
   const settingsRows = await sql`SELECT company_goal, leads_received, converted_leads, recovered_leads FROM site_performance_months WHERE month=${month}`;
   const goalRows = await sql`SELECT broker, goal, leads_received, converted_leads, recovered_leads, visits FROM site_broker_goals WHERE month=${month} ORDER BY broker`;
-  const saleRows = await sql`SELECT id, sale_date, broker, property, client, amount, created_at FROM site_sales
+  const saleRows = await sql`SELECT id, sale_date, broker, property, client, amount, deal_type, created_at FROM site_sales
     WHERE TO_CHAR(sale_date, 'YYYY-MM')=${month} ORDER BY sale_date DESC, created_at DESC`;
   const historyRows = await sql`WITH recent_months AS (
       SELECT DISTINCT TO_CHAR(sale_date, 'YYYY-MM') AS month FROM site_sales
-      WHERE sale_date < ((${month} || '-01')::date + INTERVAL '1 month') ORDER BY month DESC LIMIT 6
+      WHERE deal_type='Venda' AND sale_date < ((${month} || '-01')::date + INTERVAL '1 month') ORDER BY month DESC LIMIT 6
     )
     SELECT TO_CHAR(sale_date, 'YYYY-MM') AS month, broker, SUM(amount) AS sold FROM site_sales
-    WHERE TO_CHAR(sale_date, 'YYYY-MM') IN (SELECT month FROM recent_months)
+    WHERE deal_type='Venda' AND TO_CHAR(sale_date, 'YYYY-MM') IN (SELECT month FROM recent_months)
     GROUP BY TO_CHAR(sale_date, 'YYYY-MM'), broker ORDER BY month`;
   const sales = saleRows.map(mapSale);
-  const totalSold = sales.reduce((total, sale) => total + sale.amount, 0);
+  const completedSales = sales.filter((sale) => sale.dealType !== 'Aluguel');
+  const totalSold = completedSales.reduce((total, sale) => total + sale.amount, 0);
   const settings = settingsRows[0];
   const leadsReceived = Number(settings.leads_received);
   const convertedLeads = Number(settings.converted_leads);
   return {
-    dataMode: 'live', month, companyGoal: Number(settings.company_goal), totalSold, salesCount: sales.length,
-    averageTicket: sales.length ? totalSold / sales.length : 0, leadsReceived, convertedLeads,
+    dataMode: 'live', month, companyGoal: Number(settings.company_goal), totalSold, salesCount: completedSales.length,
+    averageTicket: completedSales.length ? totalSold / completedSales.length : 0, leadsReceived, convertedLeads,
     recoveredLeads: Number(settings.recovered_leads), conversionRate: leadsReceived ? (convertedLeads / leadsReceived) * 100 : 0,
     brokers: goalRows.map((goal) => {
-      const brokerSales = sales.filter((sale) => sale.broker === String(goal.broker));
+      const brokerSales = completedSales.filter((sale) => sale.broker === String(goal.broker));
       const sold = brokerSales.reduce((total, sale) => total + sale.amount, 0);
       const target = Number(goal.goal);
       const brokerLeads = Number(goal.leads_received);
@@ -340,9 +344,9 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
 
 export async function createSale(input: SaleInput): Promise<SaleRecord> {
   await ensurePerformanceSchema();
-  const rows = await database()`INSERT INTO site_sales (sale_date, broker, property, client, amount)
-    VALUES (${input.date}, ${input.broker}, ${input.property}, ${input.client}, ${input.amount})
-    RETURNING id, sale_date, broker, property, client, amount, created_at`;
+  const rows = await database()`INSERT INTO site_sales (sale_date, broker, property, client, amount, deal_type)
+    VALUES (${input.date}, ${input.broker}, ${input.property}, ${input.client}, ${input.amount}, ${input.dealType || 'Venda'})
+    RETURNING id, sale_date, broker, property, client, amount, deal_type, created_at`;
   return mapSale(rows[0]);
 }
 
@@ -369,6 +373,7 @@ export async function updatePerformanceSettings(input: PerformanceSettingsInput)
 function mapSale(row: Record<string, unknown>): SaleRecord {
   const date = row.sale_date instanceof Date ? row.sale_date.toISOString().slice(0, 10) : String(row.sale_date).slice(0, 10);
   return {
+    dealType: row.deal_type === 'Aluguel' ? 'Aluguel' : 'Venda',
     id: String(row.id), date, broker: String(row.broker), property: String(row.property), client: String(row.client),
     amount: Number(row.amount), createdAt: new Date(String(row.created_at)).toISOString(),
   };

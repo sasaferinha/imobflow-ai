@@ -69,16 +69,18 @@ export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   try {
     const body = await request.json() as Record<string, unknown>;
+    if (body.dealType !== undefined && body.dealType !== 'Venda' && body.dealType !== 'Aluguel') return NextResponse.json({ error: 'Tipo de negócio inválido.' }, { status: 400 });
     const input: SaleInput = {
+      dealType: body.dealType === 'Aluguel' ? 'Aluguel' : 'Venda',
       date: clean(body.date, 10), broker: clean(body.broker), property: clean(body.property), client: clean(body.client), amount: positiveNumber(body.amount),
     };
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !input.broker || !input.property || !input.client || input.amount <= 0) {
-      return NextResponse.json({ error: 'Preencha os dados válidos da venda.' }, { status: 400 });
+      return NextResponse.json({ error: 'Preencha os dados válidos do negócio.' }, { status: 400 });
     }
     return NextResponse.json({ data: await createSale(input) }, { status: 201 });
   } catch (error) {
     console.error('sale_create_failed', error);
-    return NextResponse.json({ error: 'Não foi possível registrar a venda.' }, { status: 500 });
+    return NextResponse.json({ error: 'Não foi possível registrar o negócio. Verifique a conexão com o banco de dados.' }, { status: 500 });
   }
 }
 

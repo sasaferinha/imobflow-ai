@@ -13,7 +13,7 @@
 }
 
 /* Keep circular data indicators intact; square the interface containers. */
-.app-shell.app-shell :is(
+.app-shell :where(
   button, input, select, textarea, .sidebar, .brand-mark, .avatar,
   .nav-icon, .nav-label, .nav-item b, .sidebar-card, .panel, .metric-card, .metric-icon,
   .conversation-card, .pipeline-step, .lead-avatar, .status-tag, .temperature,
@@ -214,7 +214,7 @@
 .app-shell .setting-row input { flex: 0 0 18px; min-height: 18px; height: 18px; }
 .app-shell .property-detail-modal { padding: 0 24px 24px; }
 .app-shell .property-detail-modal > .property-visual { max-width: none; width: calc(100% + 48px); margin-left: -24px; }
-.app-shell .broker-profile-modal { padding: 0; border-radius: 0 !important; }
+.app-shell .broker-profile-modal { padding: 0; }
 .app-shell .toast { max-width: min(440px, calc(100vw - 32px)); line-height: 1.5; }
 .app-shell .toast span { flex-shrink: 0; border-radius: 0; }
 .admin-login { min-height: 100dvh; padding: 24px; background: #f4f6f9; color: #182538; }

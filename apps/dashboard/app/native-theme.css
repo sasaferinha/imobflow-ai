@@ -11,6 +11,52 @@
 body { font-family: var(--native-font); }
 /* Optical sizing keeps the native font crisp without downloading a substitute. */
 body { -webkit-font-smoothing: antialiased; }
+/* Shared controls no longer compete with the legacy square-container reset. */
+.app-shell.app-shell :is(.modal-card button, .modal-card input, .modal-card select, .toolbar button, .catalog-actions button) { font-weight: 450; }
+.app-shell.app-shell :is(.modal-card, .popover) { border-radius: 14px; }
+.app-shell.app-shell :is(.modal-head h2, .detail-price, .property-copy strong) { font-family: var(--native-font); }
+.app-shell.app-shell .modal-backdrop { background: #10121b55; backdrop-filter: blur(10px); padding: 24px; }
+.app-shell.app-shell .modal-card { box-shadow: 0 24px 100px #00000024; }
+.app-shell.app-shell .modal-head h2 { font-size: 26px; font-weight: 600; letter-spacing: -.035em; }
+.app-shell.app-shell .modal-head > button { width: 32px; height: 32px; border-radius: 50%; background: var(--secondary); color: var(--muted); font-size: 22px; }
+.app-shell.app-shell .modal-actions button { min-height: 42px; border-radius: 8px; font-weight: 500; background: var(--secondary); border: 1px solid var(--line); color: var(--ink); }
+.app-shell.app-shell .modal-actions button.primary-button { background: #0066df; border-color: #0066df; color: white; }
+.app-shell.app-shell .native-segments { display: flex; gap: 4px; padding: 4px; background: var(--secondary); border: 1px solid var(--line); border-radius: 9px; }
+.app-shell.app-shell .native-segments button { flex: 1; min-height: 40px; border: 0; border-radius: 6px; padding: 8px 16px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 500; white-space: nowrap; }
+.app-shell.app-shell .native-segments button[aria-pressed='true'] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 5px #00000014; }
+.app-shell.app-shell .catalog-segments { width: fit-content; max-width: 100%; overflow-x: auto; margin-bottom: 24px; }
+.app-shell.app-shell .deal-help { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 16px 0 24px; }
+.app-shell.app-shell .deal-type-label { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.app-shell.app-shell .native-property-detail { width: min(920px, 100%); max-width: 920px; padding: 28px; overflow: auto; }
+.app-shell.app-shell .native-property-detail .modal-head { border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+.property-detail-content { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.detail-media { min-width: 0; }
+.detail-photo { aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--secondary); }
+.detail-photo img { width: 100%; height: 100%; object-fit: cover; }
+.detail-no-photo { display: flex; min-height: 240px; flex-direction: column; justify-content: center; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--secondary); color: var(--muted); text-align: center; padding: 24px; }
+.detail-no-photo strong { font-size: 14px; font-weight: 500; }
+.detail-no-photo span { font-size: 13px; }
+.detail-status { display: inline-block; padding: 6px 10px; border-radius: 5px; background: var(--selection); color: var(--accent-text); font-size: 12px; }
+.detail-price-label { color: var(--muted); font-size: 13px; margin: 24px 0 5px; }
+.app-shell.app-shell .native-property-detail .detail-price { display: block; font-size: clamp(24px, 3vw, 32px); font-weight: 500; letter-spacing: -.04em; color: var(--ink); overflow-wrap: anywhere; }
+.detail-facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; }
+.detail-facts span { padding: 8px 10px; background: var(--secondary); border-radius: 6px; color: var(--muted); font-size: 13px; }
+.detail-information dl { margin: 0; }
+.detail-information dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.detail-information dt { color: var(--muted); }
+.detail-information dd { margin: 0; color: var(--ink); text-align: right; }
+.app-shell.app-shell .native-property-detail .modal-actions { margin-top: 28px; }
+.app-shell.app-shell .native-property-detail .danger-button { margin-right: auto; background: transparent; color: #b42318; border-color: transparent; }
+.app-shell.dark-mode .native-property-detail .danger-button { color: #ffa7a7; }
+.app-shell.app-shell .native-property-detail .property-gallery-thumbs button { border-radius: 7px; }
+@media (max-width: 720px) {
+  .app-shell.app-shell .modal-backdrop { padding: 12px; }
+  .app-shell.app-shell .native-property-detail { padding: 20px; }
+  .property-detail-content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .detail-no-photo { min-height: 150px; }
+  .app-shell.app-shell .native-property-detail .modal-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell.app-shell .native-property-detail .danger-button { margin: 0; }
+}
 .automation-center { display: grid; gap: 24px; }
 .app-shell.app-shell .automation-warning { padding: 16px; border: 1px solid #b77727; background: #fff4df; color: #70410c; line-height: 1.6; }
 .app-shell.dark-mode .automation-warning { background: #392b1e; color: #ffda9b; }

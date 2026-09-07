@@ -31,6 +31,7 @@ test('visit stage suppresses generic followup', () => assert.equal(evaluateAutom
 test('new contact creates a new reminder version', () => { const later = new Date('2026-09-12T12:00:00Z'); assert.notEqual(evaluateAutomation('followup', lead, [], later).version, evaluateAutomation('followup', { ...lead, lastContactAt: now.toISOString() }, [], later).version); });
 test('recommendations preserve purpose and location', () => { const result = evaluateAutomation('recommendations', lead, properties, now); assert.equal(result.detail.matches.length, 1); assert.equal(result.detail.matches[0].id, 'p1'); assert.match(result.detail.note, /Validar preço/); });
 test('unknown region does not fabricate matches', () => assert.equal(evaluateAutomation('recommendations', { ...lead, region: 'Não informado' }, properties, now), null));
+test('sold and rented properties are excluded from recommendations', () => { for (const status of ['Vendido', 'Alugado']) assert.equal(evaluateAutomation('recommendations', lead, properties.map((property) => ({ ...property, status })), now), null); });
 test('unchanged results have stable deduplication keys', () => assert.equal(evaluateAutomation('priority', lead, [], now).version, evaluateAutomation('priority', lead, [], now).version));
 test('low completeness suppresses priority', () => assert.equal(evaluateAutomation('priority', { ...lead, goal: '', region: '', propertyType: '', budget: '', details: null }, [], now), null));
 console.log(`${passed} rule tests passed. Database integration tests await the real database.`);

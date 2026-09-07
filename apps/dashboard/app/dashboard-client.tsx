@@ -410,6 +410,7 @@ export default function DashboardClient() {
       match: editingProperty?.match || 80,
       tone: editingProperty?.tone || 'orchid',
       purpose: String(form.get('purpose')) === 'Aluguel' ? 'Aluguel' : 'Venda',
+      status: String(form.get('status') || 'Disponível'),
       images: propertyImages,
     };
     setSavingProperty(true);
@@ -524,7 +525,7 @@ export default function DashboardClient() {
             <div className="modal-head"><div><p className="eyebrow">Portfólio imobiliário</p><h2>{editingProperty ? 'Editar imóvel' : 'Novo imóvel'}</h2></div><button type="button" aria-label="Fechar" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); setPropertyImages([]); }}>×</button></div>
             <label>Título<input name="title" defaultValue={editingProperty?.title} placeholder="Ex.: Residencial das Flores" autoFocus required /></label>
             <div className="form-grid"><label>Bairro<input name="district" defaultValue={editingProperty?.district} placeholder="Centro" required /></label><label>Preço<input name="price" defaultValue={editingProperty?.price} placeholder="R$ 650.000" required /></label></div>
-            <label>Finalidade<select name="purpose" defaultValue={editingProperty?.purpose || 'Venda'}><option>Venda</option><option>Aluguel</option></select></label>
+            <div className="form-grid"><label>Finalidade<select name="purpose" defaultValue={editingProperty?.purpose || 'Venda'}><option>Venda</option><option>Aluguel</option></select></label><label>Situação<select name="status" defaultValue={editingProperty?.status || 'Disponível'}><option>Disponível</option><option>Vendido</option><option>Alugado</option></select></label></div>
             <label>Descrição<textarea name="description" defaultValue={editingProperty?.meta} placeholder="Ex.: 3 quartos • 2 vagas • 98 m²" rows={3} required /></label>
             <div className="property-image-field">
               <div><strong>Imagens do imóvel</strong><span>Até 5 fotos em JPG, PNG ou WebP</span></div>
@@ -551,6 +552,8 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
   const [modal, setModal] = useState<'sale' | 'goals' | null>(null);
+  const [dealType, setDealType] = useState<'Venda' | 'Aluguel'>('Venda');
+  const [savingDeal, setSavingDeal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -572,17 +575,19 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
 
   async function registerSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (savingDeal) return;
+    setSavingDeal(true);
     const form = new FormData(event.currentTarget);
     try {
-      const response = await fetch('/api/performance', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:form.get('date'), broker:form.get('broker'), property:form.get('property'), client:form.get('client'), amount:Number(form.get('amount')) }) });
+      const response = await fetch('/api/performance', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ dealType, date:form.get('date'), broker:form.get('broker'), property:form.get('property'), client:form.get('client'), amount:Number(form.get('amount')) }) });
       const result = await response.json() as { error?:string };
       if (!response.ok) throw new Error(result.error || 'Não foi possível registrar a venda.');
-      await refresh();
       setModal(null);
-      notify('Venda registrada no resultado da equipe');
+      notify(dealType === 'Aluguel' ? 'Aluguel registrado separadamente das vendas' : 'Venda registrada no resultado da equipe');
+      await refresh();
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Não foi possível registrar a venda.');
-    }
+      notify(error instanceof Error ? error.message : 'Não foi possível registrar o negócio.');
+    } finally { setSavingDeal(false); }
   }
 
   async function saveGoals(event: FormEvent<HTMLFormElement>) {
@@ -603,14 +608,14 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
   }
 
   async function removeSale(id: string) {
-    if (!window.confirm('Excluir este registro de venda?')) return;
+    if (!window.confirm('Excluir este registro de negócio?')) return;
     try {
       const response = await fetch(`/api/performance/sales/${id}`, { method:'DELETE' });
-      if (!response.ok) throw new Error('Não foi possível excluir a venda.');
+      if (!response.ok) throw new Error('Não foi possível excluir o negócio.');
       await refresh();
-      notify('Venda removida do resultado');
+      notify('Negócio removido do resultado');
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Não foi possível excluir a venda.');
+      notify(error instanceof Error ? error.message : 'Não foi possível excluir o negócio.');
     }
   }
 
@@ -623,7 +628,7 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
   const defaultSaleDate = month === new Date().toISOString().slice(0, 7) ? new Date().toISOString().slice(0, 10) : `${month}-01`;
 
   return <>
-    <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setLoadError(null); setMonth(event.target.value); }} /></label><button type="button" onClick={() => setModal('goals')}>Editar metas</button><button type="button" className="primary-button" onClick={() => setModal('sale')}>＋ Registrar venda</button></div></section>
+    <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setLoadError(null); setMonth(event.target.value); }} /></label><button type="button" onClick={() => setModal('goals')}>Editar metas</button><button type="button" className="primary-button" onClick={() => setModal('sale')}>＋ Registrar negócio</button></div></section>
 
     <section className="company-goal-card">
       <div className="company-goal-copy"><p>Meta mensal da imobiliária</p><strong>{money.format(performance.totalSold)}</strong><span>de {money.format(performance.companyGoal)}</span></div>
@@ -645,9 +650,18 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
       <article className="panel sales-history"><div className="panel-heading"><div><p className="eyebrow">Evolução comercial</p><h2>Vendas nos últimos meses</h2></div></div><SalesHistoryChart history={performance.history} /></article>
     </section>
 
-    <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Vendas registradas</h2></div><strong>{money.format(performance.totalSold)} no período</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}</span><b>{money.format(sale.amount)}</b><button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button></div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
+    <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Negócios registrados</h2></div><strong>{money.format(performance.totalSold)} em vendas · {money.format(performance.sales.filter((sale) => sale.dealType === 'Aluguel').reduce((sum, sale) => sum + sale.amount, 0))}/mês em aluguéis registrados</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}<small className="deal-type-label">{sale.dealType || 'Venda'}</small></span><b>{money.format(sale.amount)}{sale.dealType === 'Aluguel' ? '/mês' : ''}</b><button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button></div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
 
-    {modal === 'sale' && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card" onSubmit={registerSale} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Resultado comercial</p><h2>Registrar venda</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><div className="form-grid"><label>Data<input name="date" type="date" defaultValue={defaultSaleDate} required /></label><label>Corretor<select name="broker" required>{performance.brokers.map((broker) => <option key={broker.broker}>{broker.broker}</option>)}</select></label></div><label>Cliente<input name="client" placeholder="Nome do comprador" required /></label><label>Imóvel<input name="property" placeholder="Imóvel vendido" required /></label><label>Valor da venda<input name="amount" type="number" min="1" step="1000" placeholder="575000" required /></label><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Registrar venda</button></div></form></div>}
+    {modal === 'sale' && <div className="modal-backdrop" role="presentation" onMouseDown={() => !savingDeal && setModal(null)}><form className="modal-card deal-modal" onSubmit={registerSale} onMouseDown={(event) => event.stopPropagation()}>
+      <div className="modal-head"><div><p className="eyebrow">Resultado comercial</p><h2>{dealType === 'Venda' ? 'Registrar venda' : 'Registrar aluguel'}</h2></div><button type="button" disabled={savingDeal} aria-label="Fechar" onClick={() => setModal(null)}>×</button></div>
+      <div className="native-segments" role="group" aria-label="Tipo de negócio">{(['Venda', 'Aluguel'] as const).map((type) => <button type="button" disabled={savingDeal} aria-pressed={dealType === type} key={type} onClick={() => setDealType(type)}>{type === 'Venda' ? 'Imóvel vendido' : 'Aluguel'}</button>)}</div>
+      <p className="deal-help">{dealType === 'Venda' ? 'Registre o valor total da venda concluída.' : 'Informe o valor mensal contratado. Aluguéis não são somados ao VGV de vendas.'}</p>
+      <div className="form-grid"><label>Data<input name="date" type="date" defaultValue={defaultSaleDate} required /></label><label>Corretor<select name="broker" required>{performance.brokers.map((broker) => <option key={broker.broker}>{broker.broker}</option>)}</select></label></div>
+      <label>Cliente<input name="client" placeholder={dealType === 'Venda' ? 'Nome do comprador' : 'Nome do locatário'} required /></label><label>Imóvel<input name="property" placeholder={dealType === 'Venda' ? 'Imóvel vendido' : 'Imóvel alugado'} required /></label>
+      <label>{dealType === 'Venda' ? 'Valor da venda (R$)' : 'Aluguel mensal (R$)'}<input key={dealType} name="amount" type="number" min="0.01" step="0.01" placeholder={dealType === 'Venda' ? '575000,00' : '2500,00'} required /></label>
+      <p className="deal-help">O registro financeiro não muda automaticamente a situação do catálogo. Atualize o imóvel em Editar.</p>
+      <div className="modal-actions"><button type="button" disabled={savingDeal} onClick={() => setModal(null)}>Cancelar</button><button type="submit" disabled={savingDeal} className="primary-button">{savingDeal ? 'Salvando…' : dealType === 'Venda' ? 'Registrar venda' : 'Registrar aluguel'}</button></div>
+    </form></div>}
 
     {modal === 'goals' && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card performance-settings-modal" onSubmit={saveGoals} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Planejamento mensal</p><h2>Metas e conversão</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><label>Meta da imobiliária<input name="companyGoal" type="number" min="0" step="10000" defaultValue={performance.companyGoal} required /></label><div className="form-grid"><label>Leads recebidos<input name="leadsReceived" type="number" min="0" defaultValue={performance.leadsReceived} required /></label><label>Leads convertidos<input name="convertedLeads" type="number" min="0" defaultValue={performance.convertedLeads} required /></label></div><label>Leads recuperados<input name="recoveredLeads" type="number" min="0" defaultValue={performance.recoveredLeads} required /></label><div className="broker-goal-fields"><strong>Metas individuais</strong>{performance.brokers.map((broker,index) => <label key={broker.broker}>{broker.broker}<input name={`broker-goal-${index}`} type="number" min="0" step="10000" defaultValue={broker.goal} required /></label>)}</div><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar indicadores</button></div></form></div>}
   </>;
@@ -803,16 +817,29 @@ function Leads({ leads, selected, onSelect, search, setSearch, onContinue, notif
 
 function Properties({ properties, search, setSearch, add, onOpen }: { properties:Property[]; search:string; setSearch:(value:string)=>void; add:()=>void; onOpen:(property:Property)=>void }) {
   const [purpose, setPurpose] = useState<'Todos' | 'Venda' | 'Aluguel'>('Todos');
+  const [catalogTab, setCatalogTab] = useState('Todos');
   const [filterOpen, setFilterOpen] = useState(false);
   const [minMatch, setMinMatch] = useState(0);
-  const visible = properties.filter((property) => `${property.title} ${property.district}`.toLowerCase().includes(search.toLowerCase()) && (purpose === 'Todos' || property.purpose === purpose) && property.match >= minMatch);
-  return <><div className="catalog-toolbar"><div className="search-field">⌕<input value={search} onChange={(event)=>setSearch(event.target.value)} aria-label="Buscar imóvel" placeholder="Buscar imóvel ou bairro"/></div><div className="catalog-actions"><select aria-label="Finalidade" value={purpose} onChange={(event) => setPurpose(event.target.value as typeof purpose)}><option>Todos</option><option>Venda</option><option>Aluguel</option></select><button type="button" className={filterOpen ? 'filter-active' : ''} onClick={() => setFilterOpen((open) => !open)}>Mais filtros</button><button type="button" className="primary-button" onClick={add}>＋ Adicionar</button></div></div>{filterOpen && <div className="filter-panel panel"><label>Compatibilidade mínima <strong>{minMatch}%</strong><input type="range" min="0" max="95" step="5" value={minMatch} onChange={(event) => setMinMatch(Number(event.target.value))}/></label><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setSearch(''); }}>Limpar filtros</button></div>}<div className="property-grid">{visible.map((property)=><article className="property-card" key={property.id}><button type="button" className={`property-visual ${property.tone} ${property.images.length ? 'has-image' : ''}`} onClick={() => onOpen(property)} aria-label={`Abrir ${property.title}`}>{property.images[0] ? <img src={property.images[0]} alt="" /> : <span>▦</span>}<em>{property.match}% compatível</em>{property.images.length > 1 && <b className="image-count">▧ {property.images.length}</b>}</button><div className="property-copy"><small>{property.purpose} • {property.district}</small><h3>{property.title}</h3><p>{property.meta}</p><div><strong>{property.price}</strong><button type="button" aria-label={`Ver detalhes de ${property.title}`} onClick={() => onOpen(property)}>›</button></div></div></article>)}{visible.length === 0 && <div className="empty-catalog panel"><span>▦</span><h3>Nenhum imóvel encontrado</h3><p>Ajuste ou limpe os filtros para continuar.</p><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setSearch(''); }}>Limpar filtros</button></div>}</div></>;
+  const visible = properties.filter((property) => `${property.title} ${property.district}`.toLowerCase().includes(search.toLowerCase()) && (purpose === 'Todos' || property.purpose === purpose) && property.match >= minMatch && (catalogTab === 'Todos' || (catalogTab === 'Vendidos' ? property.status === 'Vendido' : catalogTab === 'Alugados' ? property.status === 'Alugado' : catalogTab === 'Aluguel' ? property.purpose === 'Aluguel' && (!property.status || property.status === 'Disponível') : property.purpose === 'Venda' && (!property.status || property.status === 'Disponível'))));
+  return <><div className="native-segments catalog-segments" role="group" aria-label="Categorias de imóveis">{['Todos', 'À venda', 'Aluguel', 'Vendidos', 'Alugados'].map((tab) => <button type="button" key={tab} aria-pressed={catalogTab === tab} onClick={() => setCatalogTab(tab)}>{tab}</button>)}</div><div className="catalog-toolbar"><div className="search-field">⌕<input value={search} onChange={(event)=>setSearch(event.target.value)} aria-label="Buscar imóvel" placeholder="Buscar imóvel ou bairro"/></div><div className="catalog-actions"><select aria-label="Finalidade" value={purpose} onChange={(event) => setPurpose(event.target.value as typeof purpose)}><option>Todos</option><option>Venda</option><option>Aluguel</option></select><button type="button" className={filterOpen ? 'filter-active' : ''} onClick={() => setFilterOpen((open) => !open)}>Mais filtros</button><button type="button" className="primary-button" onClick={add}>＋ Adicionar</button></div></div>{filterOpen && <div className="filter-panel panel"><label>Compatibilidade mínima <strong>{minMatch}%</strong><input type="range" min="0" max="95" step="5" value={minMatch} onChange={(event) => setMinMatch(Number(event.target.value))}/></label><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setCatalogTab('Todos'); setSearch(''); }}>Limpar filtros</button></div>}<div className="property-grid">{visible.map((property)=><article className="property-card" key={property.id}><button type="button" className={`property-visual ${property.tone} ${property.images.length ? 'has-image' : ''}`} onClick={() => onOpen(property)} aria-label={`Abrir ${property.title}`}>{property.images[0] ? <img src={property.images[0]} alt="" /> : <span>▦</span>}<em>{property.match}% compatível</em>{property.images.length > 1 && <b className="image-count">▧ {property.images.length}</b>}</button><div className="property-copy"><small>{property.status && property.status !== 'Disponível' ? property.status : property.purpose} • {property.district}</small><h3>{property.title}</h3><p>{property.meta}</p><div><strong>{property.price}</strong><button type="button" aria-label={`Ver detalhes de ${property.title}`} onClick={() => onOpen(property)}>›</button></div></div></article>)}{visible.length === 0 && <div className="empty-catalog panel"><span>▦</span><h3>Nenhum imóvel encontrado</h3><p>Ajuste ou limpe os filtros para continuar.</p><button type="button" onClick={() => { setMinMatch(0); setPurpose('Todos'); setCatalogTab('Todos'); setSearch(''); }}>Limpar filtros</button></div>}</div></>;
 }
 
 function PropertyDetail({ property, close, notify, openAgenda, edit, remove }: { property:Property; close:()=>void; notify:(message:string)=>void; openAgenda:()=>void; edit:()=>void; remove:()=>void }) {
   const [saved, setSaved] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className="modal-card property-detail-modal" onMouseDown={(event) => event.stopPropagation()}><div className={`property-visual ${property.tone} ${property.images.length ? 'has-image' : ''}`}>{property.images[activeImage] ? <img src={property.images[activeImage]} alt={`${property.title}, foto ${activeImage + 1}`} /> : <span>▦</span>}<em>{property.match}% compatível</em></div>{property.images.length > 1 && <div className="property-gallery-thumbs">{property.images.map((image,index) => <button type="button" className={activeImage === index ? 'active' : ''} key={`${image.slice(-24)}-${index}`} onClick={() => setActiveImage(index)} aria-label={`Ver foto ${index + 1}`}><img src={image} alt="" /></button>)}</div>}<div className="modal-head"><div><p className="eyebrow">{property.purpose} • {property.district}</p><h2>{property.title}</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><p>{property.meta}</p><strong className="detail-price">{property.price}</strong><div className="modal-actions"><button type="button" onClick={remove}>Excluir</button><button type="button" onClick={edit}>Editar</button><button type="button" className={saved ? 'saved-button' : ''} onClick={() => { setSaved((active) => !active); notify(saved ? 'Imóvel removido dos favoritos' : 'Imóvel salvo nos favoritos'); }}>{saved ? '♥ Salvo' : '♡ Salvar'}</button><button type="button" className="primary-button" onClick={() => { close(); openAgenda(); }}>Agendar visita</button></div></article></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={close}>
+    <article className="modal-card property-detail-modal native-property-detail" role="dialog" aria-modal="true" aria-label={property.title} onMouseDown={(event) => event.stopPropagation()}>
+      <header className="modal-head"><div><p className="eyebrow">{property.district} · {property.purpose}</p><h2>{property.title}</h2></div><button type="button" aria-label="Fechar detalhes" onClick={close}>×</button></header>
+      <div className="property-detail-content">
+        <div className="detail-media">
+          {property.images.length ? <div className="detail-photo"><img src={property.images[activeImage] || property.images[0]} alt={property.title + ', foto ' + (activeImage + 1)} /></div> : <div className="detail-no-photo"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/></svg><strong>Sem fotos cadastradas</strong><span>Adicione fotos em Editar imóvel.</span></div>}
+          {property.images.length > 1 && <div className="property-gallery-thumbs">{property.images.map((image,index) => <button type="button" className={activeImage === index ? 'active' : ''} aria-pressed={activeImage === index} key={index} onClick={() => setActiveImage(index)} aria-label={'Ver foto ' + (index + 1)}><img src={image} alt="" /></button>)}</div>}
+        </div>
+        <div className="detail-information"><span className="detail-status">{property.status || 'Disponível'}</span><p className="detail-price-label">{property.purpose === 'Aluguel' ? 'Aluguel mensal anunciado' : 'Valor anunciado'}</p><strong className="detail-price">{property.price}</strong><div className="detail-facts">{property.meta.split('•').map((item,index) => <span key={index}>{item.trim()}</span>)}</div><dl><div><dt>Finalidade</dt><dd>{property.purpose}</dd></div><div><dt>Bairro</dt><dd>{property.district}</dd></div><div><dt>Compatibilidade</dt><dd>{property.match}%</dd></div></dl></div>
+      </div>
+      <footer className="modal-actions"><button type="button" className="danger-button" onClick={remove}>Excluir</button><button type="button" onClick={edit}>Editar imóvel</button><button type="button" aria-pressed={saved} className={saved ? 'saved-button' : ''} onClick={() => { setSaved((active) => !active); notify(saved ? 'Imóvel removido dos favoritos' : 'Imóvel salvo nos favoritos'); }}>{saved ? '♥ Salvo' : '♡ Salvar'}</button><button type="button" className="primary-button" onClick={() => { close(); openAgenda(); }}>Agendar visita</button></footer>
+    </article>
+  </div>;
 }
 
 function ProfileModal({ profile, close, save }: { profile:{ name:string; company:string }; close:()=>void; save:(profile:{ name:string; company:string })=>void }) {
@@ -842,7 +869,7 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
   }, [month]);
 
   const broker = performance?.brokers.find((item) => item.broker.toLowerCase() === brokerName.toLowerCase());
-  const brokerSales = performance?.sales.filter((sale) => sale.broker === broker?.broker) || [];
+  const brokerSales = performance?.sales.filter((sale) => sale.dealType !== 'Aluguel' && sale.broker === broker?.broker) || [];
   const rank = performance && broker ? performance.brokers.findIndex((item) => item.broker === broker.broker) + 1 : 0;
   const averageTicket = broker?.salesCount ? broker.sold / broker.salesCount : 0;
   const teamShare = performance?.totalSold && broker ? (broker.sold / performance.totalSold) * 100 : 0;

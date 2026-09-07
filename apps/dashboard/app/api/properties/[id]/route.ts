@@ -22,6 +22,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const input: PropertyInput = {
       title: clean(body.title, 160), district: clean(body.district, 120), price: clean(body.price, 80), meta: clean(body.meta, 500),
       match: Math.max(0, Math.min(100, Number(body.match) || 80)), tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
+      status: body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
     };
     if (!input.title || !input.district || !input.price || !input.meta) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     const data = await updateProperty((await context.params).id, input);

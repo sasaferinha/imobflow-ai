@@ -7,6 +7,7 @@ export type PropertyRecord = {
   match: number;
   tone: string;
   purpose: 'Venda' | 'Aluguel';
+  status?: 'Disponível' | 'Vendido' | 'Alugado';
   images: string[];
   createdAt: string;
 };
@@ -30,6 +31,7 @@ export type AppointmentRecord = {
 export type AppointmentInput = Omit<AppointmentRecord, 'id' | 'createdAt'>;
 
 export type SaleRecord = {
+  dealType?: 'Venda' | 'Aluguel';
   id: string;
   date: string;
   broker: string;

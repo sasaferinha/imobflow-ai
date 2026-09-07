@@ -33,7 +33,7 @@ export function evaluateAutomation(flow: FlowId, lead: LeadProfile, properties: 
   const purpose = /alug|loca/.test(goal) ? 'Aluguel' : /compr/.test(goal) ? 'Venda' : null;
   const regions = normalize(lead.region).split(/[,;/]/).map((part) => part.trim()).filter((part) => part.length > 2 && part !== 'nao informado');
   if (!purpose || !regions.length) return null;
-  const matches = properties.filter((property) => property.purpose === purpose && regions.some((region) => normalize(property.district) === region))
+  const matches = properties.filter((property) => (!property.status || property.status === 'Disponível') && property.purpose === purpose && regions.some((region) => normalize(property.district) === region))
     .slice(0, 5).map((property) => ({ id: property.id, title: property.title, price: property.price, district: property.district, purpose: property.purpose }));
   if (!matches.length) return null;
   return { leadId: lead.id, version: JSON.stringify({ source, matches }), summary: `${lead.name}: ${matches.length} imóvel(is) na região desejada`, detail: { matches, budget: lead.budget, propertyType: lead.propertyType, note: 'Pré-seleção por região e finalidade. Validar preço, tipo e disponibilidade com o corretor antes de apresentar.' } };

@@ -20,6 +20,7 @@ function propertyInput(body: Record<string, unknown>): PropertyInput {
     title: clean(body.title, 160), district: clean(body.district, 120), price: clean(body.price, 80),
     meta: clean(body.meta, 500), match: Math.max(0, Math.min(100, Number(body.match) || 80)),
     tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
+    status: body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
   };
 }
 

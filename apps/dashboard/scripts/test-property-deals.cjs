@@ -1,0 +1,41 @@
+// Mapping/reporting regression tests with a fake SQL transport, not a real database.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const ts = require('typescript');
+const calls = [];
+const date = '2026-09-07T12:00:00Z';
+const sale = { id: 'sale', sale_date: '2026-09-07', broker: 'Corretor', property: 'Casa', client: 'Cliente', amount: 100000, created_at: date };
+async function sql(parts, ...values) {
+  const query = parts.join('?'); calls.push(query);
+  if (query.includes('SELECT company_goal')) return [{ company_goal: 200000, leads_received: 2, converted_leads: 1, recovered_leads: 0 }];
+  if (query.includes('SELECT broker, goal,')) return [{ broker: 'Corretor', goal: 200000, leads_received: 2, converted_leads: 1, recovered_leads: 0, visits: 0 }];
+  if (query.includes('SELECT id, sale_date')) return [sale, { ...sale, id: 'rent', amount: 2500, deal_type: 'Aluguel' }];
+  if (query.includes('WITH recent_months')) { assert.equal(query.split("deal_type='Venda'").length - 1, 2); return [{ month: '2026-09', broker: 'Corretor', sold: 100000 }]; }
+  if (query.includes('INSERT INTO site_sales (sale_date')) { assert.ok(query.includes('deal_type')); return [{ ...sale, amount: values[4], deal_type: values[5] }]; }
+  if (query.includes('SELECT id, title')) return [{ id: 'p1', title: 'Casa', district: 'Centro', price: 'R$ 100.000', meta: '2 quartos', match: 80, tone: 'sky', purpose: 'Venda', status: 'Vendido', images: [], created_at: date }];
+  return [];
+}
+const source = fs.readFileSync(require('node:path').join(__dirname, '../lib/database.ts'), 'utf8');
+const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const fakeModule = { exports: {} };
+vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, process: { env: { DATABASE_URL: 'mock-only' } }, require: (name) => name === '@neondatabase/serverless' ? { neon: () => sql } : {}, Date, console });
+(async () => {
+  const api = fakeModule.exports;
+  const report = await api.getPerformance('2026-09');
+  assert.equal(report.totalSold, 100000);
+  assert.equal(report.salesCount, 1);
+  assert.equal(report.averageTicket, 100000);
+  assert.equal(report.brokers[0].sold, 100000);
+  assert.equal(report.brokers[0].salesCount, 1);
+  assert.equal(report.sales.length, 2);
+  assert.equal(report.sales[0].dealType, 'Venda');
+  assert.equal(report.sales[1].dealType, 'Aluguel');
+  const rent = await api.createSale({ date: '2026-09-07', broker: 'Corretor', property: 'Apartamento', client: 'Locatário', amount: 2500, dealType: 'Aluguel' });
+  assert.equal(rent.dealType, 'Aluguel'); assert.equal(rent.amount, 2500);
+  calls.length = 0;
+  const properties = await api.listProperties(true);
+  assert.equal(properties[0].status, 'Vendido');
+  assert.ok(!calls.some((query) => query.includes('INSERT INTO site_properties')));
+  console.log('PASS: rental/sale separation, legacy records, broker totals, history query filters, rental mapping, sold status, no demo seeding for automations.');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
