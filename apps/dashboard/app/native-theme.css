@@ -140,6 +140,7 @@ body { -webkit-font-smoothing: antialiased; }
 .automation-notice { padding: 16px; background: var(--secondary); color: var(--muted); line-height: 1.6; }
 .app-shell.app-shell .automation-center .automation-card { padding-top: 54px; }
 .automation-center .flow-detail p { color: var(--muted); line-height: 1.6; }
+.app-shell.app-shell .automation-center .flow-detail > .primary-button + .profile-action { margin-top: 16px; }
 .automation-results > article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; padding: 24px 0; border-top: 1px solid var(--line); }
 .automation-results h3 { font-size: 16px; margin-block: 8px; }
 .automation-results p, .automation-results small, .automation-history p { color: var(--muted); line-height: 1.6; }
