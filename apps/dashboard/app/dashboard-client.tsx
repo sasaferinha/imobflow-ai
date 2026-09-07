@@ -618,7 +618,6 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
 
   const goalProgress = performance.companyGoal ? Math.min(100, (performance.totalSold / performance.companyGoal) * 100) : 0;
   const remaining = Math.max(0, performance.companyGoal - performance.totalSold);
-  const historyMax = Math.max(...performance.history.map((item) => item.sold), 1);
   const monthTitle = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(`${month}-01T12:00:00Z`));
   const defaultSaleDate = month === new Date().toISOString().slice(0, 7) ? new Date().toISOString().slice(0, 10) : `${month}-01`;
 
@@ -642,7 +641,7 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
     <section className="performance-grid">
       <article className="panel broker-performance"><div className="panel-heading"><div><p className="eyebrow">Equipe comercial</p><h2>Desempenho por corretor</h2></div><span>VGV e metas individuais</span></div><div className="broker-table"><div className="broker-row broker-head"><span>Corretor</span><span>Vendido</span><span>Meta</span><span>Negócios</span><span>Progresso</span></div>{performance.brokers.map((broker,index) => <div className="broker-row" key={broker.broker}><span className="broker-name"><i className={`avatar-${index}`}>{broker.broker.split(' ').slice(0,2).map((part) => part[0]).join('')}</i><b>{broker.broker}<small>{index === 0 ? 'Líder do mês' : 'Equipe comercial'}</small></b></span><strong>{compactMoney.format(broker.sold)}</strong><span>{compactMoney.format(broker.goal)}</span><span>{broker.salesCount}</span><span className="broker-progress"><i><b style={{ width:`${Math.min(100, broker.progress)}%` }}/></i><em>{broker.progress.toFixed(0)}%</em></span></div>)}</div></article>
 
-      <article className="panel sales-history"><div className="panel-heading"><div><p className="eyebrow">Evolução comercial</p><h2>Vendas nos últimos meses</h2></div></div><div className="history-chart">{performance.history.map((item) => <div key={item.month}><span>{compactMoney.format(item.sold)}</span><i><b style={{ height:`${Math.max(8, (item.sold / historyMax) * 100)}%` }}/></i><small>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</small></div>)}</div></article>
+      <article className="panel sales-history"><div className="panel-heading"><div><p className="eyebrow">Evolução comercial</p><h2>Vendas nos últimos meses</h2></div></div><SalesHistoryChart history={performance.history} /></article>
     </section>
 
     <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Vendas registradas</h2></div><strong>{money.format(performance.totalSold)} no período</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}</span><b>{money.format(sale.amount)}</b><button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button></div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
@@ -651,6 +650,25 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
 
     {modal === 'goals' && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card performance-settings-modal" onSubmit={saveGoals} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Planejamento mensal</p><h2>Metas e conversão</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><label>Meta da imobiliária<input name="companyGoal" type="number" min="0" step="10000" defaultValue={performance.companyGoal} required /></label><div className="form-grid"><label>Leads recebidos<input name="leadsReceived" type="number" min="0" defaultValue={performance.leadsReceived} required /></label><label>Leads convertidos<input name="convertedLeads" type="number" min="0" defaultValue={performance.convertedLeads} required /></label></div><label>Leads recuperados<input name="recoveredLeads" type="number" min="0" defaultValue={performance.recoveredLeads} required /></label><div className="broker-goal-fields"><strong>Metas individuais</strong>{performance.brokers.map((broker,index) => <label key={broker.broker}>{broker.broker}<input name={`broker-goal-${index}`} type="number" min="0" step="10000" defaultValue={broker.goal} required /></label>)}</div><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar indicadores</button></div></form></div>}
   </>;
+}
+
+function SalesHistoryChart({ history }: { history: { month: string; sold: number }[] }) {
+  if (!history.length) return <p className="performance-empty">Ainda não há histórico de vendas.</p>;
+  const maximum = Math.max(...history.map((item) => item.sold), 1);
+  const points = history.map((item, index) => ({
+    x: history.length === 1 ? 320 : 16 + index * 608 / (history.length - 1),
+    y: 204 - item.sold / maximum * 176,
+  }));
+  const line = points.map((point) => `${point.x},${point.y}`).join(' ');
+  return <figure className="native-sales-chart">
+    <svg viewBox="0 0 640 224" role="img" aria-label="Evolução das vendas por mês. Valores detalhados abaixo.">
+      {[28, 72, 116, 160, 204].map((y) => <line key={y} x1="16" x2="624" y1={y} y2={y} className="chart-gridline" />)}
+      <polygon points={`${points[0].x},204 ${line} ${points[points.length - 1].x},204`} className="chart-area" />
+      <polyline points={line} className="chart-line" />
+      {points.map((point, index) => <circle key={history[index].month} cx={point.x} cy={point.y} r="4" className="chart-point"><title>{history[index].month + ': ' + money.format(history[index].sold)}</title></circle>)}
+    </svg>
+    <figcaption className="chart-values">{history.map((item) => <div key={item.month}><span>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</span><strong>{compactMoney.format(item.sold)}</strong></div>)}</figcaption>
+  </figure>;
 }
 
 function Conversations({ messages, draft, setDraft, sendMessage, notify, openAgenda }: { messages: ChatMessage[]; draft: string; setDraft: (value: string) => void; sendMessage: (event: FormEvent) => void; notify: (message: string) => void; openAgenda: () => void }) {
