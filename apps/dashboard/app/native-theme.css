@@ -473,3 +473,77 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell :is(input, select, textarea) { font-size: 16px; }
   .landing-shell.landing-shell .hero-copy h1 { font-size: clamp(36px, 10vw, 54px); }
 }
+
+/* Lead context is deliberately compact: the broker can understand the client
+   without leaving the conversation or confusing base data with a sample. */
+.conversation-data-source { color: var(--muted); font-size: 12px; }
+.app-shell.app-shell .lead-profile-details { margin-top: 18px; }
+.app-shell.app-shell .lead-profile-details > div { align-items: start; gap: 14px; }
+.app-shell.app-shell .lead-profile-details dt { min-width: 42%; }
+.app-shell.app-shell .lead-profile-details dd { overflow-wrap: anywhere; text-align: right; }
+.conversation-empty-thread { max-width: 430px; margin: auto; padding: 20px; color: var(--muted); border: 1px dashed var(--line); background: var(--paper); font-size: 14px; line-height: 1.6; text-align: center; }
+
+/* Performance surfaces: less dashboard chrome, more calm Apple-like materials. */
+.app-shell.app-shell .broker-profile-modal { width: min(1080px, 100%); background: var(--paper); }
+.app-shell.app-shell .broker-profile-header { padding: 24px 28px; background: color-mix(in srgb, var(--paper) 90%, var(--canvas)); border-bottom-color: var(--line); }
+.app-shell.app-shell .broker-profile-person h2 { color: var(--ink); font-family: var(--native-font); font-size: 23px; font-weight: 600; letter-spacing: -.035em; }
+.app-shell.app-shell .broker-profile-person > span { background: var(--selection); color: var(--accent-text); }
+.app-shell.app-shell .broker-profile-actions input { background: var(--secondary); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
+.app-shell.app-shell .broker-goal-overview { grid-template-columns: 1.1fr 142px 1fr; gap: 32px; margin: 24px 28px 18px; padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: linear-gradient(135deg, color-mix(in srgb, #eaf3ff 72%, var(--paper)), var(--paper)); color: var(--ink); box-shadow: 0 10px 32px #0066df0d; }
+.app-shell.app-shell .broker-goal-overview p, .app-shell.app-shell .broker-goal-overview > div:first-child > span, .app-shell.app-shell .broker-goal-overview dt, .app-shell.app-shell .broker-goal-ring small { color: var(--muted); }
+.app-shell.app-shell .broker-goal-overview > div:first-child > strong { color: var(--ink); font-size: clamp(28px, 4vw, 38px); font-weight: 550; letter-spacing: -.05em; }
+.app-shell.app-shell .broker-goal-overview dl > div { border-bottom-color: var(--line); }
+.app-shell.app-shell .broker-goal-overview dd { color: var(--ink); }
+.app-shell.app-shell .broker-goal-ring { width: 126px; height: 126px; background: conic-gradient(#0066df var(--broker-progress), var(--line) 0); box-shadow: 0 10px 28px #0066df1a; animation: broker-ring-progress .9s cubic-bezier(.16, 1, .3, 1) forwards; }
+.app-shell.app-shell .broker-goal-ring::before { width: 102px; height: 102px; background: var(--paper); }
+.app-shell.app-shell .broker-goal-ring strong { color: var(--ink); font-weight: 600; letter-spacing: -.04em; }
+.app-shell.app-shell .broker-stat-grid { gap: 0; margin: 0 28px 20px; padding: 0; border-block: 1px solid var(--line); }
+.app-shell.app-shell .broker-stat-grid article { min-height: 118px; padding: 18px 16px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; }
+.app-shell.app-shell .broker-stat-grid article:first-child { border-left: 0; }
+.app-shell.app-shell .broker-stat-grid strong { color: var(--ink); font-size: 24px; font-weight: 550; letter-spacing: -.035em; }
+.app-shell.app-shell .broker-profile-content { gap: 18px; padding: 0 28px 28px; }
+.app-shell.app-shell .broker-profile-content > article { padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+.app-shell.app-shell .broker-profile-content h3 { color: var(--ink); font-size: 17px; font-weight: 600; letter-spacing: -.025em; }
+.app-shell.app-shell .broker-history-bars { gap: 12px; }
+.app-shell.app-shell .broker-history-bars i { background: var(--secondary); border-radius: 8px 8px 4px 4px; }
+.app-shell.app-shell .broker-history-bars b { border-radius: 8px 8px 4px 4px; background: linear-gradient(180deg, #4d91ff, #0066df); transform-origin: bottom; animation: data-bar-rise .72s cubic-bezier(.16, 1, .3, 1) both; }
+.app-shell.app-shell .broker-sales-list li { border-top-color: var(--line); }
+
+/* Every data refresh remounts its visual group, creating a short, informative
+   transition after choosing another competency instead of a perpetual effect. */
+@property --broker-progress { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@keyframes broker-ring-progress { to { --broker-progress: var(--broker-progress-target); } }
+@keyframes data-reveal { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes data-bar-rise { from { transform: scaleY(.05); opacity: .35; } to { transform: scaleY(1); opacity: 1; } }
+@keyframes chart-draw { to { stroke-dashoffset: 0; } }
+@keyframes chart-fade { from { opacity: 0; } to { opacity: .06; } }
+@keyframes chart-point-in { to { opacity: 1; transform: scale(1); } }
+.performance-animated > :is(.performance-toolbar, .company-goal-card, .performance-kpis, .performance-grid, .recent-sales), .broker-performance-reveal > :is(.broker-goal-overview, .broker-stat-grid, .broker-profile-content) { animation: data-reveal .55s cubic-bezier(.16, 1, .3, 1) both; }
+.performance-animated > .company-goal-card, .broker-performance-reveal > .broker-stat-grid { animation-delay: 50ms; }
+.performance-animated > .performance-kpis, .broker-performance-reveal > .broker-profile-content { animation-delay: 100ms; }
+.performance-animated .goal-progress > div span, .performance-animated .broker-progress b { transform-origin: left; animation: data-bar-rise .72s cubic-bezier(.16, 1, .3, 1) both; }
+.chart-reveal .chart-line { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: chart-draw .85s cubic-bezier(.16, 1, .3, 1) forwards; }
+.chart-reveal .chart-area { opacity: 0; animation: chart-fade .7s ease-out .18s forwards; }
+.chart-reveal .chart-point { opacity: 0; transform-origin: center; animation: chart-point-in .32s cubic-bezier(.16, 1, .3, 1) calc(.26s + var(--chart-index) * 85ms) forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell.app-shell :is(.broker-goal-ring, .broker-history-bars b, .performance-animated > *, .broker-performance-reveal > *, .goal-progress > div span, .broker-progress b, .chart-line, .chart-area, .chart-point) { animation: none !important; }
+  .app-shell.app-shell .chart-reveal .chart-line { stroke-dashoffset: 0; }
+  .app-shell.app-shell .chart-reveal :is(.chart-area, .chart-point) { opacity: 1; }
+}
+@media (max-width: 900px) {
+  .app-shell.app-shell .broker-goal-overview { grid-template-columns: 1fr 126px; margin-inline: 18px; }
+  .app-shell.app-shell .broker-goal-overview dl { grid-column: 1 / -1; }
+  .app-shell.app-shell .broker-stat-grid { margin-inline: 18px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-shell.app-shell .broker-profile-content { padding-inline: 18px; }
+}
+@media (max-width: 620px) {
+  .app-shell.app-shell .broker-profile-header { padding: 18px; }
+  .app-shell.app-shell .broker-goal-overview { grid-template-columns: 1fr; margin: 12px; padding: 22px; text-align: left; }
+  .app-shell.app-shell .broker-goal-overview > div:first-child { align-items: flex-start; }
+  .app-shell.app-shell .broker-goal-ring { margin-left: 0; }
+  .app-shell.app-shell .broker-goal-overview dl { grid-column: auto; }
+  .app-shell.app-shell .broker-stat-grid { grid-template-columns: 1fr 1fr; margin: 0 12px 16px; }
+  .app-shell.app-shell .broker-stat-grid article:nth-child(odd) { border-left: 0; }
+  .app-shell.app-shell .broker-stat-grid article { border-bottom: 1px solid var(--line); }
+  .app-shell.app-shell .broker-profile-content { padding: 0 12px 20px; }
+}

@@ -491,7 +491,7 @@ export default function DashboardClient() {
         </header>
 
         {view === 'overview' && <Overview notify={notify} />}
-        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} />}
+        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} leads={capturedLeads} />}
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} onUpdate={updateLead} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} />}
@@ -608,7 +608,9 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
   const monthTitle = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(`${month}-01T12:00:00Z`));
   const defaultSaleDate = month === new Date().toISOString().slice(0, 7) ? new Date().toISOString().slice(0, 10) : `${month}-01`;
 
+  const performanceKey = `${month}-${performance.totalSold}-${performance.salesCount}-${performance.history.map((item) => `${item.month}:${item.sold}`).join('|')}`;
   return <>
+    <div className="performance-animated" key={performanceKey}>
     <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setLoadError(null); setMonth(event.target.value); }} /></label><button type="button" onClick={() => setModal('goals')}>Editar metas</button><button type="button" className="primary-button" onClick={() => setModal('sale')}>＋ Registrar negócio</button></div></section>
 
     <section className="company-goal-card">
@@ -632,6 +634,7 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
     </section>
 
     <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Negócios registrados</h2></div><strong>{money.format(performance.totalSold)} em vendas · {money.format(performance.sales.filter((sale) => sale.dealType === 'Aluguel').reduce((sum, sale) => sum + sale.amount, 0))}/mês em aluguéis registrados</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}<small className="deal-type-label">{sale.dealType || 'Venda'}</small></span><b>{money.format(sale.amount)}{sale.dealType === 'Aluguel' ? '/mês' : ''}</b><button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button></div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
+    </div>
 
     {modal === 'sale' && <div className="modal-backdrop" role="presentation" onMouseDown={() => !savingDeal && setModal(null)}><form className="modal-card deal-modal" onSubmit={registerSale} onMouseDown={(event) => event.stopPropagation()}>
       <div className="modal-head"><div><p className="eyebrow">Resultado comercial</p><h2>{dealType === 'Venda' ? 'Registrar venda' : 'Registrar aluguel'}</h2></div><button type="button" disabled={savingDeal} aria-label="Fechar" onClick={() => setModal(null)}>×</button></div>
@@ -656,12 +659,13 @@ function SalesHistoryChart({ history }: { history: { month: string; sold: number
     y: 204 - item.sold / maximum * 176,
   }));
   const line = points.map((point) => `${point.x},${point.y}`).join(' ');
-  return <figure className="native-sales-chart">
+  const chartKey = history.map((item) => `${item.month}:${item.sold}`).join('|');
+  return <figure className="native-sales-chart chart-reveal" key={chartKey}>
     <svg viewBox="0 0 640 224" role="img" aria-label="Evolução das vendas por mês. Valores detalhados abaixo.">
       {[28, 72, 116, 160, 204].map((y) => <line key={y} x1="16" x2="624" y1={y} y2={y} className="chart-gridline" />)}
       <polygon points={`${points[0].x},204 ${line} ${points[points.length - 1].x},204`} className="chart-area" />
       <polyline points={line} className="chart-line" />
-      {points.map((point, index) => <circle key={history[index].month} cx={point.x} cy={point.y} r="4" className="chart-point"><title>{history[index].month + ': ' + money.format(history[index].sold)}</title></circle>)}
+      {points.map((point, index) => <circle key={history[index].month} cx={point.x} cy={point.y} r="4" className="chart-point" style={{ '--chart-index': index } as CSSProperties}><title>{history[index].month + ': ' + money.format(history[index].sold)}</title></circle>)}
     </svg>
     <figcaption className="chart-values">{history.map((item) => <div key={item.month}><span>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</span><strong>{compactMoney.format(item.sold)}</strong></div>)}</figcaption>
   </figure>;
@@ -838,14 +842,15 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
   const remaining = broker ? Math.max(0, broker.goal - broker.sold) : 0;
   const historyMax = Math.max(...(broker?.history.map((item) => item.sold) || []), 1);
   const monthTitle = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(`${month}-01T12:00:00Z`));
+  const brokerAnimationKey = `${month}-${broker?.sold || 0}-${broker?.history.map((item) => `${item.month}:${item.sold}`).join('|') || ''}`;
 
   return <div className="modal-backdrop broker-profile-backdrop" role="presentation" onMouseDown={close}><article className="modal-card broker-profile-modal" onMouseDown={(event) => event.stopPropagation()}>
     <div className="broker-profile-header"><div className="broker-profile-person"><span>{brokerName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</span><div><p>Meu desempenho</p><h2>{brokerName}</h2><small>{company}{performance?.dataMode === 'demo' ? ' • dados demonstrativos locais' : ''}</small></div></div><div className="broker-profile-actions"><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setError(null); setMonth(event.target.value); }} /></label><button type="button" aria-label="Fechar perfil" onClick={close}>×</button></div></div>
-    {loading && !performance ? <div className="broker-profile-loading">Carregando desempenho mensal...</div> : error && !performance ? <div className="broker-profile-loading">{error}</div> : !broker ? <div className="broker-profile-loading">Este perfil ainda não possui metas associadas para {monthTitle}.</div> : <>
-      <section className="broker-goal-overview"><div><p>Meta individual de {monthTitle}</p><strong>{money.format(broker.sold)}</strong><span>de {money.format(broker.goal)}</span></div><div className="broker-goal-ring" style={{ '--broker-progress':`${Math.min(100, broker.progress) * 3.6}deg` } as CSSProperties}><span><strong>{broker.progress.toFixed(0)}%</strong><small>alcançado</small></span></div><dl><div><dt>Falta para a meta</dt><dd>{money.format(remaining)}</dd></div><div><dt>Posição na equipe</dt><dd>{rank}º lugar</dd></div><div><dt>Participação no VGV</dt><dd>{teamShare.toFixed(1)}%</dd></div></dl></section>
+    {loading && !performance ? <div className="broker-profile-loading">Carregando desempenho mensal...</div> : error && !performance ? <div className="broker-profile-loading">{error}</div> : !broker ? <div className="broker-profile-loading">Este perfil ainda não possui metas associadas para {monthTitle}.</div> : <div className="broker-performance-reveal" key={brokerAnimationKey}>
+      <section className="broker-goal-overview"><div><p>Meta individual de {monthTitle}</p><strong>{money.format(broker.sold)}</strong><span>de {money.format(broker.goal)}</span></div><div className="broker-goal-ring" style={{ '--broker-progress':'0deg', '--broker-progress-target':`${Math.min(100, broker.progress) * 3.6}deg` } as CSSProperties}><span><strong>{broker.progress.toFixed(0)}%</strong><small>alcançado</small></span></div><dl><div><dt>Falta para a meta</dt><dd>{money.format(remaining)}</dd></div><div><dt>Posição na equipe</dt><dd>{rank}º lugar</dd></div><div><dt>Participação no VGV</dt><dd>{teamShare.toFixed(1)}%</dd></div></dl></section>
       <section className="broker-stat-grid"><article><span>Negócios fechados</span><strong>{broker.salesCount}</strong><small>No mês selecionado</small></article><article><span>Ticket médio</span><strong>{compactMoney.format(averageTicket)}</strong><small>Por imóvel vendido</small></article><article><span>Leads recebidos</span><strong>{broker.leadsReceived}</strong><small>Carteira mensal</small></article><article><span>Leads convertidos</span><strong>{broker.convertedLeads}</strong><small>{broker.conversionRate.toFixed(1)}% de conversão</small></article><article><span>Leads recuperados</span><strong>{broker.recoveredLeads}</strong><small>Oportunidades retomadas</small></article><article><span>Visitas realizadas</span><strong>{broker.visits}</strong><small>Atendimentos presenciais</small></article></section>
       <section className="broker-profile-content"><article className="broker-month-chart"><div><p>Evolução individual</p><h3>Vendas por mês</h3></div>{broker.history.length > 0 ? <div className="broker-history-bars">{broker.history.map((item) => <div key={item.month}><span>{compactMoney.format(item.sold)}</span><i><b style={{ height:`${Math.max(10, (item.sold / historyMax) * 100)}%` }}/></i><small>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</small></div>)}</div> : <p className="broker-empty">Ainda não há histórico de vendas.</p>}</article><article className="broker-sales-list"><div><p>Fechamentos do mês</p><h3>Vendas recentes</h3></div>{brokerSales.length > 0 ? <ul>{brokerSales.map((sale) => <li key={sale.id}><span><strong>{sale.property}</strong><small>{sale.client} • {new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</small></span><b>{money.format(sale.amount)}</b></li>)}</ul> : <p className="broker-empty">Nenhuma venda registrada neste mês.</p>}</article></section>
-    </>}
+    </div>}
   </article></div>;
 }
 

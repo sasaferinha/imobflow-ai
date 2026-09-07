@@ -126,11 +126,23 @@ export type DemoConversationAction =
   | { type: 'select'; id: string }
   | { type: 'draft'; id: string; text: string }
   | { type: 'send'; id: string; messageId: string; time: string }
-  | { type: 'assign'; id: string };
+  | { type: 'assign'; id: string }
+  | { type: 'sync'; contacts: Array<{ id: string; unread?: number }> };
 export function createDemoConversationState(): DemoConversationState {
   return { selectedId: demoContacts[0].id, threads: Object.fromEntries(demoContacts.map(contact => [contact.id, { messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false }])) };
 }
 export function demoConversationReducer(state: DemoConversationState, action: DemoConversationAction): DemoConversationState {
+  if (action.type === 'sync') {
+    let changed = false;
+    const threads = { ...state.threads };
+    for (const contact of action.contacts) {
+      if (!threads[contact.id]) {
+        threads[contact.id] = { messages: [], draft: '', unread: contact.unread || 0, humanMode: false };
+        changed = true;
+      }
+    }
+    return changed ? { ...state, threads } : state;
+  }
   const thread = state.threads[action.id];
   if (!thread) return state;
   if (action.type === 'send' && !thread.draft.trim()) return state;
