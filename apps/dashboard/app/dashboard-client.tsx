@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @next/next/no-img-element -- previews use locally compressed data URLs */
 
-import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
 
@@ -31,6 +31,18 @@ const navItems: Array<{ id: View; icon: string; label: string; badge?: string }>
   { id: 'agenda', icon: '□', label: 'Agenda' },
   { id: 'automations', icon: '↗', label: 'Automações' },
 ];
+
+function NavigationIcon({ view }: { view: View }) {
+  const paths: Record<View, ReactNode> = {
+    overview: <><path d="m3 10 9-7 9 7v10H3Z" /><path d="M9 20v-7h6v7" /></>,
+    conversations: <path d="M4 4h16v12H9l-5 4V4Z" />,
+    leads: <><circle cx="9" cy="8" r="3" /><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v2" /></>,
+    properties: <><path d="M4 21V3h12v18M16 9h4v12M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3" /></>,
+    agenda: <><rect x="3" y="5" width="18" height="16" /><path d="M7 3v4M17 3v4M3 11h18M7 15h3M14 15h3" /></>,
+    automations: <><path d="m13 2-8 12h6l-1 8 9-13h-7Z" /></>,
+  };
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[view]}</svg>;
+}
 
 const headers: Record<View, { eyebrow: string; title: string; copy: string }> = {
   overview: { eyebrow: 'Visão executiva', title: 'Bom dia, Marina', copy: 'Acompanhe os principais indicadores da operação comercial.' },
@@ -472,8 +484,8 @@ export default function DashboardClient() {
         </button>
         <nav className="nav-list" aria-label="Navegação principal">
           {navItems.map((item) => (
-            <button type="button" key={item.id} className={`nav-item ${view === item.id ? 'active' : ''}`} onClick={() => openView(item.id)} aria-current={view === item.id ? 'page' : undefined}>
-              <span>{item.icon}</span>{item.label}{item.badge && <b>{item.badge}</b>}
+            <button type="button" key={item.id} className={`nav-item ${view === item.id ? 'active' : ''}`} onClick={() => openView(item.id)} aria-label={item.label} title={item.label} aria-current={view === item.id ? 'page' : undefined}>
+              <span className="nav-icon"><NavigationIcon view={item.id} /></span><span className="nav-label">{item.label}</span>{item.badge && <b>{item.badge}</b>}
             </button>
           ))}
         </nav>

@@ -1,0 +1,360 @@
+/* Administrative surfaces share one geometry and spacing scale. */
+.app-shell {
+  --ink: #182538;
+  --muted: #657389;
+  --line: #dbe2ea;
+  --violet: #315fd4;
+  --paper: #fff;
+  --canvas: #f4f6f9;
+  --panel-space: 24px;
+  grid-template-columns: 232px minmax(0, 1fr);
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+/* Keep circular data indicators intact; square the interface containers. */
+.app-shell.app-shell :is(
+  button, input, select, textarea, .sidebar, .brand-mark, .avatar,
+  .nav-icon, .nav-label, .nav-item b, .sidebar-card, .panel, .metric-card, .metric-icon,
+  .conversation-card, .pipeline-step, .lead-avatar, .status-tag, .temperature,
+  .hot-pill, .bubble, .chat-date, .typing, .search-field, .inbox-search,
+  .lead-table, .profile-explanation, .captured-score, .score-explanation,
+  .property-card, .property-visual, .property-visual em, .image-count,
+  .property-image-field, .property-image-previews > div,
+  .property-image-previews span, .summary-number, .appointment-detail,
+  .automation-icon, .automation-state, .modal-card, .popover, .toast,
+  .company-goal-card, .performance-kpis article, .broker-name > i,
+  .broker-stat-grid article, .broker-profile-content > article,
+  .broker-goal-overview, .broker-profile-person > span, .lead-diagnostic-card,
+  .lead-filter-menu, .filter-panel, .lead-diagnosis-note, .lead-diagnosis-note > span,
+  .lead-import-drop, .lead-import-drop > span, .lead-import-columns,
+  .lead-import-preview, .lead-import-error, .lifecycle-badge, .recovery-badge,
+  .score-explanation li, .profile-whatsapp, .metric-card small,
+  .appointment-row em, .empty-leads > span, .empty-catalog > span
+),
+.admin-login :is(form, input, button, .landing-brand > span) {
+  border-radius: 0;
+}
+
+.app-shell :is(.panel, .metric-card, .conversation-card, .property-card,
+  .performance-kpis article, .company-goal-card, .lead-diagnostic-card) {
+  box-shadow: none;
+}
+
+.app-shell .workspace {
+  padding: 32px clamp(20px, 2.5vw, 40px) 48px;
+  max-width: 1760px;
+}
+
+.app-shell .sidebar {
+  height: 100dvh;
+  padding: 28px 12px 20px;
+  overflow-y: auto;
+  background: #111c2d;
+}
+
+.app-shell .brand { padding: 0 12px 32px; }
+.app-shell .brand-mark { flex-shrink: 0; }
+.app-shell .sidebar-card { margin-top: auto; background: transparent; }
+.app-shell .sidebar-card span { line-height: 1.6; }
+.app-shell .nav-list { gap: 4px; }
+.app-shell .nav-item {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 12px;
+  min-height: 46px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.app-shell .nav-item > .nav-icon {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+}
+.app-shell .nav-item > .nav-label {
+  display: block;
+  width: auto;
+  height: auto;
+  border: 0;
+  background: transparent;
+  font-size: inherit;
+  text-align: left;
+}
+.app-shell .nav-icon svg { width: 20px; height: 20px; }
+.app-shell .nav-item.active {
+  background: #223753;
+  box-shadow: inset 3px 0 #77a1ff;
+}
+.app-shell .nav-item.active > :is(.nav-icon, .nav-label) { background: transparent; border: 0; }
+
+.app-shell .topbar {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+  border-color: var(--line);
+}
+.app-shell .topbar > div:first-child { flex: 1 1 320px; min-width: 0; }
+.app-shell .topbar h1 { font-size: clamp(26px, 2.5vw, 34px); line-height: 1.2; letter-spacing: -.03em; }
+.app-shell .topbar p:last-child { font-size: 15px; line-height: 1.6; }
+.app-shell .header-actions { flex-wrap: wrap; gap: 8px; }
+.app-shell .icon-button { width: 44px; height: 44px; }
+.app-shell .primary-button {
+  width: auto;
+  min-height: 44px;
+  height: auto;
+  padding: 11px 16px;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: none;
+}
+.app-shell .primary-button::after { content: none; }
+.app-shell .panel { padding: var(--panel-space); }
+.app-shell .panel-heading { flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+.app-shell .panel-heading h2 { font-size: 18px; line-height: 1.4; }
+.app-shell .eyebrow { line-height: 1.5; letter-spacing: .08em; }
+
+/* Flexible financial overview and controls. */
+.app-shell .performance-toolbar,
+.app-shell .performance-toolbar > div:last-child { flex-wrap: wrap; }
+.app-shell .performance-toolbar > div { min-width: 0; }
+.app-shell .performance-toolbar > div:last-child { gap: 8px; }
+.app-shell .performance-toolbar :is(input, button) { min-height: 44px; height: auto; }
+.app-shell .performance-toolbar label { flex-wrap: wrap; font-size: 14px; }
+.app-shell .performance-toolbar input { min-width: 0; padding-block: 10px; }
+.app-shell .company-goal-card {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, .8fr);
+  gap: 24px;
+  padding: 28px;
+  background: #172b46;
+  border-left: 4px solid #5d89ed;
+}
+.app-shell .company-goal-card > * { min-width: 0; }
+.app-shell .company-goal-copy strong { font-size: clamp(24px, 2.4vw, 34px); overflow-wrap: anywhere; }
+.app-shell .goal-side strong { font-size: 21px; overflow-wrap: anywhere; }
+.app-shell .goal-progress p { flex-wrap: wrap; gap: 8px; line-height: 1.5; }
+.app-shell .goal-progress > div,
+.app-shell .goal-progress > div span,
+.app-shell .broker-progress > i,
+.app-shell .broker-progress > i b,
+.app-shell .history-chart :is(i, b) { border-radius: 0; box-shadow: none; }
+.app-shell .performance-kpis { gap: 16px; }
+.app-shell .performance-kpis article { padding: 20px; min-width: 0; min-height: 136px; border-top: 2px solid #c9d6ee; }
+.app-shell .performance-kpis span { font-size: 14px; line-height: 1.5; }
+.app-shell .performance-kpis strong { color: var(--ink); font-size: 28px; line-height: 1.3; overflow-wrap: anywhere; }
+.app-shell .performance-kpis small { line-height: 1.5; }
+.app-shell .performance-grid { grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 20px; }
+.app-shell .broker-performance .panel-heading > span { font-size: 13px; }
+
+/* Tables scroll inside their own surface at every viewport width. */
+.app-shell :is(.broker-table, .recent-sales-table, .lead-table, .lead-import-preview) {
+  width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain;
+}
+.app-shell .broker-row { min-width: 640px; grid-template-columns: minmax(160px, 1.5fr) 90px 90px 80px minmax(110px, 1fr); padding: 14px 8px; }
+.app-shell .sale-row { min-width: 760px; grid-template-columns: 90px minmax(120px, 1fr) minmax(120px, 1fr) minmax(150px, 1.3fr) 130px 32px; padding: 14px 8px; font-size: 14px; }
+.app-shell :is(.broker-head, .sale-head, .table-head) { color: var(--muted); font-size: 12px; background: var(--canvas); line-height: 1.4; }
+.app-shell .broker-row > *, .app-shell .sale-row > *, .app-shell .table-row > * { min-width: 0; }
+.app-shell .broker-name > i { flex: 0 0 34px; color: #31559f; }
+.app-shell .broker-name > b { min-width: 0; font-size: 14px; }
+.app-shell .broker-name small { font-size: 12px; }
+.app-shell .broker-progress > i { flex: 1; min-width: 30px; }
+.app-shell .broker-progress em { flex: 0 0 36px; text-align: right; }
+.app-shell .intelligence-row > span:nth-child(3) { display: block; }
+.app-shell .history-chart { gap: 12px; }
+.app-shell .history-chart span { font-size: 12px; white-space: nowrap; }
+.app-shell .history-chart small { font-size: 12px; }
+
+.app-shell .lead-management { grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 20px; }
+.app-shell .captured-head { grid-template-columns: 42px minmax(0, 1fr); }
+.app-shell .captured-head > em { grid-column: 2; justify-self: start; }
+.app-shell .captured-head h2 { font-size: 21px; overflow-wrap: anywhere; }
+.app-shell .captured-profile dl, .app-shell .lead-operational-fields, .app-shell .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.app-shell .profile-explanation > span { flex: 0 0 22px; }
+.app-shell .lead-action-grid button { font-size: 14px; min-height: 44px; }
+.app-shell .lead-operational-fields label { font-size: 13px; }
+.app-shell .lead-diagnostic-card { min-height: 144px; padding: 20px; }
+.app-shell .lead-diagnostic-card > span { font-size: 14px; }
+.app-shell .lead-diagnostic-card > small { font-size: 12px; line-height: 1.5; }
+
+/* Conversation and catalog layouts. */
+.app-shell .inbox-layout { grid-template-columns: minmax(200px, .8fr) minmax(0, 1.5fr) minmax(200px, .8fr); }
+.app-shell .inbox-layout .panel { padding: 0; }
+.app-shell .full-chat-head { grid-template-columns: 40px minmax(0, 1fr) auto; }
+.app-shell .full-chat-head > div { min-width: 0; }
+.app-shell .full-composer { grid-template-columns: 32px minmax(0, 1fr) 36px; }
+.app-shell .full-composer input { min-width: 0; }
+.app-shell .full-chat-body .bubble { max-width: 88%; overflow-wrap: anywhere; }
+.app-shell .catalog-toolbar { flex-wrap: wrap; gap: 16px; }
+.app-shell .catalog-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.app-shell .catalog-actions :is(select, button) { min-height: 44px; height: auto; }
+.app-shell .catalog-actions .primary-button { width: auto; padding: 11px 16px; font-size: 14px; }
+.app-shell .catalog-actions .primary-button::after { content: none; }
+.app-shell .search-field { min-height: 44px; height: auto; min-width: 0; }
+.app-shell .search-field input { min-width: 0; padding-block: 10px; }
+.app-shell .property-copy { padding: 20px; }
+.app-shell .property-copy h3 { line-height: 1.4; }
+.app-shell .property-copy > div { flex-wrap: wrap; gap: 10px; }
+.app-shell .calendar-panel { padding: 0; }
+.app-shell .calendar-head { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+.app-shell .calendar-head button { width: 44px; height: 44px; }
+.app-shell .appointment-row :is(time, small, em), .app-shell .day-summary :is(li, .summary-number span) { font-size: 12px; line-height: 1.5; }
+.app-shell .automation-card h3 { font-size: 18px; }
+.app-shell .automation-card footer { gap: 12px; flex-wrap: wrap; }
+
+/* Dialogs and sign-in use the same geometry as the workspace. */
+.app-shell .modal-card { padding: 24px; }
+.app-shell .modal-head { gap: 16px; }
+.app-shell .modal-head h2 { line-height: 1.3; }
+.app-shell .modal-head button { flex: 0 0 36px; width: 36px; height: 36px; }
+.app-shell :is(input, select, textarea) { min-width: 0; }
+.app-shell .modal-card :is(input, select), .app-shell .lead-operational-fields :is(input, select) { min-height: 44px; height: auto; }
+.app-shell .modal-actions button { min-height: 44px; height: auto; padding: 10px 16px; line-height: 1.4; }
+.app-shell .setting-row { flex-direction: row; }
+.app-shell .setting-row input { flex: 0 0 18px; min-height: 18px; height: 18px; }
+.app-shell .property-detail-modal { padding: 0 24px 24px; }
+.app-shell .property-detail-modal > .property-visual { max-width: none; width: calc(100% + 48px); margin-left: -24px; }
+.app-shell .broker-profile-modal { padding: 0; border-radius: 0 !important; }
+.app-shell .toast { max-width: min(440px, calc(100vw - 32px)); line-height: 1.5; }
+.app-shell .toast span { flex-shrink: 0; border-radius: 0; }
+.admin-login { min-height: 100dvh; padding: 24px; background: #f4f6f9; color: #182538; }
+.admin-login form { width: min(460px, 100%); padding: 40px; border: 1px solid #dbe2ea; border-top: 3px solid #315fd4; box-shadow: 0 12px 36px #1825380a; }
+.admin-login .landing-brand { margin-bottom: 40px; }
+.admin-login .eyebrow { font-size: 12px; }
+.admin-login h1 { font-size: clamp(26px, 5vw, 32px); line-height: 1.2; }
+.admin-login label { font-size: 14px; text-transform: none; letter-spacing: 0; }
+.admin-login input { min-width: 0; width: 100%; font-size: 16px; }
+
+.app-shell.dark-mode :is(.performance-kpis strong, .broker-row > strong, .broker-progress em,
+  .captured-profile dd, .profile-explanation p, .broker-goal-fields > strong,
+  .property-image-field > div:first-child strong, .lead-filter-menu-head strong,
+  .recent-sales .panel-heading > strong, .calendar-head h2, .day-summary h2,
+  .automation-card h3, .health-panel h3, .lead-profile dd, .profile-hero h3) { color: var(--ink); }
+.app-shell.dark-mode .lead-diagnosis-note,
+.app-shell.dark-mode .health-orbit::before { background: var(--paper); }
+.app-shell.dark-mode :is(.day-summary li, .appointment-row time, .appointment-row small,
+  .profile-hero p, .health-panel p, .automation-card p) { color: var(--muted); }
+.app-shell.dark-mode :is(.panel, .metric-card, .conversation-card, .property-card,
+  .performance-kpis article, .lead-diagnostic-card) { box-shadow: none; }
+.app-shell.dark-mode .broker-name > i { color: #31559f; }
+.app-shell.compact-mode { --panel-space: 16px; }
+.app-shell.compact-mode .performance-kpis article { min-height: 112px; padding: 16px; }
+
+.app-shell :is(button, a, input, select, textarea):focus-visible,
+.admin-login :is(a, button, input):focus-visible {
+  outline: 2px solid #648beb;
+  outline-offset: 3px;
+}
+
+@media (max-width: 1320px) {
+  .app-shell .performance-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .company-goal-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+  .app-shell .goal-side { grid-column: 1 / -1; padding: 20px 0 0; border-left: 0; border-top: 1px solid #ffffff26; }
+  .app-shell .performance-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-shell .inbox-layout { grid-template-columns: minmax(210px, .75fr) minmax(0, 1.5fr); }
+  .app-shell .inbox-layout .lead-profile { display: none; }
+}
+
+@media (max-width: 1100px) {
+  .app-shell .lead-management { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .captured-profile { position: static; }
+}
+
+@media (max-width: 1050px) and (min-width: 721px) {
+  .app-shell { grid-template-columns: 84px minmax(0, 1fr); }
+  .app-shell .sidebar { padding-inline: 8px; }
+  .app-shell .brand { padding-inline: 0; }
+  .app-shell .brand div { display: none; }
+  .app-shell .nav-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding: 10px 2px;
+    font-size: 10px;
+  }
+  .app-shell .nav-item:not(.active) { font-size: 10px; }
+  .app-shell .nav-item > .nav-label { text-align: center; }
+  .app-shell .profile-row { padding-inline: 16px; }
+}
+
+@media (max-width: 900px) {
+  .app-shell .inbox-layout { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .app-shell .inbox-layout .inbox-list { display: flex; max-height: 300px; overflow-y: auto; }
+  .app-shell .inbox-list .contact-row { flex-shrink: 0; }
+  .app-shell .full-chat { min-height: 560px; }
+}
+
+@media (max-width: 720px) {
+  .app-shell { --panel-space: 18px; }
+  .app-shell .workspace { padding: 22px 16px calc(100px + env(safe-area-inset-bottom)); }
+  .app-shell .sidebar {
+    inset: auto 0 0;
+    height: auto;
+    min-height: 70px;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    border: 0;
+    border-top: 1px solid #2c3b51;
+    overflow: visible;
+    box-shadow: none;
+  }
+  .app-shell .nav-list { gap: 0; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .app-shell .nav-item,
+  .app-shell .nav-item:not(.active) {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 1px;
+    font-size: 10px;
+    line-height: 1.25;
+  }
+  .app-shell .nav-item > .nav-label { text-align: center; }
+  .app-shell .nav-item.active { box-shadow: inset 0 2px #77a1ff; }
+  .app-shell .topbar { display: flex; gap: 16px; }
+  .app-shell .topbar > div:first-child { flex-basis: 100%; }
+  .app-shell .header-actions { width: 100%; }
+  .app-shell .header-actions > .primary-button { margin-left: auto; }
+  .app-shell .performance-toolbar > div:last-child { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .app-shell .performance-toolbar label { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  .app-shell .performance-toolbar input { width: 100%; }
+  .app-shell .performance-toolbar button { padding: 10px; }
+  .app-shell .company-goal-card { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 24px; }
+  .app-shell .company-goal-copy strong { font-size: clamp(26px, 7vw, 34px); }
+  .app-shell .goal-side { grid-column: auto; }
+  .app-shell .performance-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .app-shell .performance-kpis article { padding: 16px; min-height: 126px; }
+  .app-shell .performance-kpis article:first-child { grid-column: 1 / -1; }
+  .app-shell .performance-kpis strong { font-size: 26px; }
+  .app-shell .lead-diagnostic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell .lead-diagnostic-card { min-height: 144px; padding: 14px; }
+  .app-shell .history-chart { gap: 8px; }
+  .app-shell .history-chart span { font-size: 11px; }
+  .app-shell .full-chat-head { grid-template-columns: 40px minmax(0, 1fr); }
+  .app-shell .full-chat-head button { grid-column: 1 / -1; min-height: 44px; }
+  .app-shell .catalog-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
+  .app-shell .catalog-actions .primary-button { width: 100%; grid-column: 1 / -1; }
+  .app-shell .form-grid, .app-shell .lead-operational-fields { grid-template-columns: minmax(0, 1fr); }
+  .app-shell :is(input, select, textarea), .app-shell .modal-card :is(input, select, textarea),
+  .app-shell .search-field input, .app-shell .full-composer input, .app-shell .inbox-search input { font-size: 16px; }
+  .app-shell .modal-card { padding: 20px; }
+  .app-shell .property-detail-modal { padding: 0 20px 20px; }
+  .app-shell .property-detail-modal > .property-visual { width: calc(100% + 40px); margin-left: -20px; }
+  .app-shell .broker-profile-modal { padding: 0; }
+  .app-shell .appointment-row { grid-template-columns: 42px 4px minmax(0, 1fr) 12px; gap: 8px; }
+  .app-shell .appointment-row > em { grid-column: 3; justify-self: start; }
+  .app-shell .appointment-row > b { grid-column: 4; grid-row: 1; }
+  .app-shell .toast { bottom: calc(82px + env(safe-area-inset-bottom)); }
+  .admin-login { padding: 16px; }
+  .admin-login form { padding: 28px 24px; }
+}
+
+@media (max-width: 360px) {
+  .app-shell .nav-item > .nav-label { font-size: 9px; }
+  .app-shell .lead-diagnostic-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .lead-diagnostic-card { min-height: 118px; }
+  .app-shell .header-actions > .primary-button { padding-inline: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *, .admin-login * { animation: none; transition: none; }
+}
