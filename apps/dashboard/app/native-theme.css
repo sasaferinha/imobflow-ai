@@ -547,3 +547,77 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell .broker-stat-grid article { border-bottom: 1px solid var(--line); }
   .app-shell.app-shell .broker-profile-content { padding: 0 12px 20px; }
 }
+
+/* Unified Apple-like data language across Leads, Catalog, Agenda and Automations. */
+.app-shell.app-shell :is(.profile-explanation, .lead-diagnosis-note, .appointment-detail, .automation-warning, .automation-notice, .match-flow-guide) {
+  border: 1px solid var(--line); background: var(--secondary); color: var(--ink); box-shadow: none;
+}
+.app-shell.app-shell .profile-explanation { border-radius: 12px; }
+.app-shell.app-shell .profile-explanation > span { border-radius: 50%; background: var(--selection); color: var(--accent-text); }
+.app-shell.app-shell .lead-operational-fields { gap: 12px; }
+.app-shell.app-shell .lead-operational-fields :is(input, select) { min-height: 42px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+.app-shell.app-shell .captured-profile dl > div { padding-block: 13px; border-color: var(--line); }
+.app-shell.app-shell .captured-profile dd { color: var(--ink); font-weight: 500; }
+
+/* Replaces the old dark priority slab with a calm, readable data card. */
+.app-shell.app-shell .score-explanation {
+  margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, #eaf3ff 70%, var(--paper)), var(--paper)); color: var(--ink); box-shadow: 0 8px 24px #0066df0c;
+  animation: data-reveal .45s cubic-bezier(.16, 1, .3, 1) both;
+}
+.app-shell.app-shell .score-explanation span, .app-shell.app-shell .score-explanation strong small { color: var(--muted); }
+.app-shell.app-shell .score-explanation strong { color: var(--ink); font-size: 28px; font-weight: 600; letter-spacing: -.045em; }
+.app-shell.app-shell .score-explanation > i { height: 7px; margin-block: 12px; background: var(--line); }
+.app-shell.app-shell .score-explanation > i b { background: linear-gradient(90deg, #0066df, #58d5ae); transform-origin: left; animation: data-bar-rise .7s cubic-bezier(.16, 1, .3, 1) both; }
+.app-shell.app-shell .score-explanation li { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--muted); font-size: 12px; }
+.app-shell.app-shell .lead-action-grid button { min-height: 46px; border-radius: 8px; }
+.app-shell.app-shell .profile-whatsapp { min-height: 46px; border-radius: 8px; background: #0066df; color: #fff; }
+
+.app-shell.app-shell .score-cell { height: 6px; background: var(--line); }
+.app-shell.app-shell .score-cell i { background: linear-gradient(90deg, #0066df, #58d5ae); transform-origin: left; animation: data-bar-rise .65s cubic-bezier(.16, 1, .3, 1) both; }
+.app-shell.app-shell .score-cell b { color: var(--ink); }
+.app-shell.app-shell .lead-table { border-color: var(--line); border-radius: 10px; }
+.app-shell.app-shell .table-head { background: var(--secondary); }
+.app-shell.app-shell .lifecycle-badge, .app-shell.app-shell .recovery-badge { border: 1px solid var(--line); background: var(--secondary); color: var(--ink); }
+
+.app-shell.app-shell .property-card { border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: none; transition: transform .25s ease, box-shadow .25s ease; }
+.app-shell.app-shell .property-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px #0000000d; }
+.app-shell.app-shell .property-visual { background: #eaf3ff; }
+.app-shell.app-shell .property-visual::before, .app-shell.app-shell .property-visual::after { display: none; }
+.app-shell.app-shell .property-visual:is(.orchid, .sky, .sage, .sand, .rose, .slate) { background: linear-gradient(135deg, #f4f8ff, #dceaff); }
+.app-shell.app-shell .property-visual > span { color: #76a6e9; }
+.app-shell.app-shell .property-visual em { border: 1px solid #cde0fc; border-radius: 6px; background: #f8fbff; color: var(--accent-text); font-size: 12px; font-weight: 500; }
+.app-shell.app-shell .property-copy { padding: 18px; }
+.app-shell.app-shell .property-copy > small { color: var(--muted); font-size: 12px; letter-spacing: 0; }
+.app-shell.app-shell .property-copy p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.app-shell.app-shell .property-copy button { border-radius: 7px; background: var(--selection); color: var(--accent-text); }
+
+.app-shell.app-shell .automation-card { border-color: var(--line); background: var(--paper); }
+.app-shell.app-shell .automation-card:hover { background: var(--secondary); }
+.app-shell.app-shell .automation-state { border: 1px solid var(--line); background: var(--secondary); color: var(--ink); }
+.app-shell.app-shell .automation-icon { border-radius: 9px; }
+.app-shell.app-shell .day-summary .summary-number { background: transparent; border-block: 1px solid var(--line); border-radius: 0; }
+.app-shell.app-shell .summary-number strong { color: var(--ink); font-weight: 550; letter-spacing: -.05em; }
+
+/* All quantitative views share the same entry/update motion. Elements animate
+   only when they mount with new view data; no distracting perpetual motion. */
+@keyframes data-ring-in { from { opacity: .25; transform: scale(.9) rotate(-18deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+.app-shell.app-shell :is(.history-chart b, .broker-history-bars b, .score-cell i, .score-explanation > i b, .goal-progress > div span, .broker-progress > i b) { transform-origin: bottom left; animation: data-bar-rise .72s cubic-bezier(.16, 1, .3, 1) both; }
+.app-shell.app-shell .history-chart > div:nth-child(2) b, .app-shell.app-shell .broker-history-bars > div:nth-child(2) b { animation-delay: 70ms; }
+.app-shell.app-shell .history-chart > div:nth-child(3) b, .app-shell.app-shell .broker-history-bars > div:nth-child(3) b { animation-delay: 140ms; }
+.app-shell.app-shell .history-chart > div:nth-child(4) b, .app-shell.app-shell .broker-history-bars > div:nth-child(4) b { animation-delay: 210ms; }
+.app-shell.app-shell .history-chart > div:nth-child(5) b, .app-shell.app-shell .broker-history-bars > div:nth-child(5) b { animation-delay: 280ms; }
+.app-shell.app-shell .history-chart > div:nth-child(6) b, .app-shell.app-shell .broker-history-bars > div:nth-child(6) b { animation-delay: 350ms; }
+.app-shell.app-shell .health-orbit { animation: data-ring-in .7s cubic-bezier(.16, 1, .3, 1) both; }
+.app-shell.app-shell :is(.metric-card, .lead-diagnostic-card, .automation-card, .property-card, .day-summary) { animation: data-reveal .5s cubic-bezier(.16, 1, .3, 1) both; }
+.app-shell.app-shell :is(.metric-card, .lead-diagnostic-card, .automation-card, .property-card, .day-summary):nth-child(2) { animation-delay: 55ms; }
+.app-shell.app-shell :is(.metric-card, .lead-diagnostic-card, .automation-card, .property-card, .day-summary):nth-child(3) { animation-delay: 110ms; }
+.app-shell.app-shell :is(.metric-card, .lead-diagnostic-card, .automation-card, .property-card, .day-summary):nth-child(4) { animation-delay: 165ms; }
+.app-shell.dark-mode .score-explanation { background: linear-gradient(135deg, #202c3d, var(--paper)); box-shadow: none; }
+.app-shell.dark-mode .score-explanation li { background: var(--secondary); border-color: var(--line); color: var(--muted); }
+.app-shell.dark-mode .property-visual:is(.orchid, .sky, .sage, .sand, .rose, .slate) { background: linear-gradient(135deg, #1e314a, #233d60); }
+.app-shell.dark-mode .property-visual em { border-color: #3e5e86; background: #1d2d42; color: #a9d0ff; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell.app-shell :is(.history-chart b, .broker-history-bars b, .score-cell i, .score-explanation > i b, .goal-progress > div span, .broker-progress > i b, .health-orbit, .metric-card, .lead-diagnostic-card, .automation-card, .property-card, .day-summary) { animation: none !important; transform: none; }
+  .app-shell.app-shell .property-card { transition: none; }
+}
