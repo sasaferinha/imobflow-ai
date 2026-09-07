@@ -1,16 +1,17 @@
 'use client';
 /* eslint-disable @next/next/no-img-element -- previews use locally compressed data URLs */
 
-import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+import { useEffect, useMemo, useReducer, useState, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
 import AutomationCenter from './automation-center';
+import ConversationCenter from './conversation-center';
+import { createDemoConversationState, demoConversationReducer, demoContacts } from '@/lib/demo-conversations';
 
 const LOCAL_LEADS_KEY = 'imobflow_local_leads';
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
 
 type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations';
-type ChatMessage = { id: number; side: 'incoming' | 'outgoing'; text: string };
 type Property = PropertyRecord;
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
 type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
@@ -26,7 +27,7 @@ const leadFilterGroups: Array<{ id: LeadFilterGroup; label: string; options: Arr
 
 const navItems: Array<{ id: View; icon: string; label: string; badge?: string }> = [
   { id: 'overview', icon: '⌂', label: 'Visão geral' },
-  { id: 'conversations', icon: '◌', label: 'Conversas', badge: '6' },
+  { id: 'conversations', icon: '◌', label: 'Conversas', badge: String(demoContacts.length) },
   { id: 'leads', icon: '◎', label: 'Leads' },
   { id: 'properties', icon: '▦', label: 'Imóveis' },
   { id: 'agenda', icon: '□', label: 'Agenda' },
@@ -106,13 +107,6 @@ const initialAppointments: AppointmentRecord[] = [
   { id:'lucas-aurora', date:'2026-09-01', time:'10:30', name:'Lucas Carvalho', property:'Residencial Aurora', broker:'Paulo Mendes', status:'Aguardando', color:'amber', createdAt:'' },
   { id:'carla-reserva', date:'2026-09-01', time:'14:00', name:'Carla Souza', property:'Terreno Reserva Sul', broker:'Marina Oliveira', status:'Confirmada', color:'violet', createdAt:'' },
   { id:'rafael-bosque', date:'2026-09-01', time:'16:30', name:'Rafael Borges', property:'Casa Bosque Sereno', broker:'Paulo Mendes', status:'Confirmada', color:'blue', createdAt:'' },
-];
-
-const initialMessages: ChatMessage[] = [
-  { id: 1, side: 'incoming', text: 'Oi! Estou procurando um apartamento de 3 quartos no Centro.' },
-  { id: 2, side: 'outgoing', text: 'Olá, Lucas. Qual valor máximo você pretende investir?' },
-  { id: 3, side: 'incoming', text: 'Até 600 mil. Pode ser financiamento.' },
-  { id: 4, side: 'outgoing', text: 'Perfeito. Separei duas opções compatíveis com o seu perfil.' },
 ];
 
 async function preparePropertyImage(file: File) {
@@ -205,8 +199,7 @@ async function loadPerformance(month: string) {
 
 export default function DashboardClient() {
   const [view, setView] = useState<View>('overview');
-  const [messages, setMessages] = useState(initialMessages);
-  const [draft, setDraft] = useState('');
+  const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createDemoConversationState);
   const [leadSearch, setLeadSearch] = useState('');
   const [leadFilters, setLeadFilters] = useState<LeadFilter[]>([]);
   const [leadMode, setLeadMode] = useState<LeadMode>('all');
@@ -357,21 +350,6 @@ export default function DashboardClient() {
     notify(nextSettings.dark ? 'Modo escuro ativado' : 'Modo claro ativado');
   }
 
-  function sendText(text: string) {
-    const clean = text.trim();
-    if (!clean) return false;
-    setMessages((current) => [...current, { id: Date.now(), side: 'incoming', text: clean }]);
-    window.setTimeout(() => {
-      setMessages((current) => [...current, { id: Date.now() + 1, side: 'outgoing', text: 'Registro atualizado. Essa informação já está disponível no perfil comercial.' }]);
-    }, 650);
-    return true;
-  }
-
-  function sendMessage(event: FormEvent) {
-    event.preventDefault();
-    if (sendText(draft)) setDraft('');
-  }
-
   function replaceLead(updated: LeadProfile) {
     const decorated = decorateLead(updated, capturedLeads.findIndex((lead) => lead.id === updated.id));
     setCapturedLeads((current) => current.map((lead) => lead.id === updated.id ? decorated : lead));
@@ -513,7 +491,7 @@ export default function DashboardClient() {
         </header>
 
         {view === 'overview' && <Overview notify={notify} />}
-        {view === 'conversations' && <Conversations messages={messages} draft={draft} setDraft={setDraft} sendMessage={sendMessage} notify={notify} openAgenda={() => openView('agenda')} />}
+        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} />}
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} onUpdate={updateLead} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} />}
@@ -687,25 +665,6 @@ function SalesHistoryChart({ history }: { history: { month: string; sold: number
     </svg>
     <figcaption className="chart-values">{history.map((item) => <div key={item.month}><span>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</span><strong>{compactMoney.format(item.sold)}</strong></div>)}</figcaption>
   </figure>;
-}
-
-function Conversations({ messages, draft, setDraft, sendMessage, notify, openAgenda }: { messages: ChatMessage[]; draft: string; setDraft: (value: string) => void; sendMessage: (event: FormEvent) => void; notify: (message: string) => void; openAgenda: () => void }) {
-  const contacts = [
-    { initials:'LC',name:'Lucas Carvalho',preview:'Até 600 mil. Pode ser financiamento.',time:'10:45',unread:2,tone:0 },
-    { initials:'AM',name:'Ana Martins',preview:'Gostei da segunda opção!',time:'10:31',unread:1,tone:1 },
-    { initials:'RB',name:'Rafael Borges',preview:'Quero falar com um corretor.',time:'10:08',unread:0,tone:2 },
-    { initials:'CS',name:'Carla Souza',preview:'Pode ser na Reserva Sul.',time:'09:42',unread:0,tone:3 },
-  ];
-  const [contactSearch, setContactSearch] = useState('');
-  const [onlyUnread, setOnlyUnread] = useState(false);
-  const [selected, setSelected] = useState(contacts[0]);
-  const [humanMode, setHumanMode] = useState(false);
-  const filtered = contacts.filter((contact) => (!onlyUnread || contact.unread > 0) && contact.name.toLowerCase().includes(contactSearch.toLowerCase()));
-  return <div className="inbox-layout">
-    <aside className="inbox-list panel"><div className="inbox-search">⌕ <input value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} aria-label="Buscar conversa" placeholder="Buscar conversa" /></div><div className="inbox-tabs"><button type="button" className={!onlyUnread ? 'selected' : ''} onClick={() => setOnlyUnread(false)}>Todas</button><button type="button" className={onlyUnread ? 'selected' : ''} onClick={() => setOnlyUnread(true)}>Não lidas</button></div>{filtered.map((contact)=><button type="button" className={`contact-row ${selected.name === contact.name ? 'selected' : ''}`} onClick={() => setSelected(contact)} key={contact.name}><span className={`lead-avatar avatar-${contact.tone}`}>{contact.initials}</span><span><strong>{contact.name}</strong><small>{contact.preview}</small></span><time>{contact.time}</time>{contact.unread>0&&<b>{contact.unread}</b>}</button>)}{filtered.length === 0 && <p className="empty-filter">Nenhuma conversa encontrada.</p>}</aside>
-    <section className="full-chat panel"><div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><strong>{selected.name}</strong><span><i/> Atendimento online • {humanMode ? 'Marina responsável' : 'Triagem automática'}</span></div><button type="button" className={humanMode ? 'active-action' : ''} onClick={() => { setHumanMode((active) => !active); notify(humanMode ? 'Triagem automática retomada' : 'Atendimento atribuído a Marina'); }}>{humanMode ? 'Retomar triagem' : 'Assumir conversa'}</button></div><div className="full-chat-body"><span className="chat-date">Hoje</span>{messages.map(message=><div className={`bubble ${message.side}`} key={message.id}>{message.text}<small>{message.side==='incoming'?'10:44':'10:45'} ✓✓</small></div>)}</div><form className="full-composer" onSubmit={sendMessage}><input id="conversation-attachment" className="visually-hidden" type="file" onChange={(event) => event.target.files?.[0] && notify(`Anexo selecionado: ${event.target.files[0].name}`)}/><button type="button" aria-label="Anexar arquivo" onClick={() => document.getElementById('conversation-attachment')?.click()}>＋</button><input value={draft} onChange={(event)=>setDraft(event.target.value)} aria-label="Mensagem" placeholder="Digite uma mensagem..."/><button className="send-button" type="submit" aria-label="Enviar mensagem">➜</button></form></section>
-    <aside className="lead-profile panel"><div className="profile-hero"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><h3>{selected.name}</h3><p>Cliente cadastrado</p><span className="hot-pill">Muito quente</span></div><div className="score-ring"><strong>86</strong><span>Prioridade</span></div><dl><div><dt>Intenção</dt><dd>Comprar</dd></div><div><dt>Tipo</dt><dd>Apartamento</dd></div><div><dt>Região</dt><dd>Centro</dd></div><div><dt>Orçamento</dt><dd>Até R$ 600 mil</dd></div><div><dt>Quartos</dt><dd>3+</dd></div><div><dt>Pagamento</dt><dd>Financiamento</dd></div></dl><button type="button" className="profile-action" onClick={openAgenda}>＋ Agendar visita</button></aside>
-  </div>;
 }
 
 function LeadIntelligenceCenter({ leads, mode, onMode, onImport }: { leads: DashboardLead[]; mode: LeadMode; onMode: (mode: LeadMode) => void; onImport: () => void }) {
