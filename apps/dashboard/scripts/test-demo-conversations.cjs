@@ -69,8 +69,8 @@ for (const contact of demoContacts) {
   assert.ok(html.includes('Cliente fictício'));
   assert.ok(html.includes('Usar resposta'));
   assert.ok(html.includes('Etapa: ' + contact.stage));
-  assert.ok(html.includes('Temperatura: ' + demoTemperature(contact.score)));
   assert.ok(html.includes('data-temperature="' + demoTemperature(contact.score) + '"'));
+  assert.ok(html.includes('>' + demoTemperature(contact.score) + '</span>'));
   assert.ok(html.includes(contact.messages[0].text));
   assert.ok(html.includes(contact.suggestion));
   assert.ok(!html.includes('Atendimento online'));

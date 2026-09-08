@@ -6,6 +6,8 @@ const ts = require('typescript');
 const calls = [];
 const date = '2026-09-07T12:00:00Z';
 const sale = { id: 'sale', sale_date: '2026-09-07', broker: 'Corretor', property: 'Casa', client: 'Cliente', amount: 100000, created_at: date };
+const property = { id: 'p1', title: 'Casa', district: 'Centro', price: 100000, property_type: 'Casa', bedrooms: 2, parking_spaces: 1, area: 70, tone: 'sky', purpose: 'Venda', status: 'Vendido', images: [], created_at: date };
+const savedProperty = { ...property, id: 'p2', title: 'Central', price: 500000, property_type: 'Apartamento', status: 'Disponível' };
 async function sql(parts, ...values) {
   const query = parts.join('?'); calls.push(query);
   if (query.includes('SELECT company_goal')) return [{ company_goal: 200000, leads_received: 2, converted_leads: 1, recovered_leads: 0 }];
@@ -13,18 +15,18 @@ async function sql(parts, ...values) {
   if (query.includes('SELECT id, sale_date')) return [sale, { ...sale, id: 'rent', amount: 2500, deal_type: 'Aluguel' }];
   if (query.includes('WITH recent_months')) { assert.equal(query.split("deal_type='Venda'").length - 1, 2); return [{ month: '2026-09', broker: 'Corretor', sold: 100000 }]; }
   if (query.includes('INSERT INTO site_sales (sale_date')) { assert.ok(query.includes('deal_type')); return [{ ...sale, amount: values[4], deal_type: values[5] }]; }
-  if (query.includes('INSERT INTO site_properties (title') || query.includes('UPDATE site_properties SET title=')) {
-    assert.ok(query.includes('property_type'));
-    assert.equal(values[8], 'Apartamento');
-    return [{ id: 'p2', title: 'Central', district: 'Centro', price: '500 mil', meta: '2 quartos', property_type: values[8], match: 80, tone: 'sky', purpose: 'Venda', status: 'Disponível', images: [], created_at: date }];
-  }
-  if (query.includes('SELECT id, title')) return [{ id: 'p1', title: 'Casa', district: 'Centro', price: 'R$ 100.000', meta: '2 quartos', property_type: 'Casa', match: 80, tone: 'sky', purpose: 'Venda', status: 'Vendido', images: [], created_at: date }];
   return [];
+}
+async function supabaseRequest(path, options = {}) {
+  calls.push('SUPABASE ' + (options.method || 'GET') + ' ' + path);
+  if (options.method === 'POST') return [savedProperty];
+  if (options.method === 'PATCH') return [savedProperty];
+  return [property];
 }
 const source = fs.readFileSync(require('node:path').join(__dirname, '../lib/database.ts'), 'utf8');
 const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const fakeModule = { exports: {} };
-vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, process: { env: { DATABASE_URL: 'mock-only' } }, require: (name) => name === '@neondatabase/serverless' ? { neon: () => sql } : {}, Date, console });
+vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, process: { env: { DATABASE_URL: 'mock-only' } }, require: (name) => name === '@neondatabase/serverless' ? { neon: () => sql } : name === './supabase' ? { supabaseCompanyId: () => 'company', supabaseRequest } : {}, Date, console });
 (async () => {
   const api = fakeModule.exports;
   const report = await api.getPerformance('2026-09');
@@ -41,9 +43,9 @@ vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, pr
   calls.length = 0;
   const properties = await api.listProperties(true);
   assert.equal(properties[0].status, 'Vendido');
-  assert.ok(!calls.some((query) => query.includes('INSERT INTO site_properties')));
+  assert.ok(calls.some((query) => query.startsWith('SUPABASE GET properties?')));
   assert.equal(properties[0].propertyType, 'Casa');
-  const propertyInput = { title: 'Central', district: 'Centro', price: '500 mil', meta: '2 quartos', match: 80, tone: 'sky', purpose: 'Venda', status: 'Disponível', propertyType: 'Apartamento', images: [] };
+  const propertyInput = { title: 'Central', district: 'Centro', price: '500 mil', meta: '2 quartos', tone: 'sky', purpose: 'Venda', status: 'Disponível', propertyType: 'Apartamento', bedrooms: 2, parkingSpaces: 1, area: 70, images: [] };
   assert.equal((await api.createProperty(propertyInput)).propertyType, 'Apartamento');
   assert.equal((await api.updateProperty('p2', propertyInput)).propertyType, 'Apartamento');
   console.log('PASS: rental/sale separation, legacy records, broker totals, history query filters, rental mapping, sold status, no demo seeding for automations.');

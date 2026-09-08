@@ -82,11 +82,22 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
     const settings = await sql`SELECT id FROM site_automation_settings WHERE active=TRUE`;
     const active = automationFlows.filter((flow) => (!selected || flow.id === selected) && settings.some((setting) => setting.id === flow.id));
     const properties = active.some((flow) => flow.id === 'recommendations' || flow.id === 'new-property') ? await listProperties(true) : [];
-    // Close obsolete reminders after a recorded contact or change of commercial stage.
-    await sql`UPDATE site_automation_results r SET status='cancelled' FROM site_leads l
-      WHERE r.lead_id=l.id AND r.flow_id='followup' AND r.status='open'
-      AND (l.lifecycle_status NOT IN ('Novo', 'Em atendimento') OR
-        (r.detail->>'contactVersion')::timestamptz IS DISTINCT FROM COALESCE(l.last_contact_at, l.created_at))`;
+    // The CRM source of truth is Supabase. Close reminders that no longer match
+    // the current lead state without consulting the retired site_leads table.
+    const leadStates = leads.map((lead) => ({
+      id: lead.id,
+      lifecycle_status: lead.lifecycleStatus,
+      contact_version: lead.lastContactAt || lead.createdAt,
+    }));
+    await sql`UPDATE site_automation_results r SET status='cancelled'
+      WHERE r.flow_id='followup' AND r.status='open'
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_to_recordset(${JSON.stringify(leadStates)}::jsonb)
+          AS current_lead(id UUID, lifecycle_status TEXT, contact_version TEXT)
+        WHERE current_lead.id=r.lead_id
+          AND current_lead.lifecycle_status IN ('Novo', 'Em atendimento')
+          AND r.detail->>'contactVersion'=current_lead.contact_version
+      )`;
     for (const flow of active) {
       try {
         const candidates = leads.flatMap((lead) => flow.id === 'new-property' ? newPropertyCandidates(lead, properties) : [evaluateAutomation(flow.id, lead, properties)]).filter((result) => result !== null)
@@ -105,10 +116,6 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
             SELECT ${flow.id}, p.lead_id, p.fingerprint, p.summary, p.detail,
               CASE WHEN ${flow.id}='qualification' THEN 'done' ELSE 'open' END FROM payload p
             ON CONFLICT DO NOTHING RETURNING lead_id, detail
-          ), qualified AS (
-            UPDATE site_leads l SET summary=i.detail->>'summary', score=(i.detail->>'score')::integer,
-              temperature=i.detail->>'temperature', score_reasons=i.detail->'scoreReasons'
-            FROM inserted i WHERE l.id=i.lead_id AND ${flow.id}='qualification' RETURNING l.id
           )
           INSERT INTO site_automation_runs (flow_id, trigger, status, processed)
           SELECT ${flow.id}, ${trigger}, 'success', (SELECT count(*) FROM inserted) FROM enabled, owned

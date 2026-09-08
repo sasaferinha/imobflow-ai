@@ -16,6 +16,13 @@ async function sql(parts, ...values) {
   const query = parts.join('?');
   if (query.includes('INSERT INTO site_automation_lock')) return [{ token: values[0] }];
   if (query.trim().startsWith('SELECT id FROM site_automation_settings')) return [{ id: 'new-property' }];
+  if (query.includes("UPDATE site_automation_results r SET status='cancelled'")) {
+    assert.ok(!query.includes('site_leads'));
+    const states = JSON.parse(values[0]);
+    assert.equal(states[0].lifecycle_status, lead.lifecycleStatus);
+    assert.equal(states[0].contact_version, lead.lastContactAt || lead.createdAt);
+    return [];
+  }
   if (query.includes('WITH enabled AS')) {
     const payload = JSON.parse(values.find(value => typeof value === 'string' && value.startsWith('[{')) || '[]');
     let processed = 0;
