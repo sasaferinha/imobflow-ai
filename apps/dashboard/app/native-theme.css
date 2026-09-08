@@ -121,6 +121,13 @@ body { -webkit-font-smoothing: antialiased; }
 }
 .automation-center { display: grid; gap: 24px; }
 .conversation-demo { display: grid; gap: 20px; min-width: 0; }
+.conversation-temperature-guide { display: grid; grid-template-columns: minmax(180px, .75fr) minmax(0, 2.25fr); gap: 20px; align-items: center; padding: 16px 18px; border: 1px solid var(--line); background: var(--paper); border-radius: 10px; }
+.conversation-temperature-guide > div { display: grid; gap: 4px; }
+.conversation-temperature-guide > div strong { color: var(--ink); font-size: 15px; font-weight: 650; }
+.conversation-temperature-guide > div span { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.conversation-temperature-guide dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.conversation-temperature-guide dl > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
+.conversation-temperature-guide dd { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .conversation-demo-notice { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 14px 18px; border: 1px solid var(--line); background: var(--secondary); border-radius: 8px; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .conversation-demo-notice strong { color: var(--ink); font-weight: 500; }
 .app-shell.app-shell .conversation-demo .inbox-layout { min-height: 700px; height: calc(100dvh - 260px); }
@@ -143,6 +150,11 @@ body { -webkit-font-smoothing: antialiased; }
 .app-shell.app-shell .conversation-demo .conversation-temperature[data-temperature='Frio'] { background: #eaf6fb; color: #12627f; }
 .app-shell.app-shell .conversation-demo .conversation-temperature[data-temperature='Morno'] { background: #fff6df; color: #875500; }
 .app-shell.app-shell .conversation-demo .conversation-temperature[data-temperature='Quente'] { background: #fff0ed; color: #b42318; }
+.app-shell.app-shell .conversation-demo .conversation-temperature { display: inline-flex; align-items: center; width: fit-content; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 650; line-height: 1.25; white-space: nowrap; }
+.conversation-name-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.conversation-name-line > strong, .conversation-name-line > h3 { min-width: 0; }
+.conversation-lead-header .conversation-name-line { margin: 2px 0 3px; }
+.conversation-lead-header .conversation-name-line h3 { margin: 0; }
 .app-shell.app-shell.dark-mode .conversation-demo .conversation-temperature[data-temperature='Frio'] { background: #163746; color: #9cdcf5; }
 .app-shell.app-shell.dark-mode .conversation-demo .conversation-temperature[data-temperature='Morno'] { background: #3e311b; color: #f9d58a; }
 .app-shell.app-shell.dark-mode .conversation-demo .conversation-temperature[data-temperature='Quente'] { background: #432723; color: #ffb4a8; }
@@ -158,6 +170,8 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell .conversation-demo .full-chat { height: 740px; }
 }
 @media (max-width: 720px) {
+  .conversation-temperature-guide { grid-template-columns: 1fr; }
+  .conversation-temperature-guide dl { grid-template-columns: 1fr; }
   .app-shell.app-shell .conversation-demo .inbox-list { max-height: 380px; }
   .conversation-suggestion { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 16px; }
   .app-shell.app-shell .conversation-suggestion button { grid-column: 1; grid-row: 3; justify-self: start; }

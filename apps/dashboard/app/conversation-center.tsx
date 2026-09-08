@@ -14,6 +14,7 @@ const liveTemperature = (temperature: string) => {
   const value = normalize(temperature);
   return value.includes('frio') ? 'Frio' : value.includes('morno') ? 'Morno' : 'Quente';
 };
+const contactTemperature = (contact: ConversationContact) => contact.sourceLead ? liveTemperature(contact.sourceLead.temperature) : demoTemperature(contact.score);
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
 export default function ConversationCenter({ state, dispatch, notify, openAgenda, leads = [], properties = [] }: {
@@ -51,7 +52,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
     return (!onlyUnread || current.unread > 0) && normalize(`${contact.name} ${contact.style} ${contact.region}`).includes(normalize(search));
   });
   const stage = lead?.lifecycleStatus || selected.stage;
-  const temperature = lead ? liveTemperature(lead.temperature) : demoTemperature(selected.score);
+  const temperature = contactTemperature(selected);
   const sourceLabel = lead ? (lead.source === 'Base demonstrativa' ? 'Perfil demonstrativo salvo no painel' : 'Dados do banco de leads') : 'Cliente fictício';
   const leadHighlights = lead
     ? [['Objetivo', lead.goal], ['Tipo de imóvel', lead.propertyType], ['Região desejada', lead.region], ['Investimento', lead.budget]]
@@ -73,6 +74,14 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
     notify(`${property.title} adicionado à conversa com ${selected.name}.`);
   }
   return <div className="conversation-demo">
+    <section className="conversation-temperature-guide" aria-label="Como interpretar a temperatura dos leads">
+      <div><strong>Temperatura do lead</strong><span>Use o nível de interesse para priorizar os atendimentos.</span></div>
+      <dl>
+        <div><dt className="conversation-temperature" data-temperature="Frio">Frio</dt><dd>Contato inicial ou com poucas informações.</dd></div>
+        <div><dt className="conversation-temperature" data-temperature="Morno">Morno</dt><dd>Tem interesse, mas ainda está avaliando opções.</dd></div>
+        <div><dt className="conversation-temperature" data-temperature="Quente">Quente</dt><dd>Perfil completo e pronto para avançar.</dd></div>
+      </dl>
+    </section>
     <p className="conversation-demo-notice"><strong>Demonstração · {demoContacts.length} perfis fictícios</strong><span>{leads.length ? 'As conversas vinculadas mostram os dados que estão cadastrados na base de leads.' : 'Mensagens e dados ilustrativos. As alterações ficam apenas nesta sessão; nenhum contato recebe mensagens.'}</span></p>
     <div className="inbox-layout">
       <aside className="inbox-list panel" aria-label="Conversas">
@@ -81,23 +90,24 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
         {filtered.map((contact) => {
           const current = state.threads[contact.id] || emptyThread;
           const last = current.messages[current.messages.length - 1];
+          const contactHeat = contactTemperature(contact);
           return <button type="button" className={`contact-row ${selected.id === contact.id ? 'selected' : ''}`} aria-pressed={selected.id === contact.id} onClick={() => dispatch({ type: 'select', id: contact.id })} key={contact.id}>
             <span className={`lead-avatar avatar-${contact.tone}`}>{contact.initials}</span>
-            <span><strong>{contact.name}</strong><small>{last?.text || 'Dados cadastrados; ainda sem mensagens neste painel.'}</small></span>
+            <span><span className="conversation-name-line"><strong>{contact.name}</strong><span className="conversation-temperature" data-temperature={contactHeat}>{contactHeat}</span></span><small>{last?.text || 'Dados cadastrados; ainda sem mensagens neste painel.'}</small></span>
             <time>{last?.time || 'Base'}</time>{current.unread > 0 && <b aria-label={`${current.unread} mensagens não lidas`}>{current.unread}</b>}
           </button>;
         })}
         {!filtered.length && <p className="empty-filter">Nenhuma conversa encontrada. Ajuste a busca ou selecione “Todas”.</p>}
       </aside>
       <section className="full-chat panel" aria-label={`Conversa com ${selected.name}`}>
-        <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><strong>{selected.name}</strong><span>{lead ? 'Dados vinculados à base' : 'Exemplo'} · {thread.humanMode ? 'Marina responsável' : 'Triagem'} · {selected.style}</span></div><button type="button" aria-pressed={thread.humanMode} className={thread.humanMode ? 'active-action' : ''} onClick={() => { dispatch({ type: 'assign', id: selected.id }); notify('Responsável alterado apenas nesta demonstração.'); }}>{thread.humanMode ? 'Retomar triagem' : 'Assumir conversa'}</button></div>
+        <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><span className="conversation-name-line"><strong>{selected.name}</strong><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span>{lead ? 'Dados vinculados à base' : 'Exemplo'} · {thread.humanMode ? 'Marina responsável' : 'Triagem'} · {selected.style}</span></div><button type="button" aria-pressed={thread.humanMode} className={thread.humanMode ? 'active-action' : ''} onClick={() => { dispatch({ type: 'assign', id: selected.id }); notify('Responsável alterado apenas nesta demonstração.'); }}>{thread.humanMode ? 'Retomar triagem' : 'Assumir conversa'}</button></div>
         <div className="full-chat-body" ref={bodyRef}><span className="chat-date">{lead ? 'Conversa vinculada ao lead' : 'Conversa ilustrativa'}</span>{thread.messages.length ? thread.messages.map((message) => <div className={`bubble ${message.side} ${message.propertyTitle ? 'property-message' : ''}`} key={message.id}>{message.images?.length ? <div className="message-property-images">{message.images.slice(0,3).map((image,index) => <img key={index} src={image} alt={`${message.propertyTitle}, foto ${index + 1}`} />)}</div> : null}<span className="visually-hidden">{message.side === 'incoming' ? selected.name : 'Atendimento'}: </span>{message.propertyTitle && <strong>{message.propertyTitle}</strong>}<p>{message.text}</p><small>{message.time} · {lead ? 'Painel' : 'Exemplo'}</small></div>) : <p className="conversation-empty-thread">Ainda não há mensagens deste lead no painel. A ficha ao lado foi carregada da base para orientar o corretor.</p>}</div>
         <div className="conversation-suggestion"><span>Resposta sugerida · {lead ? 'Dados do lead' : selected.style}</span><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div>
         <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" onClick={() => notify('Anexos não são enviados nesta demonstração.')}>＋</button><button type="button" className="conversation-property-button" onClick={() => setPropertyPickerOpen(true)}>▦ Imóvel</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>
       </section>
       <aside className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
-        <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><h3>{selected.name}</h3><span className="conversation-data-source">{sourceLabel}{lead?.source ? ` · ${lead.source}` : ''}</span></div></header>
-        <div className="conversation-classifications" aria-label="Classificação do cliente"><span className="conversation-stage conversation-badge" aria-label={`Etapa: ${stage}`}>{stage}</span><span className="conversation-temperature conversation-badge" data-temperature={temperature} aria-label={`Temperatura: ${temperature}`}>{temperature}</span></div>
+        <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><span className="conversation-name-line"><h3>{selected.name}</h3><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-data-source">{sourceLabel}{lead?.source ? ` · ${lead.source}` : ''}</span></div></header>
+        <div className="conversation-classifications" aria-label="Classificação do cliente"><span className="conversation-stage conversation-badge" aria-label={`Etapa: ${stage}`}>{stage}</span></div>
         <section className="conversation-priority-card" key={`${selected.id}-${lead?.score || selected.score}`} aria-label="Prioridade comercial">
           <div><span>Prioridade comercial</span><strong>{lead?.score || selected.score}<small>/100</small></strong></div><i aria-hidden="true"><b style={{ width: `${lead?.score || selected.score}%` }}/></i><p>{lead ? 'Base de leads sincronizada para este atendimento.' : 'Informações ilustrativas deste perfil.'}</p>
         </section>
