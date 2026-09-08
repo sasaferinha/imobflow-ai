@@ -101,7 +101,7 @@ function mapProperty(row: Record<string, unknown>): PropertyRecord {
     propertyType: row.property_type ? String(row.property_type) : undefined,
     bedrooms: row.bedrooms == null ? undefined : Number(row.bedrooms), parkingSpaces: row.parking_spaces == null ? undefined : Number(row.parking_spaces),
     area: row.area == null ? undefined : Number(row.area), publicUrl: row.public_url ? String(row.public_url) : undefined,
-    meta: propertyMeta(row), match: 80, tone: 'orchid',
+    meta: propertyMeta(row), tone: 'orchid',
     status: row.status === 'Reservado' ? 'Reservado' : row.status === 'Vendido' ? 'Vendido' : row.status === 'Alugado' ? 'Alugado' : 'Disponível',
     purpose: row.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images, createdAt: new Date(String(row.created_at)).toISOString(),
   };

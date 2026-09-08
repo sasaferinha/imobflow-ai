@@ -8,7 +8,6 @@ export type PropertyRecord = {
   address?: string;
   price: string;
   meta: string;
-  match: number;
   tone: string;
   purpose: 'Venda' | 'Aluguel';
   propertyType?: string;

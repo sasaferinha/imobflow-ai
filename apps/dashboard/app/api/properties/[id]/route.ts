@@ -25,7 +25,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const number = (value: unknown) => value === '' || value == null ? undefined : Math.max(0, Number(value) || 0);
     const input: PropertyInput = {
       code: clean(body.code, 60), title: clean(body.title, 160), description: clean(body.description, 1200), district: clean(body.district, 120), city: clean(body.city, 120), address: clean(body.address, 300), price: clean(body.price, 80), meta: clean(body.meta, 500),
-      match: Math.max(0, Math.min(100, Number(body.match) || 80)), tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
+      tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
       propertyType: clean(body.propertyType, 80), bedrooms: number(body.bedrooms), parkingSpaces: number(body.parkingSpaces), area: number(body.area), publicUrl: clean(body.publicUrl, 500),
       status: body.status === 'Reservado' ? 'Reservado' : body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
     };
