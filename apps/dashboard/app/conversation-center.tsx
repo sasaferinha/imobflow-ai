@@ -17,15 +17,17 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => contact.sourceLead ? liveTemperature(contact.sourceLead.temperature) : demoTemperature(contact.score);
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-export default function ConversationCenter({ state, dispatch, notify, openAgenda, persistMessage, leads = [], properties = [] }: {
+export default function ConversationCenter({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, leads = [], properties = [] }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
   notify: (message: string) => void; openAgenda: () => void;
   persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string }>;
+  refreshProperties: () => Promise<void>;
   leads?: LeadProfile[]; properties?: PropertyRecord[];
 }) {
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [propertyPickerOpen, setPropertyPickerOpen] = useState(false);
+  const [loadingProperties, setLoadingProperties] = useState(false);
   const contacts = useMemo<ConversationContact[]>(() => {
     const leadsByName = new Map(leads.map((lead) => [normalize(lead.name), lead]));
     const demoNames = new Set(demoContacts.map((contact) => normalize(contact.name)));
@@ -89,6 +91,17 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
       notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.');
     }
   }
+  async function openPropertyPicker() {
+    setLoadingProperties(true);
+    try {
+      await refreshProperties();
+      setPropertyPickerOpen(true);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível atualizar a lista de imóveis.');
+    } finally {
+      setLoadingProperties(false);
+    }
+  }
   return <div className="conversation-demo">
     <section className="conversation-temperature-guide" aria-label="Como interpretar a temperatura dos leads">
       <div><strong>Temperatura do lead</strong><span>Use o nível de interesse para priorizar os atendimentos.</span></div>
@@ -119,7 +132,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
         <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><span className="conversation-name-line"><strong>{selected.name}</strong><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span>{lead ? 'Dados vinculados à base' : 'Exemplo'} · {thread.humanMode ? 'Marina responsável' : 'Triagem'} · {selected.style}</span></div><button type="button" aria-pressed={thread.humanMode} className={thread.humanMode ? 'active-action' : ''} onClick={() => { dispatch({ type: 'assign', id: selected.id }); notify('Responsável alterado apenas nesta demonstração.'); }}>{thread.humanMode ? 'Retomar triagem' : 'Assumir conversa'}</button></div>
         <div className="full-chat-body" ref={bodyRef}><span className="chat-date">{lead ? 'Conversa vinculada ao lead' : 'Conversa ilustrativa'}</span>{thread.messages.length ? thread.messages.map((message) => <div className={`bubble ${message.side} ${message.propertyTitle ? 'property-message' : ''}`} key={message.id}>{message.images?.length ? <div className="message-property-images">{message.images.slice(0,3).map((image,index) => <img key={index} src={image} alt={`${message.propertyTitle}, foto ${index + 1}`} />)}</div> : null}<span className="visually-hidden">{message.side === 'incoming' ? selected.name : 'Atendimento'}: </span>{message.propertyTitle && <strong>{message.propertyTitle}</strong>}<p>{message.text}</p><small>{message.time} · {lead ? 'Painel' : 'Exemplo'}</small></div>) : <p className="conversation-empty-thread">Ainda não há mensagens deste lead no painel. A ficha ao lado foi carregada da base para orientar o corretor.</p>}</div>
         <div className="conversation-suggestion"><span>Resposta sugerida · {lead ? 'Dados do lead' : selected.style}</span><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div>
-        <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" onClick={() => notify('Anexos não são enviados nesta demonstração.')}>＋</button><button type="button" className="conversation-property-button" onClick={() => setPropertyPickerOpen(true)}>▦ Imóvel</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>
+        <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" onClick={() => notify('Anexos não são enviados nesta demonstração.')}>＋</button><button type="button" className="conversation-property-button" disabled={loadingProperties} onClick={() => void openPropertyPicker()}>{loadingProperties ? 'Atualizando…' : '▦ Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>
       </section>
       <aside className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
         <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><span className="conversation-name-line"><h3>{selected.name}</h3><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-data-source">{sourceLabel}{lead?.source ? ` · ${lead.source}` : ''}</span></div></header>

@@ -363,6 +363,13 @@ export default function DashboardClient() {
     return { id: result.data.id, time: result.data.time };
   }
 
+  async function refreshProperties() {
+    const response = await fetch('/api/properties', { cache: 'no-store' });
+    const result = await response.json() as { data?: Property[]; error?: string };
+    if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível carregar os imóveis cadastrados.');
+    setProperties(result.data);
+  }
+
   function saveSettings(nextSettings: DashboardSettings) {
     setSettings(nextSettings);
     try {
@@ -573,7 +580,7 @@ export default function DashboardClient() {
         </header>
 
         {view === 'overview' && <Overview notify={notify} />}
-        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} leads={capturedLeads} properties={properties} />}
+        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} leads={capturedLeads} properties={properties} />}
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} />}
