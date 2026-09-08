@@ -127,8 +127,6 @@ body { -webkit-font-smoothing: antialiased; }
 .app-shell.app-shell .conversation-demo .inbox-list { display: flex; flex-direction: column; overflow-y: auto; min-height: 0; }
 .conversation-demo .inbox-search, .conversation-demo .inbox-tabs { flex-shrink: 0; }
 .app-shell.app-shell .conversation-demo .contact-row { flex-shrink: 0; }
-.app-shell.app-shell .conversation-demo .conversation-category { display: block; width: fit-content; margin-block: 5px; padding: 3px 7px; border-radius: 5px; background: var(--secondary); color: var(--muted); font-size: 12px; line-height: 1.4; }
-.app-shell.app-shell .conversation-demo .contact-row.selected .conversation-category { background: var(--paper); color: var(--accent-text); }
 .app-shell.app-shell .conversation-demo .full-chat { min-height: 0; }
 .app-shell.app-shell .conversation-demo .full-chat-head { flex-shrink: 0; }
 .app-shell.app-shell .conversation-demo .full-chat-body { min-height: 200px; }

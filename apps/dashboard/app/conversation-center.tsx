@@ -48,7 +48,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
   useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight; }, [selected.id, thread.messages.length]);
   const filtered = contacts.filter((contact) => {
     const current = state.threads[contact.id] || emptyThread;
-    return (!onlyUnread || current.unread > 0) && normalize(`${contact.name} ${contact.category} ${contact.style} ${contact.region}`).includes(normalize(search));
+    return (!onlyUnread || current.unread > 0) && normalize(`${contact.name} ${contact.style} ${contact.region}`).includes(normalize(search));
   });
   const stage = lead?.lifecycleStatus || selected.stage;
   const temperature = lead ? liveTemperature(lead.temperature) : demoTemperature(selected.score);
@@ -83,7 +83,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
           const last = current.messages[current.messages.length - 1];
           return <button type="button" className={`contact-row ${selected.id === contact.id ? 'selected' : ''}`} aria-pressed={selected.id === contact.id} onClick={() => dispatch({ type: 'select', id: contact.id })} key={contact.id}>
             <span className={`lead-avatar avatar-${contact.tone}`}>{contact.initials}</span>
-            <span><strong>{contact.name}</strong><span className="conversation-category">{contact.sourceLead ? 'Base de leads' : contact.category}</span><small>{last?.text || 'Dados cadastrados; ainda sem mensagens neste painel.'}</small></span>
+            <span><strong>{contact.name}</strong><small>{last?.text || 'Dados cadastrados; ainda sem mensagens neste painel.'}</small></span>
             <time>{last?.time || 'Base'}</time>{current.unread > 0 && <b aria-label={`${current.unread} mensagens não lidas`}>{current.unread}</b>}
           </button>;
         })}
@@ -96,7 +96,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
         <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" onClick={() => notify('Anexos não são enviados nesta demonstração.')}>＋</button><button type="button" className="conversation-property-button" onClick={() => setPropertyPickerOpen(true)}>▦ Imóvel</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>
       </section>
       <aside className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
-        <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><h3>{selected.name}</h3><span className="conversation-data-source">{sourceLabel} · {lead?.source || selected.category}</span></div></header>
+        <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><h3>{selected.name}</h3><span className="conversation-data-source">{sourceLabel}{lead?.source ? ` · ${lead.source}` : ''}</span></div></header>
         <div className="conversation-classifications" aria-label="Classificação do cliente"><span className="conversation-stage conversation-badge" aria-label={`Etapa: ${stage}`}>{stage}</span><span className="conversation-temperature conversation-badge" data-temperature={temperature} aria-label={`Temperatura: ${temperature}`}>{temperature}</span></div>
         <section className="conversation-priority-card" key={`${selected.id}-${lead?.score || selected.score}`} aria-label="Prioridade comercial">
           <div><span>Prioridade comercial</span><strong>{lead?.score || selected.score}<small>/100</small></strong></div><i aria-hidden="true"><b style={{ width: `${lead?.score || selected.score}%` }}/></i><p>{lead ? 'Base de leads sincronizada para este atendimento.' : 'Informações ilustrativas deste perfil.'}</p>
