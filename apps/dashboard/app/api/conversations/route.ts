@@ -27,6 +27,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: await createConversationMessage({ leadId, content, images, propertyId }) }, { status: 201 });
   } catch (error) {
     console.error('conversation_create_failed', error);
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('não encontrado nesta imobiliária') || message.includes('não está mais disponível')) {
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
     return NextResponse.json({ error: 'Não foi possível salvar a mensagem.' }, { status: 500 });
   }
 }

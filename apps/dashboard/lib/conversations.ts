@@ -29,6 +29,23 @@ export async function createConversationMessage(input: {
   propertyId?: string | null;
 }): Promise<ConversationMessage> {
   const companyId = supabaseCompanyId();
+  const leads = await supabaseRequest<Array<{ id: string }>>(
+    `leads?id=eq.${encodeURIComponent(input.leadId)}&company_id=eq.${companyId}&select=id&limit=1`,
+  );
+  if (!leads.length) throw new Error('Lead não encontrado nesta imobiliária.');
+  let verifiedImages = input.images || [];
+  if (input.propertyId) {
+    const properties = await supabaseRequest<Array<{ id: string; status: string; images: unknown }>>(
+      `properties?id=eq.${encodeURIComponent(input.propertyId)}&company_id=eq.${companyId}&select=id,status,images&limit=1`,
+    );
+    if (!properties.length) throw new Error('Imóvel não encontrado nesta imobiliária.');
+    if (properties[0].status === 'Vendido' || properties[0].status === 'Alugado') {
+      throw new Error('Este imóvel não está mais disponível para envio.');
+    }
+    verifiedImages = Array.isArray(properties[0].images)
+      ? properties[0].images.filter((item): item is string => typeof item === 'string').slice(0, 5)
+      : [];
+  }
   const lookup = `conversations?company_id=eq.${companyId}&lead_id=eq.${encodeURIComponent(input.leadId)}&select=id&limit=1`;
   let conversations = await supabaseRequest<Array<{ id: string }>>(lookup);
   if (!conversations.length) {
@@ -40,7 +57,7 @@ export async function createConversationMessage(input: {
   const conversationId = conversations[0].id;
   const [message] = await supabaseRequest<Record<string, unknown>[]>('messages', {
     method: 'POST', prefer: 'return=representation',
-    body: { company_id: companyId, conversation_id: conversationId, direction: 'outgoing', sender_type: 'human', content: input.content, media_urls: input.images || [] },
+    body: { company_id: companyId, conversation_id: conversationId, direction: 'outgoing', sender_type: 'human', content: input.content, media_urls: verifiedImages },
   });
   await supabaseRequest(`conversations?id=eq.${conversationId}`, { method: 'PATCH', body: { last_message_at: new Date().toISOString() } });
   if (input.propertyId) {
