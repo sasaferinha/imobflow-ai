@@ -11,6 +11,7 @@ import type { ConversationMessage } from '@/lib/conversations';
 
 const LOCAL_LEADS_KEY = 'imobflow_local_leads';
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
+const DATA_SYNC_CHANNEL = 'imobflow_data_sync';
 
 type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations';
 type Property = PropertyRecord;
@@ -198,6 +199,20 @@ async function loadPerformance(month: string) {
   return result.data;
 }
 
+async function loadRemoteProperties() {
+  const response = await fetch('/api/properties', { cache: 'no-store' });
+  const result = await response.json() as { data?: Property[]; error?: string };
+  if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível carregar os imóveis cadastrados.');
+  return result.data;
+}
+
+function announcePropertyChange() {
+  if (!('BroadcastChannel' in window)) return;
+  const channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
+  channel.postMessage({ entity: 'properties', changedAt: Date.now() });
+  channel.close();
+}
+
 export default function DashboardClient() {
   const [view, setView] = useState<View>('overview');
   const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createDemoConversationState);
@@ -250,6 +265,30 @@ export default function DashboardClient() {
       .then(finishLoading)
       .catch(() => finishLoading([]));
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let channel: BroadcastChannel | null = null;
+    const synchronize = () => {
+      if (document.visibilityState === 'hidden') return;
+      void loadRemoteProperties().then((items) => { if (active) setProperties(items); }).catch(() => undefined);
+    };
+    const onVisibilityChange = () => { if (document.visibilityState === 'visible') synchronize(); };
+    if ('BroadcastChannel' in window) {
+      channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
+      channel.onmessage = (event) => { if (event.data?.entity === 'properties') synchronize(); };
+    }
+    window.addEventListener('focus', synchronize);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    const interval = window.setInterval(synchronize, 30_000);
+    return () => {
+      active = false;
+      channel?.close();
+      window.removeEventListener('focus', synchronize);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -364,10 +403,7 @@ export default function DashboardClient() {
   }
 
   async function refreshProperties() {
-    const response = await fetch('/api/properties', { cache: 'no-store' });
-    const result = await response.json() as { data?: Property[]; error?: string };
-    if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível carregar os imóveis cadastrados.');
-    setProperties(result.data);
+    setProperties(await loadRemoteProperties());
   }
 
   function saveSettings(nextSettings: DashboardSettings) {
@@ -450,6 +486,7 @@ export default function DashboardClient() {
       const result = await response.json() as { data?: Property; error?: string };
       if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar o imóvel.');
       setProperties((current) => editingProperty ? current.map((item) => item.id === result.data?.id ? result.data : item) as Property[] : [result.data!, ...current]);
+      announcePropertyChange();
       setSelectedProperty(result.data);
       setPropertyModalOpen(false);
       setEditingProperty(null);
@@ -469,6 +506,7 @@ export default function DashboardClient() {
       const response = await fetch(`/api/properties/${property.id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Não foi possível excluir o imóvel.');
       setProperties((current) => current.filter((item) => item.id !== property.id));
+      announcePropertyChange();
       setSelectedProperty(null);
       notify('Imóvel excluído do portfólio');
     } catch (error) {
