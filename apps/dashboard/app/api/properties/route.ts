@@ -19,12 +19,14 @@ function cleanImages(value: unknown) {
 }
 
 function propertyInput(body: Record<string, unknown>): PropertyInput {
+  const number = (value: unknown) => value === '' || value == null ? undefined : Math.max(0, Number(value) || 0);
   return {
-    title: clean(body.title, 160), district: clean(body.district, 120), price: clean(body.price, 80),
+    code: clean(body.code, 60), title: clean(body.title, 160), description: clean(body.description, 1200),
+    district: clean(body.district, 120), city: clean(body.city, 120), address: clean(body.address, 300), price: clean(body.price, 80),
     meta: clean(body.meta, 500), match: Math.max(0, Math.min(100, Number(body.match) || 80)),
     tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
-    propertyType: clean(body.propertyType, 80),
-    status: body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
+    propertyType: clean(body.propertyType, 80), bedrooms: number(body.bedrooms), parkingSpaces: number(body.parkingSpaces), area: number(body.area), publicUrl: clean(body.publicUrl, 500),
+    status: body.status === 'Reservado' ? 'Reservado' : body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
   };
 }
 
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   try {
     const input = propertyInput(await request.json() as Record<string, unknown>);
-    if (!input.title || !input.district || !input.price || !input.meta) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
+    if (!input.code || !input.title || !input.description || !input.district || !input.city || !input.price || !input.propertyType || input.bedrooms == null || input.parkingSpaces == null || input.area == null) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     const data = await createProperty(input);
     after(runAutomationsAfterEvent);
     return NextResponse.json({ data }, { status: 201 });

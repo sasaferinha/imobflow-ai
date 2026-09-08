@@ -1,14 +1,22 @@
 export type PropertyRecord = {
   id: string;
+  code?: string;
   title: string;
+  description?: string;
   district: string;
+  city?: string;
+  address?: string;
   price: string;
   meta: string;
   match: number;
   tone: string;
   purpose: 'Venda' | 'Aluguel';
   propertyType?: string;
-  status?: 'Disponível' | 'Vendido' | 'Alugado';
+  bedrooms?: number;
+  parkingSpaces?: number;
+  area?: number;
+  status?: 'Disponível' | 'Reservado' | 'Vendido' | 'Alugado';
+  publicUrl?: string;
   images: string[];
   createdAt: string;
 };

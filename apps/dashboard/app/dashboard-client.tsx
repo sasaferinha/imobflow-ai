@@ -380,16 +380,27 @@ export default function DashboardClient() {
   async function saveProperty(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const bedrooms = Number(form.get('bedrooms'));
+    const parkingSpaces = Number(form.get('parkingSpaces'));
+    const area = Number(form.get('area'));
     const payload = {
+      code: String(form.get('code') || ''),
       title: String(form.get('title') || 'Novo imóvel'),
+      description: String(form.get('description') || ''),
       district: String(form.get('district') || 'Centro'),
+      city: String(form.get('city') || ''),
+      address: String(form.get('address') || ''),
       price: String(form.get('price') || 'R$ 0'),
-      meta: String(form.get('description') || '2 quartos • 1 vaga • 72 m²'),
+      meta: `${bedrooms} ${bedrooms === 1 ? 'quarto' : 'quartos'} • ${parkingSpaces} ${parkingSpaces === 1 ? 'vaga' : 'vagas'} • ${area} m²`,
       match: editingProperty?.match || 80,
       tone: editingProperty?.tone || 'orchid',
       purpose: String(form.get('purpose')) === 'Aluguel' ? 'Aluguel' : 'Venda',
       status: String(form.get('status') || 'Disponível'),
       propertyType: String(form.get('propertyType') || ''),
+      bedrooms,
+      parkingSpaces,
+      area,
+      publicUrl: String(form.get('publicUrl') || ''),
       images: propertyImages,
     };
     setSavingProperty(true);
@@ -500,20 +511,18 @@ export default function DashboardClient() {
 
       {propertyModalOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => { setPropertyModalOpen(false); setEditingProperty(null); setPropertyImages([]); }}>
-          <form className="modal-card" onSubmit={saveProperty} onMouseDown={(event) => event.stopPropagation()}>
+          <form className="modal-card property-editor-modal" onSubmit={saveProperty} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-head"><div><p className="eyebrow">Portfólio imobiliário</p><h2>{editingProperty ? 'Editar imóvel' : 'Novo imóvel'}</h2></div><button type="button" aria-label="Fechar" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); setPropertyImages([]); }}>×</button></div>
-            <label>Título<input name="title" defaultValue={editingProperty?.title} placeholder="Ex.: Residencial das Flores" autoFocus required /></label>
-            <div className="form-grid"><label>Bairro<input name="district" defaultValue={editingProperty?.district} placeholder="Centro" required /></label><label>Preço<input name="price" defaultValue={editingProperty?.price} placeholder="R$ 650.000" required /></label></div>
-            <div className="form-grid"><label>Finalidade<select name="purpose" defaultValue={editingProperty?.purpose || 'Venda'}><option>Venda</option><option>Aluguel</option></select></label><label>Situação<select name="status" defaultValue={editingProperty?.status || 'Disponível'}><option>Disponível</option><option>Vendido</option><option>Alugado</option></select></label></div>
-            <label>Tipo do imóvel<select name="propertyType" defaultValue={editingProperty?.propertyType || ''}><option value="">Não informado</option><option>Apartamento</option><option>Casa</option><option>Studio</option><option>Terreno</option><option>Comercial</option></select></label>
-            <label>Descrição<textarea name="description" defaultValue={editingProperty?.meta} placeholder="Ex.: 3 quartos • 2 vagas • 98 m²" rows={3} required /></label>
-            <p className="deal-help">Para encontrar leads compatíveis, informe o tipo e a quantidade de quartos na descrição.</p>
+            <section className="property-form-section"><h3>Identificação</h3><div className="form-grid"><label>Código do imóvel<input name="code" defaultValue={editingProperty?.code} placeholder="Ex.: IMO-1042" autoFocus required /></label><label>Título<input name="title" defaultValue={editingProperty?.title} placeholder="Ex.: Residencial das Flores" required /></label></div><label>Descrição<textarea name="description" defaultValue={editingProperty?.description || (editingProperty?.code ? '' : editingProperty?.meta)} placeholder="Destaques, acabamentos, condomínio e diferenciais do imóvel" rows={4} required /></label></section>
+            <section className="property-form-section"><h3>Localização e valores</h3><div className="form-grid"><label>Finalidade<select name="purpose" defaultValue={editingProperty?.purpose || 'Venda'}><option>Venda</option><option>Aluguel</option></select></label><label>Preço<input name="price" defaultValue={editingProperty?.price} placeholder="R$ 650.000" required /></label></div><div className="form-grid"><label>Bairro<input name="district" defaultValue={editingProperty?.district} placeholder="Centro" required /></label><label>Cidade<input name="city" defaultValue={editingProperty?.city} placeholder="Poços de Caldas" required /></label></div><label>Endereço<input name="address" defaultValue={editingProperty?.address} placeholder="Rua, número e complemento" /></label></section>
+            <section className="property-form-section"><h3>Características</h3><div className="form-grid"><label>Tipo do imóvel<select name="propertyType" defaultValue={editingProperty?.propertyType || ''} required><option value="" disabled>Selecione</option><option>Apartamento</option><option>Casa</option><option>Studio</option><option>Terreno</option><option>Comercial</option></select></label><label>Situação<select name="status" defaultValue={editingProperty?.status || 'Disponível'}><option>Disponível</option><option>Reservado</option><option>Vendido</option><option>Alugado</option></select></label></div><div className="property-number-grid"><label>Quartos<input name="bedrooms" type="number" min="0" defaultValue={editingProperty?.bedrooms} placeholder="3" required /></label><label>Vagas<input name="parkingSpaces" type="number" min="0" defaultValue={editingProperty?.parkingSpaces} placeholder="2" required /></label><label>Metragem (m²)<input name="area" type="number" min="0" step="0.01" defaultValue={editingProperty?.area} placeholder="98" required /></label></div></section>
             <div className="property-image-field">
-              <div><strong>Imagens do imóvel</strong><span>Até 5 fotos em JPG, PNG ou WebP</span></div>
+              <div><strong>Fotos do imóvel</strong><span>Até 5 fotos em JPG, PNG ou WebP</span></div>
               <input id="property-images" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { void addPropertyImages(event.target.files); event.target.value = ''; }} />
               <button type="button" className="image-upload-button" disabled={preparingImages || propertyImages.length >= 5} onClick={() => document.getElementById('property-images')?.click()}>{preparingImages ? 'Preparando fotos...' : '＋ Adicionar imagens'}</button>
               {propertyImages.length > 0 && <div className="property-image-previews">{propertyImages.map((image,index) => <div key={`${image.slice(-24)}-${index}`}><img src={image} alt={`Foto ${index + 1} do imóvel`} /><button type="button" aria-label={`Remover foto ${index + 1}`} onClick={() => setPropertyImages((current) => current.filter((_,imageIndex) => imageIndex !== index))}>×</button>{index === 0 && <span>Capa</span>}</div>)}</div>}
             </div>
+            <label className="property-public-url">Link público do imóvel<input name="publicUrl" type="url" defaultValue={editingProperty?.publicUrl} placeholder="https://imobiliaria.com.br/imovel/..." /></label>
             <div className="modal-actions"><button type="button" onClick={() => { setPropertyModalOpen(false); setEditingProperty(null); setPropertyImages([]); }}>Cancelar</button><button className="primary-button" type="submit" disabled={savingProperty || preparingImages}>{savingProperty ? 'Salvando...' : 'Salvar imóvel'}</button></div>
           </form>
         </div>
@@ -801,7 +810,7 @@ function PropertyDetail({ property, close, notify, openAgenda, edit, remove }: {
           {property.images.length ? <div className="detail-photo"><img src={property.images[activeImage] || property.images[0]} alt={property.title + ', foto ' + (activeImage + 1)} /></div> : <div className="detail-no-photo"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/></svg><strong>Sem fotos cadastradas</strong><span>Adicione fotos em Editar imóvel.</span></div>}
           {property.images.length > 1 && <div className="property-gallery-thumbs">{property.images.map((image,index) => <button type="button" className={activeImage === index ? 'active' : ''} aria-pressed={activeImage === index} key={index} onClick={() => setActiveImage(index)} aria-label={'Ver foto ' + (index + 1)}><img src={image} alt="" /></button>)}</div>}
         </div>
-        <div className="detail-information"><span className="detail-status">{property.status || 'Disponível'}</span><p className="detail-price-label">{property.purpose === 'Aluguel' ? 'Aluguel mensal anunciado' : 'Valor anunciado'}</p><strong className="detail-price">{property.price}</strong><div className="detail-facts">{property.meta.split('•').map((item,index) => <span key={index}>{item.trim()}</span>)}</div><dl><div><dt>Finalidade</dt><dd>{property.purpose}</dd></div><div><dt>Bairro</dt><dd>{property.district}</dd></div><div><dt>Compatibilidade</dt><dd>{property.match}%</dd></div></dl></div>
+        <div className="detail-information"><div className="detail-status-row"><span className="detail-status">{property.status || 'Disponível'}</span>{property.code && <span className="property-code">{property.code}</span>}</div><p className="detail-price-label">{property.purpose === 'Aluguel' ? 'Aluguel mensal anunciado' : 'Valor anunciado'}</p><strong className="detail-price">{property.price}</strong><div className="detail-facts">{property.meta.split('•').map((item,index) => <span key={index}>{item.trim()}</span>)}</div>{property.description && <p className="property-description">{property.description}</p>}<dl><div><dt>Finalidade</dt><dd>{property.purpose}</dd></div><div><dt>Tipo</dt><dd>{property.propertyType || 'Não informado'}</dd></div><div><dt>Bairro</dt><dd>{property.district}</dd></div><div><dt>Cidade</dt><dd>{property.city || 'Não informada'}</dd></div><div><dt>Endereço</dt><dd>{property.address || 'Não informado'}</dd></div><div><dt>Compatibilidade</dt><dd>{property.match}%</dd></div></dl>{property.publicUrl && <a className="property-public-link" href={property.publicUrl} target="_blank" rel="noreferrer">Abrir anúncio público ↗</a>}</div>
       </div>
       <footer className="modal-actions"><button type="button" className="danger-button" onClick={remove}>Excluir</button><button type="button" onClick={edit}>Editar imóvel</button><button type="button" aria-pressed={saved} className={saved ? 'saved-button' : ''} onClick={() => { setSaved((active) => !active); notify(saved ? 'Imóvel removido dos favoritos' : 'Imóvel salvo nos favoritos'); }}>{saved ? '♥ Salvo' : '♡ Salvar'}</button><button type="button" className="primary-button" onClick={() => { close(); openAgenda(); }}>Agendar visita</button></footer>
     </article>

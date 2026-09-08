@@ -413,6 +413,17 @@ body { -webkit-font-smoothing: antialiased; }
 .app-shell.app-shell .automation-card p { line-height: 1.7; }
 .app-shell.app-shell .automation-card footer button { font-weight: 500; color: var(--accent-text); }
 .app-shell.app-shell .modal-card { padding: 32px; }
+.app-shell.app-shell .property-editor-modal { width: min(780px, 100%); }
+.app-shell.app-shell .property-form-section { padding: 0 0 20px; margin: 0 0 20px; border-bottom: 1px solid var(--line); }
+.app-shell.app-shell .property-form-section h3 { margin: 0 0 16px; color: var(--ink); font-size: 15px; font-weight: 600; }
+.app-shell.app-shell .property-form-section > label:last-child { margin-bottom: 0; }
+.app-shell.app-shell .property-number-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.app-shell.app-shell .property-public-url { margin-top: 18px; }
+.app-shell.app-shell .detail-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.app-shell.app-shell .property-code { color: var(--muted); font-size: 13px; font-weight: 500; }
+.app-shell.app-shell .property-description { margin: 20px 0 4px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.app-shell.app-shell .property-public-link { display: inline-flex; margin-top: 20px; color: var(--accent-text); font-size: 14px; font-weight: 500; text-decoration: none; }
+.app-shell.app-shell .property-public-link:hover { text-decoration: underline; }
 .app-shell.app-shell .broker-profile-modal { padding: 0; }
 .app-shell.app-shell .modal-head { padding-bottom: 20px; }
 .app-shell.app-shell .modal-card input:not([type='checkbox']):not([type='radio']),
@@ -459,6 +470,7 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell .workspace { padding-top: 24px; padding-inline: 16px; }
   .app-shell.app-shell .full-chat-body { padding: 20px 16px; }
   .app-shell.app-shell .modal-card { padding: 24px; }
+  .app-shell.app-shell .property-number-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .app-shell.app-shell .broker-profile-modal { padding: 0; }
   .app-shell.app-shell .sidebar { border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
   .app-shell.app-shell .nav-list { gap: 0; }
