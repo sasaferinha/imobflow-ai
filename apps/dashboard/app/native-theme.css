@@ -419,6 +419,34 @@ body { -webkit-font-smoothing: antialiased; }
 .app-shell.app-shell .share-property-preview em { align-self: flex-start; margin-top: 3px; padding: 4px 7px; border-radius: 5px; background: var(--paper); color: var(--accent-text); font-size: 12px; font-style: normal; }
 .app-shell.app-shell .share-channel-note { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .app-shell.app-shell .share-channel-note span { display: inline-block; margin-right: 5px; color: var(--ink); font-weight: 600; }
+.app-shell.app-shell .lead-picker { margin-bottom: 18px; }
+.app-shell.app-shell .picker-search { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--secondary); color: var(--muted); }
+.app-shell.app-shell .picker-search input { min-height: 40px !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+.app-shell.app-shell .picker-categories { display: flex; gap: 7px; margin: 10px 0; overflow-x: auto; }
+.app-shell.app-shell .picker-categories button { flex: 0 0 auto; min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 17px; background: var(--paper); color: var(--muted); font-size: 13px; }
+.app-shell.app-shell .picker-categories button[aria-pressed='true'] { border-color: #bfd7fb; background: #eaf3ff; color: var(--accent-text); }
+.app-shell.app-shell .lead-picker-results { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.app-shell.app-shell .lead-picker-results > button { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; padding: 11px 12px; border: 0; border-bottom: 1px solid var(--line); background: var(--paper); color: var(--ink); text-align: left; }
+.app-shell.app-shell .lead-picker-results > button:last-of-type { border-bottom: 0; }
+.app-shell.app-shell .lead-picker-results > button.selected { background: #eaf3ff; box-shadow: inset 3px 0 var(--accent); }
+.app-shell.app-shell .lead-picker-results > button > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.app-shell.app-shell .lead-picker-results strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell.app-shell .lead-picker-results small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell.app-shell .lead-picker-results em { padding: 4px 7px; border-radius: 5px; background: var(--secondary); color: var(--muted); font-size: 12px; font-style: normal; }
+.app-shell.app-shell .picker-empty { margin: 0; padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
+.app-shell.app-shell .full-composer { grid-template-columns: 32px auto minmax(0, 1fr) 36px; }
+.app-shell.app-shell .full-composer .conversation-property-button { min-height: 36px; padding: 0 11px; border: 1px solid #cde0fc; border-radius: 18px; background: #f4f8ff; color: var(--accent-text); font-size: 13px; white-space: nowrap; }
+.app-shell.app-shell .conversation-property-picker { width: min(760px, 100%); }
+.app-shell.app-shell .conversation-property-results { display: grid; gap: 8px; max-height: 430px; overflow-y: auto; }
+.app-shell.app-shell .conversation-property-results > button { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 14px; align-items: center; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); text-align: left; }
+.app-shell.app-shell .conversation-property-results > button:hover { border-color: #bfd7fb; background: #f8fbff; }
+.app-shell.app-shell .picker-property-image { display: grid; place-items: center; width: 88px; height: 68px; overflow: hidden; border-radius: 7px; background: #eaf3ff; color: #76a6e9; font-size: 24px; }
+.app-shell.app-shell .picker-property-image img { width: 100%; height: 100%; object-fit: cover; }
+.app-shell.app-shell .conversation-property-results > button > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.app-shell.app-shell .conversation-property-results strong { font-size: 15px; }
+.app-shell.app-shell .conversation-property-results small,
+.app-shell.app-shell .conversation-property-results em { color: var(--muted); font-size: 12px; font-style: normal; }
+.app-shell.app-shell .conversation-property-results b { color: var(--ink); font-size: 14px; white-space: nowrap; }
 .app-shell.app-shell .property-message { overflow: hidden; padding: 0 0 12px; }
 .app-shell.app-shell .property-message > strong,
 .app-shell.app-shell .property-message > p,
@@ -493,6 +521,12 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell .full-chat-body { padding: 20px 16px; }
   .app-shell.app-shell .modal-card { padding: 24px; }
   .app-shell.app-shell .property-number-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .app-shell.app-shell .full-composer { grid-template-columns: 32px 42px minmax(0, 1fr) 36px; padding-inline: 10px; }
+  .app-shell.app-shell .full-composer .conversation-property-button { width: 42px; overflow: hidden; padding: 0 10px; font-size: 0; }
+  .app-shell.app-shell .full-composer .conversation-property-button::first-letter { font-size: 18px; }
+  .app-shell.app-shell .conversation-property-results > button { grid-template-columns: 68px minmax(0, 1fr); }
+  .app-shell.app-shell .picker-property-image { width: 68px; height: 58px; }
+  .app-shell.app-shell .conversation-property-results b { grid-column: 2; }
   .app-shell.app-shell .broker-profile-modal { padding: 0; }
   .app-shell.app-shell .sidebar { border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
   .app-shell.app-shell .nav-list { gap: 0; }

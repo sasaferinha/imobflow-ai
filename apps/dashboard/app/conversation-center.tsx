@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent } from 'react';
 import type { LeadProfile } from '@/lib/leads';
+import type { PropertyRecord } from '@/lib/operations';
 import { demoContacts, demoTemperature, type DemoContact, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
 
 type ConversationContact = DemoContact & { sourceLead?: LeadProfile };
@@ -15,12 +16,13 @@ const liveTemperature = (temperature: string) => {
 };
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-export default function ConversationCenter({ state, dispatch, notify, openAgenda, leads = [] }: {
+export default function ConversationCenter({ state, dispatch, notify, openAgenda, leads = [], properties = [] }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
-  notify: (message: string) => void; openAgenda: () => void; leads?: LeadProfile[];
+  notify: (message: string) => void; openAgenda: () => void; leads?: LeadProfile[]; properties?: PropertyRecord[];
 }) {
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
+  const [propertyPickerOpen, setPropertyPickerOpen] = useState(false);
   const contacts = useMemo<ConversationContact[]>(() => {
     const leadsByName = new Map(leads.map((lead) => [normalize(lead.name), lead]));
     const demoNames = new Set(demoContacts.map((contact) => normalize(contact.name)));
@@ -64,6 +66,12 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
     dispatch({ type: 'send', id: selected.id, messageId: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
     notify('Mensagem registrada nesta conversa. Nenhum envio externo realizado.');
   }
+  function shareProperty(property: PropertyRecord) {
+    const text = `Separei uma opção que combina com o seu perfil:\n\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
+    dispatch({ type: 'share-property', id: selected.id, messageId: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), text, images: property.images, propertyTitle: property.title });
+    setPropertyPickerOpen(false);
+    notify(`${property.title} adicionado à conversa com ${selected.name}.`);
+  }
   return <div className="conversation-demo">
     <p className="conversation-demo-notice"><strong>Demonstração · {demoContacts.length} perfis fictícios</strong><span>{leads.length ? 'As conversas vinculadas mostram os dados que estão cadastrados na base de leads.' : 'Mensagens e dados ilustrativos. As alterações ficam apenas nesta sessão; nenhum contato recebe mensagens.'}</span></p>
     <div className="inbox-layout">
@@ -85,7 +93,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
         <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><strong>{selected.name}</strong><span>{lead ? 'Dados vinculados à base' : 'Exemplo'} · {thread.humanMode ? 'Marina responsável' : 'Triagem'} · {selected.style}</span></div><button type="button" aria-pressed={thread.humanMode} className={thread.humanMode ? 'active-action' : ''} onClick={() => { dispatch({ type: 'assign', id: selected.id }); notify('Responsável alterado apenas nesta demonstração.'); }}>{thread.humanMode ? 'Retomar triagem' : 'Assumir conversa'}</button></div>
         <div className="full-chat-body" ref={bodyRef}><span className="chat-date">{lead ? 'Conversa vinculada ao lead' : 'Conversa ilustrativa'}</span>{thread.messages.length ? thread.messages.map((message) => <div className={`bubble ${message.side} ${message.propertyTitle ? 'property-message' : ''}`} key={message.id}>{message.images?.length ? <div className="message-property-images">{message.images.slice(0,3).map((image,index) => <img key={index} src={image} alt={`${message.propertyTitle}, foto ${index + 1}`} />)}</div> : null}<span className="visually-hidden">{message.side === 'incoming' ? selected.name : 'Atendimento'}: </span>{message.propertyTitle && <strong>{message.propertyTitle}</strong>}<p>{message.text}</p><small>{message.time} · {lead ? 'Painel' : 'Exemplo'}</small></div>) : <p className="conversation-empty-thread">Ainda não há mensagens deste lead no painel. A ficha ao lado foi carregada da base para orientar o corretor.</p>}</div>
         <div className="conversation-suggestion"><span>Resposta sugerida · {lead ? 'Dados do lead' : selected.style}</span><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div>
-        <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" onClick={() => notify('Anexos não são enviados nesta demonstração.')}>＋</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>
+        <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" onClick={() => notify('Anexos não são enviados nesta demonstração.')}>＋</button><button type="button" className="conversation-property-button" onClick={() => setPropertyPickerOpen(true)}>▦ Imóvel</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>
       </section>
       <aside className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
         <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><h3>{selected.name}</h3><span className="conversation-data-source">{sourceLabel} · {lead?.source || selected.category}</span></div></header>
@@ -98,5 +106,13 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
         <button type="button" className="profile-action" onClick={openAgenda}>Agendar visita</button><p className="conversation-profile-note">{lead ? 'Consulte esta ficha antes de responder no canal conectado.' : 'Este exemplo não cria leads nem compromissos no banco de dados.'}</p>
       </aside>
     </div>
+    {propertyPickerOpen && <ConversationPropertyPicker properties={properties} customerName={selected.name} close={() => setPropertyPickerOpen(false)} select={shareProperty} />}
   </div>;
+}
+
+function ConversationPropertyPicker({ properties, customerName, close, select }: { properties:PropertyRecord[]; customerName:string; close:()=>void; select:(property:PropertyRecord)=>void }) {
+  const [search, setSearch] = useState('');
+  const [purpose, setPurpose] = useState<'Todos' | 'Venda' | 'Aluguel'>('Todos');
+  const available = properties.filter((property) => (!property.status || property.status === 'Disponível') && (purpose === 'Todos' || property.purpose === purpose) && normalize(`${property.title} ${property.code || ''} ${property.district} ${property.city || ''} ${property.propertyType || ''}`).includes(normalize(search)));
+  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><section className="modal-card conversation-property-picker" role="dialog" aria-modal="true" aria-label={`Enviar imóvel para ${customerName}`} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Conversa com {customerName}</p><h2>Selecionar imóvel</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><div className="picker-search">⌕<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar por nome, código, bairro ou cidade" autoFocus /></div><div className="picker-categories" role="group" aria-label="Filtrar por finalidade">{(['Todos', 'Venda', 'Aluguel'] as const).map((item) => <button type="button" key={item} aria-pressed={purpose === item} onClick={() => setPurpose(item)}>{item}</button>)}</div><div className="conversation-property-results">{available.map((property) => <button type="button" key={property.id} onClick={() => select(property)}><span className="picker-property-image">{property.images[0] ? <img src={property.images[0]} alt="" /> : '▦'}</span><span><strong>{property.title}</strong><small>{property.code ? `${property.code} · ` : ''}{property.district}{property.city ? `, ${property.city}` : ''}</small><em>{property.meta}</em></span><b>{property.price}</b></button>)}{!available.length && <p className="picker-empty">Nenhum imóvel disponível encontrado com esses filtros.</p>}</div><p className="share-channel-note"><span>Fotos e informações incluídas.</span> O envio externo dependerá da conexão com a API do WhatsApp.</p></section></div>;
 }
