@@ -19,26 +19,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    if (request.nextUrl.searchParams.get("schema") === "1") {
+    if (request.nextUrl.searchParams.get("schema") === "full") {
       const response = await fetch(`${supabaseUrl}/rest/v1/`, {
-        headers: {
-          Accept: "application/openapi+json",
-          apikey: secretKey,
-          Authorization: `Bearer ${secretKey}`,
-        },
+        headers: { Accept: "application/openapi+json", apikey: secretKey, Authorization: `Bearer ${secretKey}` },
         cache: "no-store",
       });
-      if (!response.ok) {
-        return NextResponse.json({ error: "Schema unavailable" }, { status: 502 });
-      }
-      const specification = (await response.json()) as {
-        definitions?: Record<string, { properties?: Record<string, unknown> }>;
-      };
-      const tables = ["companies", "leads", "properties", "conversations", "messages", "lead_property_events", "appointments"];
-      return NextResponse.json(Object.fromEntries(tables.map((table) => [
-        table,
-        Object.keys(specification.definitions?.[table]?.properties ?? {}),
-      ])));
+      const specification = await response.json() as { definitions?: Record<string, unknown> };
+      const names = ["leads", "properties", "conversations", "messages", "lead_property_events", "appointments"];
+      return NextResponse.json(Object.fromEntries(names.map((name) => [name, specification.definitions?.[name] || null])));
     }
 
     const response = await fetch(

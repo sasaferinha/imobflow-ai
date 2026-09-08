@@ -3,169 +3,92 @@ import type { LeadInput, LeadProfile } from './leads';
 import { analyzeLead, explainProfile } from './leads';
 import type { LeadLifecycleStatus } from './leads';
 import type { AppointmentInput, AppointmentRecord, PerformanceSettingsInput, PerformanceSnapshot, PropertyInput, PropertyRecord, SaleInput, SaleRecord } from './operations';
+import { supabaseCompanyId, supabaseRequest } from './supabase';
 
 function database() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL não configurada');
   return neon(process.env.DATABASE_URL);
 }
 
-async function ensureLeadSchema() {
-  const sql = database();
-  await sql`CREATE TABLE IF NOT EXISTS site_leads (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    email TEXT,
-    goal TEXT NOT NULL,
-    property_type TEXT NOT NULL,
-    region TEXT NOT NULL,
-    budget TEXT NOT NULL,
-    details TEXT,
-    summary TEXT NOT NULL,
-    score INTEGER NOT NULL,
-    temperature TEXT NOT NULL,
-    source TEXT NOT NULL DEFAULT 'Formulário do site',
-    assigned_to TEXT,
-    lifecycle_status TEXT NOT NULL DEFAULT 'Novo',
-    last_contact_at TIMESTAMPTZ,
-    score_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
-    recovery_selected BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
-  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'Formulário do site'`;
-  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS assigned_to TEXT`;
-  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'Novo'`;
-  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS last_contact_at TIMESTAMPTZ`;
-  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS score_reasons JSONB NOT NULL DEFAULT '[]'::jsonb`;
-  await sql`ALTER TABLE site_leads ADD COLUMN IF NOT EXISTS recovery_selected BOOLEAN NOT NULL DEFAULT FALSE`;
-}
-
 export async function createLead(input: LeadInput): Promise<LeadProfile> {
-  await ensureLeadSchema();
-  const sql = database();
-  const summary = explainProfile(input);
   const lifecycleStatus = input.lifecycleStatus || 'Novo';
   const analysis = analyzeLead({ ...input, lifecycleStatus });
-  const rows = await sql`INSERT INTO site_leads
-    (name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected)
-    VALUES (${input.name}, ${input.phone}, ${input.email}, ${input.goal}, ${input.propertyType}, ${input.region}, ${input.budget}, ${input.details}, ${summary}, ${analysis.score}, ${analysis.temperature}, ${input.source || 'Formulário do site'}, ${input.assignedTo || null}, ${lifecycleStatus}, ${input.lastContactAt || null}, ${JSON.stringify(analysis.scoreReasons)}::jsonb, ${Boolean(input.recoverySelected)})
-    RETURNING id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at`;
+  const [budgetMin, budgetMax] = parseBudget(input.budget);
+  const rows = await supabaseRequest<Record<string, unknown>[]>('leads', {
+    method: 'POST', prefer: 'return=representation',
+    body: {
+      company_id: supabaseCompanyId(), name: input.name, phone: input.phone, email: input.email,
+      goal: input.goal, property_type: input.propertyType, region: input.region,
+      budget_min: budgetMin, budget_max: budgetMax, details: input.details, summary: explainProfile(input),
+      score: analysis.score, temperature: analysis.temperature, lifecycle_status: lifecycleStatus,
+      source: input.source || 'Formulário do site', assigned_to: input.assignedTo || null,
+      last_contact_at: input.lastContactAt || null,
+    },
+  });
   return mapLead(rows[0]);
 }
 
 export async function listLeads(limit = 1000): Promise<LeadProfile[]> {
-  await ensureLeadSchema();
-  const sql = database();
-  const rows = await sql`SELECT id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at FROM site_leads ORDER BY created_at DESC LIMIT ${limit}`;
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`leads?company_id=eq.${supabaseCompanyId()}&select=*&order=created_at.desc&limit=${Math.max(1, Math.min(limit, 1000))}`);
   return rows.map(mapLead);
 }
 
 export async function importLeads(inputs: LeadInput[]) {
-  await ensureLeadSchema();
-  const records = inputs.map((input) => {
+  if (inputs.length === 0) return { imported: 0, skipped: 0, leads: [] as LeadProfile[] };
+  const existing = await supabaseRequest<Record<string, unknown>[]>(`leads?company_id=eq.${supabaseCompanyId()}&select=phone,email`);
+  const knownPhones = new Set(existing.map((row) => normalizePhone(String(row.phone || ''))).filter(Boolean));
+  const knownEmails = new Set(existing.map((row) => String(row.email || '').toLowerCase()).filter(Boolean));
+  const unique = inputs.filter((input, index, all) => {
+    const phone = normalizePhone(input.phone);
+    const email = input.email?.toLowerCase() || '';
+    if ((phone && knownPhones.has(phone)) || (email && knownEmails.has(email))) return false;
+    return all.findIndex((candidate) => (phone && normalizePhone(candidate.phone) === phone) || (email && candidate.email?.toLowerCase() === email)) === index;
+  });
+  const records = unique.map((input) => {
     const lifecycleStatus = input.lifecycleStatus || 'Novo';
     const analysis = analyzeLead({ ...input, lifecycleStatus });
+    const [budgetMin, budgetMax] = parseBudget(input.budget);
     return {
-      name: input.name, phone: input.phone, email: input.email, goal: input.goal,
-      property_type: input.propertyType, region: input.region, budget: input.budget,
+      company_id: supabaseCompanyId(), name: input.name, phone: input.phone, email: input.email, goal: input.goal,
+      property_type: input.propertyType, region: input.region, budget_min: budgetMin, budget_max: budgetMax,
       details: input.details, summary: explainProfile(input), score: analysis.score,
       temperature: analysis.temperature, source: input.source || 'Importação CSV',
       assigned_to: input.assignedTo || null, lifecycle_status: lifecycleStatus,
-      last_contact_at: input.lastContactAt || null, score_reasons: analysis.scoreReasons,
-      recovery_selected: Boolean(input.recoverySelected),
+      last_contact_at: input.lastContactAt || null,
     };
   });
-  if (records.length === 0) return { imported: 0, skipped: 0, leads: [] as LeadProfile[] };
-
-  const rows = await database()`WITH incoming AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(regexp_replace(phone, '\\D', '', 'g'), ''), lower(email), lower(name))) *
-      FROM jsonb_to_recordset(${JSON.stringify(records)}::jsonb) AS item(
-        name TEXT, phone TEXT, email TEXT, goal TEXT, property_type TEXT, region TEXT, budget TEXT,
-        details TEXT, summary TEXT, score INTEGER, temperature TEXT, source TEXT, assigned_to TEXT,
-        lifecycle_status TEXT, last_contact_at TIMESTAMPTZ, score_reasons JSONB, recovery_selected BOOLEAN
-      )
-    )
-    INSERT INTO site_leads (name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected)
-    SELECT i.name, i.phone, i.email, i.goal, i.property_type, i.region, i.budget, i.details, i.summary, i.score, i.temperature, i.source, i.assigned_to, i.lifecycle_status, i.last_contact_at, i.score_reasons, i.recovery_selected
-    FROM incoming i
-    WHERE NOT EXISTS (
-      SELECT 1 FROM site_leads current
-      WHERE (regexp_replace(i.phone, '\\D', '', 'g') <> '' AND regexp_replace(current.phone, '\\D', '', 'g') = regexp_replace(i.phone, '\\D', '', 'g'))
-         OR (i.email IS NOT NULL AND current.email IS NOT NULL AND lower(current.email) = lower(i.email))
-    )
-    RETURNING id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at`;
+  if (records.length === 0) return { imported: 0, skipped: inputs.length, leads: [] as LeadProfile[] };
+  const rows = await supabaseRequest<Record<string, unknown>[]>('leads', { method: 'POST', prefer: 'return=representation', body: records });
   const leads = rows.map(mapLead);
   return { imported: leads.length, skipped: inputs.length - leads.length, leads };
 }
 
 export async function updateLeadIntelligence(id: string, input: { lifecycleStatus: LeadLifecycleStatus; lastContactAt: string | null; recoverySelected: boolean; assignedTo: string | null }) {
-  await ensureLeadSchema();
-  const rows = await database()`UPDATE site_leads SET lifecycle_status=${input.lifecycleStatus}, last_contact_at=${input.lastContactAt}, recovery_selected=${input.recoverySelected}, assigned_to=${input.assignedTo}
-    WHERE id=${id}
-    RETURNING id, name, phone, email, goal, property_type, region, budget, details, summary, score, temperature, source, assigned_to, lifecycle_status, last_contact_at, score_reasons, recovery_selected, created_at`;
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`leads?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, {
+    method: 'PATCH', prefer: 'return=representation',
+    body: { lifecycle_status: input.lifecycleStatus, last_contact_at: input.lastContactAt, assigned_to: input.assignedTo },
+  });
   return rows[0] ? mapLead(rows[0]) : null;
 }
 
-async function ensurePropertySchema(seed = true) {
-  const sql = database();
-  await sql`CREATE TABLE IF NOT EXISTS site_properties (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    reference_key TEXT UNIQUE,
-    title TEXT NOT NULL,
-    district TEXT NOT NULL,
-    price TEXT NOT NULL,
-    meta TEXT NOT NULL,
-    match INTEGER NOT NULL DEFAULT 80,
-    tone TEXT NOT NULL DEFAULT 'orchid',
-    purpose TEXT NOT NULL,
-    images JSONB NOT NULL DEFAULT '[]'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS property_type TEXT`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Disponível'`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS code TEXT`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS description TEXT`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS city TEXT`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS address TEXT`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS bedrooms INTEGER`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS parking_spaces INTEGER`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS area NUMERIC`;
-  await sql`ALTER TABLE site_properties ADD COLUMN IF NOT EXISTS public_url TEXT`;
-  if (seed) await sql`INSERT INTO site_properties (reference_key, title, district, price, meta, match, tone, purpose) VALUES
-    ('aurora', 'Residencial Aurora', 'Centro', 'R$ 575.000', '3 quartos • 2 vagas • 98 m²', 96, 'orchid', 'Venda'),
-    ('horizonte', 'Edifício Horizonte', 'Jardim Floresta', 'R$ 590.000', '3 quartos • 1 vaga • 91 m²', 92, 'sky', 'Venda'),
-    ('bosque-sereno', 'Casa Bosque Sereno', 'Alto da Serra', 'R$ 820.000', '4 quartos • 3 vagas • 184 m²', 88, 'sage', 'Venda'),
-    ('studio-vila-nova', 'Studio Vila Nova', 'Vila Nova', 'R$ 2.950/mês', '1 quarto • mobiliado • 42 m²', 83, 'sand', 'Aluguel'),
-    ('oliveiras', 'Parque das Oliveiras', 'Pinheiros', 'R$ 745.000', '2 quartos • varanda • 76 m²', 81, 'rose', 'Venda'),
-    ('ipe-amarelo', 'Casa Ipê Amarelo', 'Jardim Campestre', 'R$ 2.400/mês', '2 quartos • quintal • 80 m²', 77, 'slate', 'Aluguel')
-    ON CONFLICT (reference_key) DO NOTHING`;
-}
-
 export async function listProperties(forAutomation = false): Promise<PropertyRecord[]> {
-  await ensurePropertySchema(!forAutomation);
-  const rows = await database()`SELECT id, code, title, description, district, city, address, price, meta, match, tone, purpose, status, property_type, bedrooms, parking_spaces, area, public_url, images, created_at FROM site_properties WHERE (${forAutomation}=FALSE OR reference_key IS NULL) ORDER BY created_at DESC`;
+  void forAutomation;
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`properties?company_id=eq.${supabaseCompanyId()}&select=*&order=created_at.desc`);
   return rows.map(mapProperty);
 }
 
 export async function createProperty(input: PropertyInput): Promise<PropertyRecord> {
-  await ensurePropertySchema();
-  const rows = await database()`INSERT INTO site_properties (code, title, description, district, city, address, price, meta, match, tone, purpose, status, property_type, bedrooms, parking_spaces, area, public_url, images)
-    VALUES (${input.code || null}, ${input.title}, ${input.description || null}, ${input.district}, ${input.city || null}, ${input.address || null}, ${input.price}, ${input.meta}, ${input.match}, ${input.tone}, ${input.purpose}, ${input.status || 'Disponível'}, ${input.propertyType || null}, ${input.bedrooms ?? null}, ${input.parkingSpaces ?? null}, ${input.area ?? null}, ${input.publicUrl || null}, ${JSON.stringify(input.images)}::jsonb)
-    RETURNING id, code, title, description, district, city, address, price, meta, match, tone, purpose, status, property_type, bedrooms, parking_spaces, area, public_url, images, created_at`;
+  const rows = await supabaseRequest<Record<string, unknown>[]>('properties', { method: 'POST', prefer: 'return=representation', body: propertyPayload(input) });
   return mapProperty(rows[0]);
 }
 
 export async function updateProperty(id: string, input: PropertyInput): Promise<PropertyRecord | null> {
-  await ensurePropertySchema();
-  const rows = await database()`UPDATE site_properties SET code=${input.code || null}, title=${input.title}, description=${input.description || null}, district=${input.district}, city=${input.city || null}, address=${input.address || null}, price=${input.price}, meta=${input.meta}, match=${input.match}, tone=${input.tone}, purpose=${input.purpose}, status=${input.status || 'Disponível'}, property_type=${input.propertyType || null}, bedrooms=${input.bedrooms ?? null}, parking_spaces=${input.parkingSpaces ?? null}, area=${input.area ?? null}, public_url=${input.publicUrl || null}, images=${JSON.stringify(input.images)}::jsonb
-    WHERE id=${id} RETURNING id, code, title, description, district, city, address, price, meta, match, tone, purpose, status, property_type, bedrooms, parking_spaces, area, public_url, images, created_at`;
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`properties?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, { method: 'PATCH', prefer: 'return=representation', body: propertyPayload(input) });
   return rows[0] ? mapProperty(rows[0]) : null;
 }
 
 export async function deleteProperty(id: string): Promise<boolean> {
-  await ensurePropertySchema();
-  const rows = await database()`DELETE FROM site_properties WHERE id=${id} RETURNING id`;
+  const rows = await supabaseRequest<Array<{ id: string }>>(`properties?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&select=id`, { method: 'DELETE', prefer: 'return=representation' });
   return rows.length > 0;
 }
 
@@ -174,74 +97,111 @@ function mapProperty(row: Record<string, unknown>): PropertyRecord {
   return {
     id: String(row.id), code: row.code ? String(row.code) : undefined, title: String(row.title),
     description: row.description ? String(row.description) : undefined, district: String(row.district),
-    city: row.city ? String(row.city) : undefined, address: row.address ? String(row.address) : undefined, price: String(row.price),
+    city: row.city ? String(row.city) : undefined, address: row.address ? String(row.address) : undefined, price: formatMoney(Number(row.price), row.purpose === 'Aluguel'),
     propertyType: row.property_type ? String(row.property_type) : undefined,
     bedrooms: row.bedrooms == null ? undefined : Number(row.bedrooms), parkingSpaces: row.parking_spaces == null ? undefined : Number(row.parking_spaces),
     area: row.area == null ? undefined : Number(row.area), publicUrl: row.public_url ? String(row.public_url) : undefined,
-    meta: String(row.meta), match: Number(row.match), tone: String(row.tone),
+    meta: propertyMeta(row), match: 80, tone: 'orchid',
     status: row.status === 'Reservado' ? 'Reservado' : row.status === 'Vendido' ? 'Vendido' : row.status === 'Alugado' ? 'Alugado' : 'Disponível',
     purpose: row.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images, createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }
 
-async function ensureAppointmentSchema() {
-  const sql = database();
-  await sql`CREATE TABLE IF NOT EXISTS site_appointments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    reference_key TEXT UNIQUE,
-    appointment_date DATE NOT NULL,
-    appointment_time TEXT NOT NULL,
-    name TEXT NOT NULL,
-    property TEXT NOT NULL,
-    broker TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Aguardando',
-    color TEXT NOT NULL DEFAULT 'amber',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
-  await sql`INSERT INTO site_appointments (reference_key, appointment_date, appointment_time, name, property, broker, status, color) VALUES
-    ('ana-horizonte', '2026-09-01', '09:00', 'Ana Martins', 'Edifício Horizonte', 'Marina Oliveira', 'Confirmada', 'mint'),
-    ('lucas-aurora', '2026-09-01', '10:30', 'Lucas Carvalho', 'Residencial Aurora', 'Paulo Mendes', 'Aguardando', 'amber'),
-    ('carla-reserva', '2026-09-01', '14:00', 'Carla Souza', 'Terreno Reserva Sul', 'Marina Oliveira', 'Confirmada', 'violet'),
-    ('rafael-bosque', '2026-09-01', '16:30', 'Rafael Borges', 'Casa Bosque Sereno', 'Paulo Mendes', 'Confirmada', 'blue')
-    ON CONFLICT (reference_key) DO NOTHING`;
-}
-
 export async function listAppointments(): Promise<AppointmentRecord[]> {
-  await ensureAppointmentSchema();
-  const rows = await database()`SELECT id, appointment_date, appointment_time, name, property, broker, status, color, created_at FROM site_appointments ORDER BY appointment_date, appointment_time`;
-  return rows.map(mapAppointment);
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?company_id=eq.${supabaseCompanyId()}&select=*&order=scheduled_at.asc`);
+  const leads = await listLeads();
+  const properties = await listProperties();
+  const leadNames = new Map(leads.map((lead) => [lead.id, lead.name]));
+  const propertyNames = new Map(properties.map((property) => [property.id, property.title]));
+  return rows.map((row) => mapAppointment(row, leadNames, propertyNames));
 }
 
 export async function createAppointment(input: AppointmentInput): Promise<AppointmentRecord> {
-  await ensureAppointmentSchema();
-  const rows = await database()`INSERT INTO site_appointments (appointment_date, appointment_time, name, property, broker, status, color)
-    VALUES (${input.date}, ${input.time}, ${input.name}, ${input.property}, ${input.broker}, ${input.status}, ${input.color})
-    RETURNING id, appointment_date, appointment_time, name, property, broker, status, color, created_at`;
-  return mapAppointment(rows[0]);
+  const [leads, properties] = await Promise.all([listLeads(), listProperties()]);
+  const lead = leads.find((item) => item.name.toLowerCase() === input.name.toLowerCase());
+  const property = properties.find((item) => item.title.toLowerCase() === input.property.toLowerCase());
+  const rows = await supabaseRequest<Record<string, unknown>[]>('appointments', {
+    method: 'POST', prefer: 'return=representation',
+    body: { company_id: supabaseCompanyId(), lead_id: lead?.id || null, property_id: property?.id || null,
+      scheduled_at: `${input.date}T${input.time}:00-03:00`, assigned_to: input.broker, status: input.status, notes: `${input.name} · ${input.property}` },
+  });
+  return mapAppointment(rows[0], new Map(lead ? [[lead.id, lead.name]] : []), new Map(property ? [[property.id, property.title]] : []));
 }
 
 export async function updateAppointmentStatus(id: string, status: AppointmentRecord['status']): Promise<AppointmentRecord | null> {
-  await ensureAppointmentSchema();
-  const rows = await database()`UPDATE site_appointments SET status=${status} WHERE id=${id}
-    RETURNING id, appointment_date, appointment_time, name, property, broker, status, color, created_at`;
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, { method: 'PATCH', prefer: 'return=representation', body: { status } });
   return rows[0] ? mapAppointment(rows[0]) : null;
 }
 
 export async function deleteAppointment(id: string): Promise<boolean> {
-  await ensureAppointmentSchema();
-  const rows = await database()`DELETE FROM site_appointments WHERE id=${id} RETURNING id`;
+  const rows = await supabaseRequest<Array<{ id: string }>>(`appointments?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&select=id`, { method: 'DELETE', prefer: 'return=representation' });
   return rows.length > 0;
 }
 
-function mapAppointment(row: Record<string, unknown>): AppointmentRecord {
-  const date = row.appointment_date instanceof Date
-    ? row.appointment_date.toISOString().slice(0, 10)
-    : String(row.appointment_date).slice(0, 10);
+function mapAppointment(row: Record<string, unknown>, leadNames = new Map<string, string>(), propertyNames = new Map<string, string>()): AppointmentRecord {
+  const scheduledAt = new Date(String(row.scheduled_at));
+  const notes = String(row.notes || '');
+  const [fallbackName, fallbackProperty] = notes.split(' · ');
   return {
-    id: String(row.id), date, time: String(row.appointment_time), name: String(row.name), property: String(row.property),
-    broker: String(row.broker), status: row.status === 'Confirmada' ? 'Confirmada' : 'Aguardando', color: String(row.color),
+    id: String(row.id), date: scheduledAt.toISOString().slice(0, 10), time: scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+    name: leadNames.get(String(row.lead_id)) || fallbackName || 'Cliente', property: propertyNames.get(String(row.property_id)) || fallbackProperty || 'Imóvel',
+    broker: String(row.assigned_to || 'Marina Oliveira'), status: row.status === 'Confirmada' ? 'Confirmada' : 'Aguardando', color: row.status === 'Confirmada' ? 'mint' : 'amber',
     createdAt: new Date(String(row.created_at)).toISOString(),
   };
+}
+
+function normalizePhone(value: string) { return value.replace(/\D/g, ''); }
+
+function parseBudget(value: string): [number | null, number | null] {
+  const normalized = value.toLowerCase().replace(/r\$/g, '').replace(/\./g, '').replace(',', '.');
+  const values = [...normalized.matchAll(/(\d+(?:\.\d+)?)\s*(milh(?:ão|oes|ões)?|mi|mil|k)?/g)].map((match) => {
+    const number = Number(match[1]);
+    const unit = match[2] || '';
+    return number * (unit.startsWith('milh') || unit === 'mi' ? 1_000_000 : unit === 'mil' || unit === 'k' ? 1_000 : 1);
+  }).filter((number) => Number.isFinite(number) && number > 0);
+  if (!values.length) return [null, null];
+  if (/a partir|mínim|minim/.test(normalized)) return [values[0], values[1] || null];
+  if (/até|ate|máxim|maxim/.test(normalized)) return [null, values.at(-1) || null];
+  return values.length > 1 ? [Math.min(...values), Math.max(...values)] : [null, values[0]];
+}
+
+function formatMoney(value: number, monthly = false) {
+  if (!Number.isFinite(value)) return 'Preço sob consulta';
+  const formatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
+  return monthly ? `${formatted}/mês` : formatted;
+}
+
+function formatBudget(row: Record<string, unknown>) {
+  const minimum = row.budget_min == null ? null : Number(row.budget_min);
+  const maximum = row.budget_max == null ? null : Number(row.budget_max);
+  if (minimum && maximum) return `${formatMoney(minimum)} a ${formatMoney(maximum)}`;
+  if (maximum) return `Até ${formatMoney(maximum)}`;
+  if (minimum) return `A partir de ${formatMoney(minimum)}`;
+  return 'Não informado';
+}
+
+function propertyPayload(input: PropertyInput) {
+  return {
+    company_id: supabaseCompanyId(), code: input.code || null, title: input.title, description: input.description || null,
+    purpose: input.purpose, price: parseMoney(input.price), district: input.district, city: input.city || null,
+    address: input.address || null, property_type: input.propertyType || null, bedrooms: input.bedrooms ?? null,
+    parking_spaces: input.parkingSpaces ?? null, area: input.area ?? null, images: input.images,
+    status: input.status || 'Disponível', public_url: input.publicUrl || null,
+  };
+}
+
+function parseMoney(value: string) {
+  const normalized = value.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function propertyMeta(row: Record<string, unknown>) {
+  const items: string[] = [];
+  if (row.bedrooms != null) items.push(`${row.bedrooms} ${Number(row.bedrooms) === 1 ? 'quarto' : 'quartos'}`);
+  if (row.parking_spaces != null) items.push(`${row.parking_spaces} ${Number(row.parking_spaces) === 1 ? 'vaga' : 'vagas'}`);
+  if (row.area != null) items.push(`${Number(row.area)} m²`);
+  return items.join(' • ') || String(row.property_type || 'Imóvel');
 }
 
 async function ensurePerformanceSchema() {
@@ -401,18 +361,18 @@ function mapLead(row: Record<string, unknown>): LeadProfile {
   const analysis = analyzeLead({
     name: String(row.name), phone: String(row.phone), email: row.email ? String(row.email) : null,
     goal: String(row.goal), propertyType: String(row.property_type), region: String(row.region),
-    budget: String(row.budget), details: row.details ? String(row.details) : null,
+    budget: formatBudget(row), details: row.details ? String(row.details) : null,
     lifecycleStatus, lastContactAt,
   });
   return {
     id: String(row.id), name: String(row.name), phone: String(row.phone),
     email: row.email ? String(row.email) : null, goal: String(row.goal),
-    propertyType: String(row.property_type), region: String(row.region), budget: String(row.budget),
-    details: row.details ? String(row.details) : null, summary: String(row.summary),
+    propertyType: String(row.property_type), region: String(row.region), budget: formatBudget(row),
+    details: row.details ? String(row.details) : null, summary: String(row.summary || ''),
     score: analysis.score, temperature: analysis.temperature, source: String(row.source || 'Formulário do site'),
     assignedTo: row.assigned_to ? String(row.assigned_to) : null, lifecycleStatus, lastContactAt,
     inactivityDays: analysis.inactivityDays, recoveryPotential: analysis.recoveryPotential,
-    scoreReasons: analysis.scoreReasons, recoverySelected: Boolean(row.recovery_selected),
+    scoreReasons: analysis.scoreReasons, recoverySelected: false,
     createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }

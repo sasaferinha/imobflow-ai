@@ -7,6 +7,7 @@ import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/l
 import AutomationCenter from './automation-center';
 import ConversationCenter from './conversation-center';
 import { createDemoConversationState, demoConversationReducer, demoContacts } from '@/lib/demo-conversations';
+import type { ConversationMessage } from '@/lib/conversations';
 
 const LOCAL_LEADS_KEY = 'imobflow_local_leads';
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
@@ -252,6 +253,28 @@ export default function DashboardClient() {
   }, []);
 
   useEffect(() => {
+    if (!capturedLeads.some((lead) => !lead.id.startsWith('seed-'))) return;
+    let active = true;
+    fetch('/api/conversations', { cache: 'no-store' })
+      .then(async (response) => response.ok ? (await response.json() as { data: ConversationMessage[] }).data : [])
+      .then((messages) => {
+        if (!active) return;
+        const grouped = new Map<string, ConversationMessage[]>();
+        for (const message of messages) grouped.set(message.leadId, [...(grouped.get(message.leadId) || []), message]);
+        conversationDispatch({
+          type: 'hydrate',
+          contacts: [...grouped.entries()].map(([leadId, items]) => {
+            const lead = capturedLeads.find((candidate) => candidate.id === leadId);
+            const demo = lead && demoContacts.find((contact) => normalizeCsvHeader(contact.name) === normalizeCsvHeader(lead.name));
+            return { id: demo?.id || `lead-${leadId}`, messages: items.map((item) => ({ id: item.id, side: item.side, text: item.text, time: item.time, images: item.images })) };
+          }),
+        });
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [capturedLeads]);
+
+  useEffect(() => {
     let active = true;
     Promise.all([
       fetch('/api/properties').then(async (response) => response.ok ? (await response.json() as { data: Property[] }).data : initialProperties),
@@ -329,6 +352,15 @@ export default function DashboardClient() {
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 2600);
+  }
+
+  async function persistConversationMessage(input: { leadId: string; content: string; images?: string[]; propertyId?: string }) {
+    const response = await fetch('/api/conversations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    });
+    const result = await response.json() as { data?: ConversationMessage; error?: string };
+    if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar a mensagem.');
+    return { id: result.data.id, time: result.data.time };
   }
 
   function saveSettings(nextSettings: DashboardSettings) {
@@ -449,7 +481,7 @@ export default function DashboardClient() {
     setSharingProperty(property);
   }
 
-  function sharePropertyWithLead(event: FormEvent<HTMLFormElement>) {
+  async function sharePropertyWithLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!sharingProperty) return;
     const form = new FormData(event.currentTarget);
@@ -458,15 +490,20 @@ export default function DashboardClient() {
     const matchingDemo = demoContacts.find((contact) => normalizeCsvHeader(contact.name) === normalizeCsvHeader(lead.name));
     const conversationId = matchingDemo?.id || `lead-${lead.id}`;
     conversationDispatch({ type: 'sync', contacts: [{ id: conversationId }] });
-    conversationDispatch({
-      type: 'share-property', id: conversationId, messageId: crypto.randomUUID(),
-      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      text: String(form.get('message') || '').trim(), images: sharingProperty.images, propertyTitle: sharingProperty.title,
-    });
-    conversationDispatch({ type: 'select', id: conversationId });
-    setSharingProperty(null);
-    setView('conversations');
-    notify(`Imóvel adicionado à conversa com ${lead.name}.`);
+    try {
+      const content = String(form.get('message') || '').trim();
+      const saved = await persistConversationMessage({ leadId: lead.id, content, images: sharingProperty.images, propertyId: sharingProperty.id });
+      conversationDispatch({
+        type: 'share-property', id: conversationId, messageId: saved.id, time: saved.time,
+        text: content, images: sharingProperty.images, propertyTitle: sharingProperty.title,
+      });
+      conversationDispatch({ type: 'select', id: conversationId });
+      setSharingProperty(null);
+      setView('conversations');
+      notify(`Imóvel salvo na conversa com ${lead.name}.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.');
+    }
   }
 
   async function addPropertyImages(files: FileList | null) {
@@ -528,7 +565,7 @@ export default function DashboardClient() {
         </header>
 
         {view === 'overview' && <Overview notify={notify} />}
-        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} leads={capturedLeads} properties={properties} />}
+        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} leads={capturedLeads} properties={properties} />}
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={() => openView('conversations')} notify={notify} onUpdate={updateLead} /></>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} />}

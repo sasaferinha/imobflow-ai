@@ -128,11 +128,20 @@ export type DemoConversationAction =
   | { type: 'send'; id: string; messageId: string; time: string }
   | { type: 'share-property'; id: string; messageId: string; time: string; text: string; images: string[]; propertyTitle: string }
   | { type: 'assign'; id: string }
-  | { type: 'sync'; contacts: Array<{ id: string; unread?: number }> };
+  | { type: 'sync'; contacts: Array<{ id: string; unread?: number }> }
+  | { type: 'hydrate'; contacts: Array<{ id: string; messages: DemoMessage[] }> };
 export function createDemoConversationState(): DemoConversationState {
   return { selectedId: demoContacts[0].id, threads: Object.fromEntries(demoContacts.map(contact => [contact.id, { messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false }])) };
 }
 export function demoConversationReducer(state: DemoConversationState, action: DemoConversationAction): DemoConversationState {
+  if (action.type === 'hydrate') {
+    const threads = { ...state.threads };
+    for (const contact of action.contacts) {
+      const current = threads[contact.id] || { messages: [], draft: '', unread: 0, humanMode: false };
+      threads[contact.id] = { ...current, messages: contact.messages };
+    }
+    return { ...state, threads };
+  }
   if (action.type === 'sync') {
     let changed = false;
     const threads = { ...state.threads };

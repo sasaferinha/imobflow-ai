@@ -17,9 +17,11 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => contact.sourceLead ? liveTemperature(contact.sourceLead.temperature) : demoTemperature(contact.score);
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-export default function ConversationCenter({ state, dispatch, notify, openAgenda, leads = [], properties = [] }: {
+export default function ConversationCenter({ state, dispatch, notify, openAgenda, persistMessage, leads = [], properties = [] }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
-  notify: (message: string) => void; openAgenda: () => void; leads?: LeadProfile[]; properties?: PropertyRecord[];
+  notify: (message: string) => void; openAgenda: () => void;
+  persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string }>;
+  leads?: LeadProfile[]; properties?: PropertyRecord[];
 }) {
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
@@ -61,17 +63,31 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
     ? [['Preferências', lead.details || 'Não informado'], ['Responsável', lead.assignedTo || 'Sem responsável'], ['Último contato', formatDate(lead.lastContactAt)], ['Telefone', lead.phone], ...(lead.email ? [['E-mail', lead.email]] : [])]
     : [['Quartos', selected.rooms], ['Pagamento', selected.payment], ['Estilo de atendimento', selected.style]];
 
-  function send(event: FormEvent) {
+  async function send(event: FormEvent) {
     event.preventDefault();
     if (!thread.draft.trim()) return;
-    dispatch({ type: 'send', id: selected.id, messageId: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
-    notify('Mensagem registrada nesta conversa. Nenhum envio externo realizado.');
+    try {
+      const saved = lead
+        ? await persistMessage({ leadId: lead.id, content: thread.draft.trim() })
+        : { id: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) };
+      dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time });
+      notify(lead ? 'Mensagem salva no histórico do lead.' : 'Mensagem registrada somente nesta demonstração.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível salvar a mensagem.');
+    }
   }
-  function shareProperty(property: PropertyRecord) {
+  async function shareProperty(property: PropertyRecord) {
     const text = `Separei uma opção que combina com o seu perfil:\n\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
-    dispatch({ type: 'share-property', id: selected.id, messageId: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), text, images: property.images, propertyTitle: property.title });
-    setPropertyPickerOpen(false);
-    notify(`${property.title} adicionado à conversa com ${selected.name}.`);
+    try {
+      const saved = lead
+        ? await persistMessage({ leadId: lead.id, content: text, images: property.images, propertyId: property.id })
+        : { id: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) };
+      dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: property.images, propertyTitle: property.title });
+      setPropertyPickerOpen(false);
+      notify(lead ? `${property.title} salvo na conversa com ${selected.name}.` : 'Imóvel adicionado somente à demonstração.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.');
+    }
   }
   return <div className="conversation-demo">
     <section className="conversation-temperature-guide" aria-label="Como interpretar a temperatura dos leads">
