@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
@@ -19,16 +19,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    if (request.nextUrl.searchParams.get("schema") === "full") {
-      const response = await fetch(`${supabaseUrl}/rest/v1/`, {
-        headers: { Accept: "application/openapi+json", apikey: secretKey, Authorization: `Bearer ${secretKey}` },
-        cache: "no-store",
-      });
-      const specification = await response.json() as { definitions?: Record<string, unknown> };
-      const names = ["leads", "properties", "conversations", "messages", "lead_property_events", "appointments"];
-      return NextResponse.json(Object.fromEntries(names.map((name) => [name, specification.definitions?.[name] || null])));
-    }
-
     const response = await fetch(
       `${supabaseUrl}/rest/v1/companies?select=id&limit=1`,
       {

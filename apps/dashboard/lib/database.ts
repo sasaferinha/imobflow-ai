@@ -120,12 +120,13 @@ export async function createAppointment(input: AppointmentInput): Promise<Appoin
   const [leads, properties] = await Promise.all([listLeads(), listProperties()]);
   const lead = leads.find((item) => item.name.toLowerCase() === input.name.toLowerCase());
   const property = properties.find((item) => item.title.toLowerCase() === input.property.toLowerCase());
+  if (!lead) throw new Error('Selecione um lead cadastrado para agendar a visita.');
   const rows = await supabaseRequest<Record<string, unknown>[]>('appointments', {
     method: 'POST', prefer: 'return=representation',
-    body: { company_id: supabaseCompanyId(), lead_id: lead?.id || null, property_id: property?.id || null,
+    body: { company_id: supabaseCompanyId(), lead_id: lead.id, property_id: property?.id || null,
       scheduled_at: `${input.date}T${input.time}:00-03:00`, assigned_to: input.broker, status: input.status, notes: `${input.name} · ${input.property}` },
   });
-  return mapAppointment(rows[0], new Map(lead ? [[lead.id, lead.name]] : []), new Map(property ? [[property.id, property.title]] : []));
+  return mapAppointment(rows[0], new Map([[lead.id, lead.name]]), new Map(property ? [[property.id, property.title]] : []));
 }
 
 export async function updateAppointmentStatus(id: string, status: AppointmentRecord['status']): Promise<AppointmentRecord | null> {

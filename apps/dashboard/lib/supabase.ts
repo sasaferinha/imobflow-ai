@@ -37,5 +37,6 @@ export async function supabaseRequest<T>(path: string, options: RequestOptions =
     throw new Error(`Supabase ${response.status}: ${details}`);
   }
   if (response.status === 204) return undefined as T;
-  return await response.json() as T;
+  const payload = await response.text();
+  return (payload ? JSON.parse(payload) : undefined) as T;
 }
