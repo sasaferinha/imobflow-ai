@@ -24,7 +24,7 @@ BEGIN
     RAISE EXCEPTION 'invalid_registration';
   END IF;
   SELECT * INTO license FROM public.access_licenses WHERE key_hash=p_key_hash AND active=true AND company_id IS NULL FOR UPDATE;
-  IF NOT FOUND OR (license.expires_at IS NOT NULL AND license.expires_at <= now()) THEN RAISE EXCEPTION 'invalid_license'; END IF;
+  IF NOT FOUND OR license.seat_limit <> 5 OR (license.expires_at IS NOT NULL AND license.expires_at <= now()) THEN RAISE EXCEPTION 'invalid_license'; END IF;
   cid := gen_random_uuid();
   INSERT INTO public.companies(id,name,slug) VALUES(cid,p_company,'empresa-' || cid::text);
   INSERT INTO public.account_companies(company_id,name,name_key,seat_limit) VALUES(cid,p_company,p_company_key,5);
