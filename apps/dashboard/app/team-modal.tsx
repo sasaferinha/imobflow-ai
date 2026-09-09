@@ -89,11 +89,6 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
 
         <p className={styles.plan}><strong>Plano Basic</strong><span>{brokers.length} de {limit} corretores cadastrados</span></p>
 
-        <section className={styles.accessKey} aria-label="Informação da chave de acesso">
-          <div><strong>Chave de acesso</strong><small>Validada no cadastro da empresa.</small></div>
-          <span>Ativada</span>
-        </section>
-
         {administrator && !administrator.email && (
           <form className={styles.adminEmail} onSubmit={saveAdministratorEmail}>
             <strong>Defina seu e-mail de administrador</strong>
@@ -120,7 +115,6 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
           <label>Nome completo<input name="name" required minLength={2} maxLength={120} autoComplete="off" placeholder="Ex.: Ana Martins" /></label>
           <label>E-mail de acesso<input name="email" type="email" required maxLength={254} autoComplete="email" placeholder="ana@imobiliaria.com.br" /></label>
           <label>Senha inicial<input name="password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" /></label>
-          <label className={styles.accessKeyField}>Chave de acesso<input value="Plano Basic ativado" readOnly aria-readonly="true" tabIndex={-1} /><small>Esta chave foi usada somente no cadastro da empresa.</small></label>
           {error && <p className="access-error" role="alert">{error}</p>}
           <div className="modal-actions">
             <button type="button" onClick={close}>Fechar</button>

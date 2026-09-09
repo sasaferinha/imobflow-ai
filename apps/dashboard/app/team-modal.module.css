@@ -4,12 +4,6 @@
 .plan strong { color: #075bb3; }
 .plan span { color: #56708c; }
 
-.accessKey { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 18px; padding: 11px 14px; border: 1px solid #dce4ed; border-radius: 10px; background: #fafbfd; }
-.accessKey div { display: grid; gap: 3px; }
-.accessKey strong { color: #344054; font-size: 13px; }
-.accessKey small { color: #667085; font-size: 12px; }
-.accessKey > span { padding: 4px 8px; border-radius: 999px; color: #086739; background: #ecfdf3; font-size: 12px; font-weight: 700; }
-
 .adminEmail { display: grid; gap: 8px; margin: 0 0 16px; padding: 14px; border: 1px solid #d6e5f7; border-radius: 10px; background: #f7fbff; }
 .adminEmail strong { color: #175ca4; font-size: 14px; }
 .adminEmail small { color: #5b7189; font-size: 12px; }
@@ -29,5 +23,3 @@
 .form { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
 .form h3 { margin: 0 0 15px; font-size: 16px; }
 .form label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 13px; }
-.accessKeyField input { color: #667085; background: #f2f4f7; cursor: default; }
-.accessKeyField small { color: #667085; font-size: 12px; }

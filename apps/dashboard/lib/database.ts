@@ -106,6 +106,8 @@ function mapProperty(row: Record<string, unknown>): PropertyRecord {
     propertyType: row.property_type ? String(row.property_type) : undefined,
     bedrooms: row.bedrooms == null ? undefined : Number(row.bedrooms), parkingSpaces: row.parking_spaces == null ? undefined : Number(row.parking_spaces),
     area: row.area == null ? undefined : Number(row.area), publicUrl: row.public_url ? String(row.public_url) : undefined,
+    keyInOffice: row.key_in_office === true, occupied: row.occupied === true,
+    catalogedOnInstagram: row.cataloged_on_instagram === true, catalogedOnSite: row.cataloged_on_site === true,
     meta: propertyMeta(row), tone: 'orchid',
     status: row.status === 'Reservado' ? 'Reservado' : row.status === 'Vendido' ? 'Vendido' : row.status === 'Alugado' ? 'Alugado' : 'Disponível',
     purpose: row.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images, createdAt: new Date(String(row.created_at)).toISOString(),
@@ -193,6 +195,8 @@ function propertyPayload(input: PropertyInput) {
     address: input.address || null, property_type: input.propertyType || null, bedrooms: input.bedrooms ?? null,
     parking_spaces: input.parkingSpaces ?? null, area: input.area ?? null, images: input.images,
     status: input.status || 'Disponível', public_url: input.publicUrl || null,
+    key_in_office: Boolean(input.keyInOffice), occupied: Boolean(input.occupied),
+    cataloged_on_instagram: Boolean(input.catalogedOnInstagram), cataloged_on_site: Boolean(input.catalogedOnSite),
   };
 }
 

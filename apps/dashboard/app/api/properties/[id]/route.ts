@@ -27,10 +27,12 @@ async function handlePATCH(request: NextRequest, context: { params: Promise<{ id
   try {
     const body = await request.json() as Record<string, unknown>;
     const number = (value: unknown) => value === '' || value == null ? undefined : Math.max(0, Number(value) || 0);
+    const yes = (value: unknown) => value === true || value === 'yes';
     const input: PropertyInput = {
       code: clean(body.code, 60), title: clean(body.title, 160), description: clean(body.description, 1200), district: clean(body.district, 120), city: clean(body.city, 120), address: clean(body.address, 300), price: clean(body.price, 80), meta: clean(body.meta, 500),
       tone: clean(body.tone, 30) || 'orchid', purpose: body.purpose === 'Aluguel' ? 'Aluguel' : 'Venda', images: cleanImages(body.images),
       propertyType: clean(body.propertyType, 80), bedrooms: number(body.bedrooms), parkingSpaces: number(body.parkingSpaces), area: number(body.area), publicUrl: clean(body.publicUrl, 500),
+      keyInOffice: yes(body.keyInOffice), occupied: yes(body.occupied), catalogedOnInstagram: yes(body.catalogedOnInstagram), catalogedOnSite: yes(body.catalogedOnSite),
       status: body.status === 'Reservado' ? 'Reservado' : body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
     };
     if (!input.code || !input.title || !input.description || !input.district || !input.city || !input.price || !input.propertyType || input.bedrooms == null || input.parkingSpaces == null || input.area == null) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });

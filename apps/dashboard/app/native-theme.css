@@ -480,6 +480,11 @@ body { -webkit-font-smoothing: antialiased; }
 .app-shell.app-shell .property-form-section h3 { margin: 0 0 16px; color: var(--ink); font-size: 15px; font-weight: 600; }
 .app-shell.app-shell .property-form-section > label:last-child { margin-bottom: 0; }
 .app-shell.app-shell .property-number-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.app-shell.app-shell .property-boolean-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.app-shell.app-shell .property-boolean-grid fieldset { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; margin: 0; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--secondary); }
+.app-shell.app-shell .property-boolean-grid legend { width: 100%; margin-bottom: 2px; color: var(--ink); font-size: 13px; font-weight: 500; }
+.app-shell.app-shell .property-boolean-grid label { display: inline-flex; flex: 1; flex-direction: row; align-items: center; justify-content: center; gap: 7px; min-height: 34px; margin: 0; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; cursor: pointer; }
+.app-shell.app-shell .property-boolean-grid input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
 .app-shell.app-shell .property-public-url { margin-top: 18px; }
 .app-shell.app-shell .detail-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .app-shell.app-shell .property-code { color: var(--muted); font-size: 13px; font-weight: 500; }
@@ -533,6 +538,7 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell .full-chat-body { padding: 20px 16px; }
   .app-shell.app-shell .modal-card { padding: 24px; }
   .app-shell.app-shell .property-number-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .app-shell.app-shell .property-boolean-grid { grid-template-columns: minmax(0, 1fr); }
   .app-shell.app-shell .full-composer { grid-template-columns: 32px 42px minmax(0, 1fr) 36px; padding-inline: 10px; }
   .app-shell.app-shell .full-composer .conversation-property-button { width: 42px; overflow: hidden; padding: 0 10px; font-size: 0; }
   .app-shell.app-shell .full-composer .conversation-property-button::first-letter { font-size: 18px; }

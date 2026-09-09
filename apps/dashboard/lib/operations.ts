@@ -14,6 +14,10 @@ export type PropertyRecord = {
   bedrooms?: number;
   parkingSpaces?: number;
   area?: number;
+  keyInOffice?: boolean;
+  occupied?: boolean;
+  catalogedOnInstagram?: boolean;
+  catalogedOnSite?: boolean;
   status?: 'Disponível' | 'Reservado' | 'Vendido' | 'Alugado';
   publicUrl?: string;
   images: string[];
