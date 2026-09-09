@@ -132,7 +132,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     }
   }
   async function claimConversation() {
-    if (demonstration || isCurrentBroker) return;
+    if (!lead || demonstration || isCurrentBroker) return;
     try {
       await claimLead(lead);
       notify(`${selected.name} agora está no seu atendimento.`);
