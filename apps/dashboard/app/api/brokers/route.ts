@@ -46,5 +46,20 @@ async function createBroker(request: NextRequest) {
   } catch { return NextResponse.json({ error: 'Não foi possível cadastrar. O corretor pode já existir ou o plano Basic atingiu o limite de cinco corretores.' }, { status: 409 }); }
 }
 
+async function updateOwnEmail(request: NextRequest) {
+  const account = currentAccount();
+  if (!account) return NextResponse.json({ error: 'Entre na sua conta para continuar.' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: 'Informe um e-mail válido.' }, { status: 400 });
+    const rows = await supabaseRequest<Broker[]>(`broker_accounts?id=eq.${encodeURIComponent(account.brokerId)}&company_id=eq.${encodeURIComponent(account.companyId)}&select=id,name,email,role,active,created_at`, { method: 'PATCH', prefer: 'return=representation', body: { email, email_key: normalizeEmail(email) } });
+    if (!rows[0]) throw new Error('missing_account');
+    return NextResponse.json({ data: rows[0] });
+  } catch { return NextResponse.json({ error: 'Não foi possível salvar o e-mail de acesso.' }, { status: 409 }); }
+}
+
 export const GET = protectedRoute(getBrokers);
 export const POST = protectedRoute(createBroker);
+export const PATCH = protectedRoute(updateOwnEmail);
