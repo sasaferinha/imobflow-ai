@@ -486,6 +486,13 @@ body { -webkit-font-smoothing: antialiased; }
 .app-shell.app-shell .property-boolean-grid label { display: inline-flex; flex: 1; flex-direction: row; align-items: center; justify-content: center; gap: 7px; min-height: 34px; margin: 0; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; cursor: pointer; }
 .app-shell.app-shell .property-boolean-grid input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
 .app-shell.app-shell .property-public-url { margin-top: 18px; }
+.app-shell.app-shell .property-operation-summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.app-shell.app-shell .property-operation-summary h3 { margin: 0 0 10px; color: var(--ink); font-size: 14px; font-weight: 600; }
+.app-shell.app-shell .property-operation-summary dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; margin: 0; }
+.app-shell.app-shell .property-operation-summary dl > div { display: flex; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.app-shell.app-shell .property-operation-summary dt { color: var(--muted); font-size: 12px; }
+.app-shell.app-shell .property-operation-summary dd { margin: 0; color: var(--ink); font-size: 12px; font-weight: 500; text-align: right; }
+.app-shell.app-shell .property-save-note { margin: 22px 0 -16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .app-shell.app-shell .detail-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .app-shell.app-shell .property-code { color: var(--muted); font-size: 13px; font-weight: 500; }
 .app-shell.app-shell .property-description { margin: 20px 0 4px; color: var(--muted); font-size: 14px; line-height: 1.65; }
@@ -539,6 +546,7 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell .modal-card { padding: 24px; }
   .app-shell.app-shell .property-number-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .app-shell.app-shell .property-boolean-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-shell.app-shell .property-operation-summary dl { grid-template-columns: minmax(0, 1fr); }
   .app-shell.app-shell .full-composer { grid-template-columns: 32px 42px minmax(0, 1fr) 36px; padding-inline: 10px; }
   .app-shell.app-shell .full-composer .conversation-property-button { width: 42px; overflow: hidden; padding: 0 10px; font-size: 0; }
   .app-shell.app-shell .full-composer .conversation-property-button::first-letter { font-size: 18px; }
