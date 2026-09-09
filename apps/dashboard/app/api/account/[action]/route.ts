@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ACCOUNT_COOKIE, authenticate, cookieOptions, hashPassword, issueSession, normalizeName, tokenHash } from '@/lib/accounts';
+import { ACCOUNT_COOKIE, authenticate, cookieOptions, hashPassword, issueSession, normalizeEmail, normalizeName, tokenHash } from '@/lib/accounts';
 import { COOKIE_NAME } from '@/lib/admin-auth';
 import { type Account } from '@/lib/tenant-context';
 import { consumeRateLimit, hasSameOrigin } from '@/lib/request-security';
@@ -19,19 +19,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!body || Array.isArray(body)) return NextResponse.json({ error: 'Dados inválidos.' }, { status: 400 });
     const company = typeof body.company === 'string' ? body.company.normalize('NFKC').trim().replace(/\s+/g, ' ') : '';
     const name = typeof body.name === 'string' ? body.name.normalize('NFKC').trim().replace(/\s+/g, ' ') : '';
+    const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
     const password = typeof body.password === 'string' ? body.password : '';
-    if (company.length < 2 || company.length > 120 || name.length < 2 || name.length > 120 || !password || password.length > 128) return NextResponse.json({ error: 'Preencha empresa, nome do corretor e senha.' }, { status: 400 });
+    if (company.length < 2 || company.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password || password.length > 128 || (action === 'enroll' && (name.length < 2 || name.length > 120))) return NextResponse.json({ error: 'Preencha empresa, e-mail e senha corretamente.' }, { status: 400 });
     let account: Account | null;
     if (action === 'login') {
-      account = await authenticate(company, name, password);
-      if (!account) return NextResponse.json({ error: 'Empresa, corretor ou senha incorretos.' }, { status: 401 });
+      account = await authenticate(company, email, password);
+      if (!account) return NextResponse.json({ error: 'Empresa, e-mail ou senha incorretos.' }, { status: 401 });
     } else {
       const accessKey = typeof body.accessKey === 'string' ? body.accessKey.normalize('NFKC').trim() : '';
       if (accessKey.length < 20 || accessKey.length > 160) return NextResponse.json({ error: 'Informe uma chave de acesso válida.' }, { status: 400 });
-      if (password.length < 12) return NextResponse.json({ error: 'Use uma senha com pelo menos 12 caracteres.' }, { status: 400 });
+      if (password.length < 8) return NextResponse.json({ error: 'Use uma senha com pelo menos 8 caracteres.' }, { status: 400 });
       try {
         const rows = await supabaseRequest<Array<{ broker_id: string; company_id: string; company: string; broker_name: string; role: 'owner' | 'broker' }>>('rpc/redeem_access_license', { method: 'POST', body: {
-          p_company: company, p_company_key: normalizeName(company), p_name: name, p_name_key: normalizeName(name),
+          p_company: company, p_company_key: normalizeName(company), p_name: name, p_name_key: normalizeName(name), p_email: email, p_email_key: normalizeEmail(email),
           p_password_hash: await hashPassword(password), p_key_hash: tokenHash(accessKey),
         } });
         const row = rows[0];

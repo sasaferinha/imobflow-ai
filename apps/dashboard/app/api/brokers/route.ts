@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { hashPassword, normalizeName, protectedRoute } from '@/lib/accounts';
+import { hashPassword, normalizeEmail, normalizeName, protectedRoute } from '@/lib/accounts';
 import { currentAccount } from '@/lib/tenant-context';
 import { consumeRateLimit, hasSameOrigin } from '@/lib/request-security';
 import { supabaseRequest } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 
-type Broker = { id: string; name: string; role: 'owner' | 'broker'; active: boolean; created_at: string };
+type Broker = { id: string; name: string; email: string | null; role: 'owner' | 'broker'; active: boolean; created_at: string };
 
 function owner() {
   const account = currentAccount();
@@ -18,7 +18,7 @@ async function getBrokers() {
   if (!account) return NextResponse.json({ error: 'Apenas o administrador da empresa pode gerenciar corretores.' }, { status: 403 });
   try {
     const [brokers, company] = await Promise.all([
-      supabaseRequest<Broker[]>(`broker_accounts?company_id=eq.${encodeURIComponent(account.companyId)}&select=id,name,role,active,created_at&order=created_at.asc`),
+      supabaseRequest<Broker[]>(`broker_accounts?company_id=eq.${encodeURIComponent(account.companyId)}&select=id,name,email,role,active,created_at&order=created_at.asc`),
       supabaseRequest<Array<{ seat_limit: number }>>(`account_companies?company_id=eq.${encodeURIComponent(account.companyId)}&select=seat_limit&limit=1`),
     ]);
     return NextResponse.json({ data: brokers, brokerLimit: company[0]?.seat_limit || 5 });
@@ -35,10 +35,11 @@ async function createBroker(request: NextRequest) {
     if (Buffer.byteLength(raw) > 2048) return NextResponse.json({ error: 'Dados acima do limite.' }, { status: 413 });
     const body = JSON.parse(raw) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.normalize('NFKC').trim().replace(/\s+/g, ' ') : '';
+    const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
     const password = typeof body.password === 'string' ? body.password : '';
-    if (name.length < 2 || name.length > 120 || password.length < 12 || password.length > 128) return NextResponse.json({ error: 'Informe o nome e uma senha de pelo menos 12 caracteres.' }, { status: 400 });
+    if (name.length < 2 || name.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8 || password.length > 128) return NextResponse.json({ error: 'Informe nome, e-mail válido e uma senha de pelo menos 8 caracteres.' }, { status: 400 });
     const rows = await supabaseRequest<Broker[]>('rpc/create_company_broker', { method: 'POST', body: {
-      p_company_id: account.companyId, p_name: name, p_name_key: normalizeName(name), p_password_hash: await hashPassword(password),
+      p_company_id: account.companyId, p_name: name, p_name_key: normalizeName(name), p_email: email, p_email_key: normalizeEmail(email), p_password_hash: await hashPassword(password),
     } });
     if (!rows[0]) throw new Error('empty_broker');
     return NextResponse.json({ data: rows[0] }, { status: 201 });

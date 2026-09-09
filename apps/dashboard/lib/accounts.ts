@@ -7,6 +7,7 @@ export const ACCOUNT_COOKIE = 'imobflow_session';
 export const SESSION_SECONDS = 12 * 60 * 60;
 export const cookieOptions = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' as const, path: '/', maxAge: SESSION_SECONDS };
 export const normalizeName = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
+export const normalizeEmail = (value: string) => value.normalize('NFKC').trim().toLowerCase();
 export const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
 export const newToken = () => randomBytes(32).toString('hex');
 function derive(password: string, salt: string): Promise<Buffer> {
@@ -22,9 +23,9 @@ export async function verifyPassword(password: string, hash: string) {
   return timingSafeEqual(await derive(password, salt), Buffer.from(encoded, 'hex'));
 }
 type BrokerRow = { id: string; company_id: string; name: string; role: 'owner' | 'broker'; password_hash: string; active: boolean };
-export async function authenticate(company: string, name: string, password: string): Promise<Account | null> {
+export async function authenticate(company: string, email: string, password: string): Promise<Account | null> {
   const companies = await supabaseRequest<Array<{ company_id: string; name: string }>>(`account_companies?name_key=eq.${encodeURIComponent(normalizeName(company))}&select=company_id,name&limit=1`);
-  const brokers = companies[0] ? await supabaseRequest<BrokerRow[]>(`broker_accounts?company_id=eq.${companies[0].company_id}&name_key=eq.${encodeURIComponent(normalizeName(name))}&select=*&limit=1`) : [];
+  const brokers = companies[0] ? await supabaseRequest<BrokerRow[]>(`broker_accounts?company_id=eq.${companies[0].company_id}&email_key=eq.${encodeURIComponent(normalizeEmail(email))}&select=*&limit=1`) : [];
   const broker = brokers[0];
   // Equivalent expensive work for missing users avoids a cheap username oracle.
   const valid = await verifyPassword(password, broker?.password_hash || `scrypt-v1$${'0'.repeat(32)}$${'0'.repeat(128)}`);
