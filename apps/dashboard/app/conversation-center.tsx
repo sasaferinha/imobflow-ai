@@ -27,7 +27,7 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
     <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
       <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>Clientes cadastrados</button>
       <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>Ver demonstração</button>
-      {preview && <span>Contatos fictícios: esta prévia não envia mensagens nem atribui clientes a corretores.</span>}
+      {preview && <span>Contatos fictícios: esta prévia permite simular o atendimento, sem enviar mensagens nem alterar clientes reais.</span>}
     </div>
     {preview ? <ConversationWorkspace {...props} demonstration state={previewState} dispatch={previewDispatch} leads={previewLeads}
       persistMessage={async () => ({ id: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) })}
