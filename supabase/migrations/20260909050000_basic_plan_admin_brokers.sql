@@ -23,7 +23,7 @@ BEGIN
   IF p_key_hash !~ '^[a-f0-9]{64}$' OR length(p_company) NOT BETWEEN 2 AND 120 OR length(p_name) NOT BETWEEN 2 AND 120 OR p_password_hash NOT LIKE 'scrypt-v1$%' THEN
     RAISE EXCEPTION 'invalid_registration';
   END IF;
-  SELECT * INTO license FROM public.access_licenses WHERE key_hash=p_key_hash AND active=true AND company_id IS NULL FOR UPDATE;
+  SELECT * INTO license FROM public.access_licenses AS access_license WHERE access_license.key_hash=p_key_hash AND access_license.active=true AND access_license.company_id IS NULL FOR UPDATE;
   IF NOT FOUND OR license.seat_limit <> 5 OR (license.expires_at IS NOT NULL AND license.expires_at <= now()) THEN RAISE EXCEPTION 'invalid_license'; END IF;
   cid := gen_random_uuid();
   INSERT INTO public.companies(id,name,slug) VALUES(cid,p_company,'empresa-' || cid::text);
