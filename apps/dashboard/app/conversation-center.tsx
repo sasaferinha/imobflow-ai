@@ -48,6 +48,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
   const lead = selected?.sourceLead;
   useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight; }, [selected?.id, thread.messages.length]);
   if (!selected || !lead) return <div className="conversation-demo"><section className="conversation-temperature-guide" aria-label="Como interpretar a temperatura dos leads"><div><strong>Temperatura do lead</strong><span>Use o nível de interesse para priorizar os atendimentos.</span></div><dl><div><dt className="conversation-temperature" data-temperature="Frio">Frio</dt><dd>Contato inicial ou com poucas informações.</dd></div><div><dt className="conversation-temperature" data-temperature="Morno">Morno</dt><dd>Tem interesse, mas ainda está avaliando opções.</dd></div><div><dt className="conversation-temperature" data-temperature="Quente">Quente</dt><dd>Perfil completo e pronto para avançar.</dd></div></dl></section><section className="panel empty-live-data"><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
+  const leadId = lead.id;
   const filtered = contacts.filter((contact) => {
     const current = state.threads[contact.id] || emptyThread;
     return (!onlyUnread || current.unread > 0) && normalize(`${contact.name} ${contact.style} ${contact.region}`).includes(normalize(search));
@@ -66,7 +67,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
     event.preventDefault();
     if (!thread.draft.trim()) return;
     try {
-      const saved = await persistMessage({ leadId: lead.id, content: thread.draft.trim() });
+      const saved = await persistMessage({ leadId, content: thread.draft.trim() });
       dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time });
       notify('Mensagem salva no histórico do lead.');
     } catch (error) {
@@ -76,7 +77,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
   async function shareProperty(property: PropertyRecord) {
     const text = `Separei uma opção que combina com o seu perfil:\n\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
     try {
-      const saved = await persistMessage({ leadId: lead.id, content: text, images: property.images, propertyId: property.id });
+      const saved = await persistMessage({ leadId, content: text, images: property.images, propertyId: property.id });
       dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: property.images, propertyTitle: property.title });
       setPropertyPickerOpen(false);
       notify(`${property.title} salvo na conversa com ${selected.name}.`);
