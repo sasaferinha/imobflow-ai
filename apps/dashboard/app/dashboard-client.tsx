@@ -218,15 +218,6 @@ export default function DashboardClient({ account }: { account?: { name: string;
   const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>([]);
   const [selectedLead, setSelectedLead] = useState<DashboardLead | null>(null);
 
-  async function createBrokerInvitation() {
-    setProfileOpen(false);
-    try {
-      const response = await fetch('/api/account/invite', { method: 'POST' });
-      const result = await response.json().catch(() => ({})) as { invitation?: string; error?: string };
-      if (!response.ok || !result.invitation) { notify(result.error || 'Não foi possível gerar o convite.'); return; }
-      window.prompt('Envie este código ao corretor. Ele vale por 24 horas e pode ser usado uma única vez:', result.invitation);
-    } catch { notify('Não foi possível gerar o convite.'); }
-  }
 
   useEffect(() => {
     let active = true;
@@ -568,7 +559,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
         <div className="sidebar-card"><span className="live-dot" /><div><strong>Sistema operacional</strong><span>Serviços funcionando normalmente</span></div></div>
         <div className="profile-wrap">
           <div className="profile-row"><button type="button" className="profile-identity" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}><span className="avatar">{profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span><div><strong>{profile.name}</strong><span>{profile.company}</span></div></button><button type="button" className="profile-options" aria-label="Mais opções do perfil" aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>•••</button></div>
-          {profileOpen && <div className="profile-menu popover"><strong>Perfil do corretor</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button>{account?.role === 'owner' && <button type="button" onClick={createBrokerInvitation}>Convidar corretor</button>}<button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
+          {profileOpen && <div className="profile-menu popover"><strong>Perfil do corretor</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button><button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
         </div>
       </aside>
 
