@@ -1,3 +1,4 @@
+import { protectedRoute } from '@/lib/accounts';
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { createAppointment, listAppointments } from '@/lib/database';
@@ -10,7 +11,7 @@ function clean(value: unknown, max = 200) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   try {
     return NextResponse.json({ data: await listAppointments() });
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -38,3 +39,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Não foi possível salvar o horário.' }, { status: 500 });
   }
 }
+
+export const GET = protectedRoute(handleGET);
+export const POST = protectedRoute(handlePOST);

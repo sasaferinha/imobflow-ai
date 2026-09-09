@@ -3,6 +3,7 @@ import { neon } from '@neondatabase/serverless';
 import { listLeads, listProperties } from './database';
 import { automationFlows, evaluateAutomation, type FlowId } from './automation-rules';
 import { newPropertyCandidates, whatsappNumber } from './property-matching';
+import { supabaseCompanyId } from './supabase';
 
 function database() {
   if (!process.env.DATABASE_URL) throw new Error('Banco de dados não configurado.');
@@ -12,43 +13,65 @@ function database() {
 // Additive PostgreSQL schema, following the project's existing database bootstrap.
 async function ensureSchema() {
   const sql = database();
-  await sql`CREATE TABLE IF NOT EXISTS site_automation_settings (id TEXT PRIMARY KEY, active BOOLEAN NOT NULL DEFAULT TRUE)`;
+  const legacyCompany = process.env.SUPABASE_COMPANY_ID || '00000000-0000-4000-8000-000000000001';
+  await sql`CREATE TABLE IF NOT EXISTS site_automation_settings (company_id TEXT NOT NULL, id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, PRIMARY KEY(company_id,id))`;
   await sql`CREATE TABLE IF NOT EXISTS site_automation_results (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), flow_id TEXT NOT NULL, lead_id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id TEXT NOT NULL, flow_id TEXT NOT NULL, lead_id UUID NOT NULL,
     fingerprint TEXT NOT NULL, summary TEXT NOT NULL, detail JSONB NOT NULL,
     status TEXT NOT NULL DEFAULT 'open', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (flow_id, lead_id, fingerprint))`;
+    UNIQUE (company_id, flow_id, lead_id, fingerprint))`;
   await sql`CREATE TABLE IF NOT EXISTS site_automation_runs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), flow_id TEXT NOT NULL, trigger TEXT NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id TEXT NOT NULL, flow_id TEXT NOT NULL, trigger TEXT NOT NULL,
     status TEXT NOT NULL, processed INTEGER NOT NULL DEFAULT 0, message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
-  await sql`CREATE TABLE IF NOT EXISTS site_automation_lock (id INTEGER PRIMARY KEY, token TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL)`;
-  await sql`INSERT INTO site_automation_settings (id) SELECT jsonb_array_elements_text(${JSON.stringify(automationFlows.map((flow) => flow.id))}::jsonb) ON CONFLICT DO NOTHING`;
+  await sql`CREATE TABLE IF NOT EXISTS site_automation_lock (company_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL)`;
+  await sql`ALTER TABLE site_automation_settings ADD COLUMN IF NOT EXISTS company_id TEXT`;
+  await sql`UPDATE site_automation_settings SET company_id=${legacyCompany} WHERE company_id IS NULL`;
+  await sql`ALTER TABLE site_automation_settings ALTER COLUMN company_id SET NOT NULL`;
+  await sql`ALTER TABLE site_automation_settings DROP CONSTRAINT IF EXISTS site_automation_settings_pkey`;
+  await sql`ALTER TABLE site_automation_settings ADD PRIMARY KEY(company_id,id)`;
+  await sql`ALTER TABLE site_automation_results ADD COLUMN IF NOT EXISTS company_id TEXT`;
+  await sql`UPDATE site_automation_results SET company_id=${legacyCompany} WHERE company_id IS NULL`;
+  await sql`ALTER TABLE site_automation_results ALTER COLUMN company_id SET NOT NULL`;
+  await sql`ALTER TABLE site_automation_results DROP CONSTRAINT IF EXISTS site_automation_results_flow_id_lead_id_fingerprint_key`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS site_automation_results_company_unique ON site_automation_results(company_id,flow_id,lead_id,fingerprint)`;
+  await sql`ALTER TABLE site_automation_runs ADD COLUMN IF NOT EXISTS company_id TEXT`;
+  await sql`UPDATE site_automation_runs SET company_id=${legacyCompany} WHERE company_id IS NULL`;
+  await sql`ALTER TABLE site_automation_runs ALTER COLUMN company_id SET NOT NULL`;
+  await sql`ALTER TABLE site_automation_lock ADD COLUMN IF NOT EXISTS company_id TEXT`;
+  await sql`UPDATE site_automation_lock SET company_id=${legacyCompany} WHERE company_id IS NULL`;
+  await sql`ALTER TABLE site_automation_lock ALTER COLUMN company_id SET NOT NULL`;
+  await sql`ALTER TABLE site_automation_lock DROP CONSTRAINT IF EXISTS site_automation_lock_pkey`;
+  await sql`ALTER TABLE site_automation_lock DROP COLUMN IF EXISTS id`;
+  await sql`ALTER TABLE site_automation_lock ADD PRIMARY KEY(company_id)`;
+  const companyId = supabaseCompanyId();
+  await sql`INSERT INTO site_automation_settings (company_id,id) SELECT ${companyId}, jsonb_array_elements_text(${JSON.stringify(automationFlows.map((flow) => flow.id))}::jsonb) ON CONFLICT DO NOTHING`;
 }
 
 export async function automationSnapshot() {
   if (!process.env.DATABASE_URL) return { configured: false, schedulerConfigured: false, flows: [], results: [], runs: [] };
   await ensureSchema();
   const sql = database();
+  const companyId = supabaseCompanyId();
   const [settings, counts, results, runs] = await Promise.all([
-    sql`SELECT * FROM site_automation_settings`,
-    sql`SELECT flow_id, count(*)::int AS total FROM site_automation_results GROUP BY flow_id`,
+    sql`SELECT * FROM site_automation_settings WHERE company_id=${companyId}`,
+    sql`SELECT flow_id, count(*)::int AS total FROM site_automation_results WHERE company_id=${companyId} GROUP BY flow_id`,
     sql`SELECT id, flow_id, summary, detail, status, created_at FROM (
-      SELECT *, row_number() OVER (PARTITION BY flow_id ORDER BY created_at DESC) AS position FROM site_automation_results
+      SELECT *, row_number() OVER (PARTITION BY flow_id ORDER BY created_at DESC) AS position FROM site_automation_results WHERE company_id=${companyId}
     ) recent WHERE position <= 100 ORDER BY created_at DESC`,
-    sql`SELECT * FROM site_automation_runs ORDER BY created_at DESC LIMIT 40`,
+    sql`SELECT * FROM site_automation_runs WHERE company_id=${companyId} ORDER BY created_at DESC LIMIT 40`,
   ]);
   return { configured: true, schedulerConfigured: Boolean(process.env.CRON_SECRET), flows: automationFlows.map((flow) => ({ ...flow, active: settings.find((setting) => setting.id === flow.id)?.active === true, total: Number(counts.find((count) => count.flow_id === flow.id)?.total || 0) })), results, runs };
 }
 
 export async function setAutomationActive(id: FlowId, active: boolean) {
   await ensureSchema();
-  await database()`UPDATE site_automation_settings SET active=${active} WHERE id=${id}`;
+  await database()`UPDATE site_automation_settings SET active=${active} WHERE company_id=${supabaseCompanyId()} AND id=${id}`;
 }
 
 export async function completeAutomationResult(id: string) {
   await ensureSchema();
-  return database()`UPDATE site_automation_results SET status='done' WHERE id=${id} AND status='open' RETURNING id`;
+  return database()`UPDATE site_automation_results SET status='done' WHERE company_id=${supabaseCompanyId()} AND id=${id} AND status='open' RETURNING id`;
 }
 
 // A fresh read prevents an old draft from offering a sold property or a profile
@@ -56,7 +79,7 @@ export async function completeAutomationResult(id: string) {
 export async function prepareMatchMessage(id: string) {
   await ensureSchema();
   const rows = await database()`SELECT lead_id, detail FROM site_automation_results
-    WHERE id=${id} AND flow_id='new-property' AND status='open'`;
+    WHERE company_id=${supabaseCompanyId()} AND id=${id} AND flow_id='new-property' AND status='open'`;
   if (!rows.length) return { error: 'Este rascunho não está mais disponível.' };
   const [leads, properties] = await Promise.all([listLeads(10001), listProperties(true)]);
   const lead = leads.find((item) => item.id === rows[0].lead_id);
@@ -69,9 +92,10 @@ export async function prepareMatchMessage(id: string) {
 export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selected?: FlowId) {
   await ensureSchema();
   const sql = database();
+  const companyId = supabaseCompanyId();
   const token = randomUUID();
-  const lock = await sql`INSERT INTO site_automation_lock (id, token, expires_at) VALUES (1, ${token}, NOW() + INTERVAL '2 minutes')
-    ON CONFLICT (id) DO UPDATE SET token=EXCLUDED.token, expires_at=EXCLUDED.expires_at
+  const lock = await sql`INSERT INTO site_automation_lock (company_id, token, expires_at) VALUES (${companyId}, ${token}, NOW() + INTERVAL '2 minutes')
+    ON CONFLICT (company_id) DO UPDATE SET token=EXCLUDED.token, expires_at=EXCLUDED.expires_at
     WHERE site_automation_lock.expires_at < NOW() RETURNING token`;
   if (!lock.length) return { busy: true, processed: 0, failed: 0 };
   let processed = 0;
@@ -79,7 +103,7 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
   try {
     const leads = await listLeads(10001);
     if (leads.length > 10000) throw new Error('Lote acima do limite seguro.');
-    const settings = await sql`SELECT id FROM site_automation_settings WHERE active=TRUE`;
+    const settings = await sql`SELECT id FROM site_automation_settings WHERE company_id=${companyId} AND active=TRUE`;
     const active = automationFlows.filter((flow) => (!selected || flow.id === selected) && settings.some((setting) => setting.id === flow.id));
     const properties = active.some((flow) => flow.id === 'recommendations' || flow.id === 'new-property') ? await listProperties(true) : [];
     // The CRM source of truth is Supabase. Close reminders that no longer match
@@ -90,7 +114,7 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
       contact_version: lead.lastContactAt || lead.createdAt,
     }));
     await sql`UPDATE site_automation_results r SET status='cancelled'
-      WHERE r.flow_id='followup' AND r.status='open'
+      WHERE r.company_id=${companyId} AND r.flow_id='followup' AND r.status='open'
       AND NOT EXISTS (
         SELECT 1 FROM jsonb_to_recordset(${JSON.stringify(leadStates)}::jsonb)
           AS current_lead(id UUID, lifecycle_status TEXT, contact_version TEXT)
@@ -105,35 +129,35 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
         // Effect, deduplication and success accounting commit together. A pause is
         // rechecked under a row lock, so it also applies to queued executions.
         const rows = await sql`WITH enabled AS (
-            SELECT id FROM site_automation_settings WHERE id=${flow.id} AND active=TRUE FOR SHARE
+            SELECT id FROM site_automation_settings WHERE company_id=${companyId} AND id=${flow.id} AND active=TRUE FOR SHARE
           ), owned AS (
-            SELECT token FROM site_automation_lock WHERE id=1 AND token=${token} AND expires_at > NOW() FOR SHARE
+            SELECT token FROM site_automation_lock WHERE company_id=${companyId} AND token=${token} AND expires_at > NOW() FOR SHARE
           ), payload AS (
             SELECT p.* FROM jsonb_to_recordset(${JSON.stringify(candidates)}::jsonb)
               AS p(lead_id UUID, fingerprint TEXT, summary TEXT, detail JSONB), enabled, owned
           ), inserted AS (
-            INSERT INTO site_automation_results (flow_id, lead_id, fingerprint, summary, detail, status)
-            SELECT ${flow.id}, p.lead_id, p.fingerprint, p.summary, p.detail,
+            INSERT INTO site_automation_results (company_id,flow_id, lead_id, fingerprint, summary, detail, status)
+            SELECT ${companyId}, ${flow.id}, p.lead_id, p.fingerprint, p.summary, p.detail,
               CASE WHEN ${flow.id}='qualification' THEN 'done' ELSE 'open' END FROM payload p
             ON CONFLICT DO NOTHING RETURNING lead_id, detail
           )
-          INSERT INTO site_automation_runs (flow_id, trigger, status, processed)
-          SELECT ${flow.id}, ${trigger}, 'success', (SELECT count(*) FROM inserted) FROM enabled, owned
+          INSERT INTO site_automation_runs (company_id,flow_id, trigger, status, processed)
+          SELECT ${companyId}, ${flow.id}, ${trigger}, 'success', (SELECT count(*) FROM inserted) FROM enabled, owned
           RETURNING processed`;
         processed += Number(rows[0]?.processed || 0);
       } catch {
         failed += 1;
-        await sql`INSERT INTO site_automation_runs (flow_id, trigger, status, message)
-          VALUES (${flow.id}, ${trigger}, 'failed', 'Falha ao processar. Tente novamente; itens já concluídos não serão duplicados.')`;
+        await sql`INSERT INTO site_automation_runs (company_id,flow_id, trigger, status, message)
+          VALUES (${companyId}, ${flow.id}, ${trigger}, 'failed', 'Falha ao processar. Tente novamente; itens já concluídos não serão duplicados.')`;
       }
     }
     return { busy: false, processed, failed };
   } catch (error) {
-    await sql`INSERT INTO site_automation_runs (flow_id, trigger, status, message)
-      VALUES (${selected || 'all'}, ${trigger}, 'failed', 'Não foi possível carregar ou processar a base. Verifique o banco e o limite de 10.000 leads por execução.')`;
+    await sql`INSERT INTO site_automation_runs (company_id,flow_id, trigger, status, message)
+      VALUES (${companyId}, ${selected || 'all'}, ${trigger}, 'failed', 'Não foi possível carregar ou processar a base. Verifique o banco e o limite de 10.000 leads por execução.')`;
     throw error;
   } finally {
-    await sql`DELETE FROM site_automation_lock WHERE id=1 AND token=${token}`;
+    await sql`DELETE FROM site_automation_lock WHERE company_id=${companyId} AND token=${token}`;
   }
 }
 

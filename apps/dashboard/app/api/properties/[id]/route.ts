@@ -1,3 +1,4 @@
+import { protectedRoute } from '@/lib/accounts';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { deleteProperty, updateProperty } from '@/lib/database';
@@ -20,7 +21,7 @@ function cleanImages(value: unknown) {
   return images.reduce<string[]>((accepted, image) => accepted.join('').length + image.length <= 3_200_000 ? [...accepted, image] : accepted, []);
 }
 
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function handlePATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -43,7 +44,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   }
 }
 
-export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function handleDELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -55,3 +56,6 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     return NextResponse.json({ error: 'Não foi possível excluir o imóvel.' }, { status: 500 });
   }
 }
+
+export const PATCH = protectedRoute(handlePATCH);
+export const DELETE = protectedRoute(handleDELETE);

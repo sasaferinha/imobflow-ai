@@ -18,7 +18,7 @@ async function sql(parts, ...values) {
   if (query.trim().startsWith('SELECT id FROM site_automation_settings')) return [{ id: 'new-property' }];
   if (query.includes("UPDATE site_automation_results r SET status='cancelled'")) {
     assert.ok(!query.includes('site_leads'));
-    const states = JSON.parse(values[0]);
+    const states = JSON.parse(values.find(value => typeof value === 'string' && value.startsWith('[')));
     assert.equal(states[0].lifecycle_status, lead.lifecycleStatus);
     assert.equal(states[0].contact_version, lead.lastContactAt || lead.createdAt);
     return [];
@@ -50,7 +50,10 @@ function load(relative) {
       listLeads: async () => [lead],
       listProperties: async (automationOnly) => { assert.equal(automationOnly, true); propertyReads++; return properties; }
     };
+    if (name === './supabase') return { supabaseCompanyId: () => 'test-company' };
     if (name === '@/lib/admin-auth') return { isAdminRequest: () => auth };
+    if (name === '@/lib/accounts') return { protectedRoute: (handler) => handler };
+    if (name === '@/lib/supabase') return { supabaseCompanyId: () => 'test-company' };
     if (name === 'next/server') return { NextResponse: { json: (body, options = {}) => ({ body, status: options.status || 200 }) } };
     if (name.startsWith('@/')) return load(name.slice(2) + '.ts');
     if (name.startsWith('.')) return load(path.posix.join(path.posix.dirname(relative), name + '.ts'));

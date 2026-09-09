@@ -212,15 +212,18 @@ function propertyMeta(row: Record<string, unknown>) {
 
 async function ensurePerformanceSchema() {
   const sql = database();
+  const legacyCompany = process.env.SUPABASE_COMPANY_ID || '00000000-0000-4000-8000-000000000001';
   await sql`CREATE TABLE IF NOT EXISTS site_performance_months (
-    month TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    month TEXT NOT NULL,
     company_goal NUMERIC(14,2) NOT NULL DEFAULT 0,
     leads_received INTEGER NOT NULL DEFAULT 0,
     converted_leads INTEGER NOT NULL DEFAULT 0,
     recovered_leads INTEGER NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (company_id, month)
   )`;
   await sql`CREATE TABLE IF NOT EXISTS site_broker_goals (
+    company_id TEXT NOT NULL,
     month TEXT NOT NULL,
     broker TEXT NOT NULL,
     goal NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -228,15 +231,26 @@ async function ensurePerformanceSchema() {
     converted_leads INTEGER NOT NULL DEFAULT 0,
     recovered_leads INTEGER NOT NULL DEFAULT 0,
     visits INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (month, broker)
+    PRIMARY KEY (company_id, month, broker)
   )`;
   await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS leads_received INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS converted_leads INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS recovered_leads INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS visits INTEGER NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE site_performance_months ADD COLUMN IF NOT EXISTS company_id TEXT`;
+  await sql`UPDATE site_performance_months SET company_id=${legacyCompany} WHERE company_id IS NULL`;
+  await sql`ALTER TABLE site_performance_months ALTER COLUMN company_id SET NOT NULL`;
+  await sql`ALTER TABLE site_performance_months DROP CONSTRAINT IF EXISTS site_performance_months_pkey`;
+  await sql`ALTER TABLE site_performance_months ADD PRIMARY KEY (company_id, month)`;
+  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS company_id TEXT`;
+  await sql`UPDATE site_broker_goals SET company_id=${legacyCompany} WHERE company_id IS NULL`;
+  await sql`ALTER TABLE site_broker_goals ALTER COLUMN company_id SET NOT NULL`;
+  await sql`ALTER TABLE site_broker_goals DROP CONSTRAINT IF EXISTS site_broker_goals_pkey`;
+  await sql`ALTER TABLE site_broker_goals ADD PRIMARY KEY (company_id, month, broker)`;
   await sql`CREATE TABLE IF NOT EXISTS site_sales (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    reference_key TEXT UNIQUE,
+    company_id TEXT NOT NULL,
+    reference_key TEXT,
     sale_date DATE NOT NULL,
     broker TEXT NOT NULL,
     property TEXT NOT NULL,
@@ -245,25 +259,31 @@ async function ensurePerformanceSchema() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
   await sql`ALTER TABLE site_sales ADD COLUMN IF NOT EXISTS deal_type TEXT NOT NULL DEFAULT 'Venda'`;
+  await sql`ALTER TABLE site_sales ADD COLUMN IF NOT EXISTS company_id TEXT`;
+  await sql`UPDATE site_sales SET company_id=${legacyCompany} WHERE company_id IS NULL`;
+  await sql`ALTER TABLE site_sales ALTER COLUMN company_id SET NOT NULL`;
+  await sql`ALTER TABLE site_sales DROP CONSTRAINT IF EXISTS site_sales_reference_key_key`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS site_sales_company_reference_key ON site_sales(company_id, reference_key) WHERE reference_key IS NOT NULL`;
 }
 
 export async function getPerformance(month: string): Promise<PerformanceSnapshot> {
   await ensurePerformanceSchema();
   const sql = database();
-  await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
-    VALUES (${month}, 0, 0, 0, 0) ON CONFLICT (month) DO NOTHING`;
-  const settingsRows = await sql`SELECT company_goal, leads_received, converted_leads, recovered_leads FROM site_performance_months WHERE month=${month}`;
-  const goalRows = await sql`SELECT broker, goal, leads_received, converted_leads, recovered_leads, visits FROM site_broker_goals WHERE month=${month} ORDER BY broker`;
+  const companyId = supabaseCompanyId();
+  await sql`INSERT INTO site_performance_months (company_id, month, company_goal, leads_received, converted_leads, recovered_leads)
+    VALUES (${companyId}, ${month}, 0, 0, 0, 0) ON CONFLICT (company_id, month) DO NOTHING`;
+  const settingsRows = await sql`SELECT company_goal, leads_received, converted_leads, recovered_leads FROM site_performance_months WHERE company_id=${companyId} AND month=${month}`;
+  const goalRows = await sql`SELECT broker, goal, leads_received, converted_leads, recovered_leads, visits FROM site_broker_goals WHERE company_id=${companyId} AND month=${month} ORDER BY broker`;
   const saleRows = await sql`SELECT id, sale_date, broker, property, client, amount, deal_type, created_at FROM site_sales
-    WHERE TO_CHAR(sale_date, 'YYYY-MM')=${month}
+    WHERE company_id=${companyId} AND TO_CHAR(sale_date, 'YYYY-MM')=${month}
       AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[])) ORDER BY sale_date DESC, created_at DESC`;
   const historyRows = await sql`WITH recent_months AS (
       SELECT DISTINCT TO_CHAR(sale_date, 'YYYY-MM') AS month FROM site_sales
-      WHERE deal_type='Venda' AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[]))
+      WHERE company_id=${companyId} AND deal_type='Venda' AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[]))
         AND sale_date < ((${month} || '-01')::date + INTERVAL '1 month') ORDER BY month DESC LIMIT 6
     )
     SELECT TO_CHAR(sale_date, 'YYYY-MM') AS month, broker, SUM(amount) AS sold FROM site_sales
-    WHERE deal_type='Venda' AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[]))
+    WHERE company_id=${companyId} AND deal_type='Venda' AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[]))
       AND TO_CHAR(sale_date, 'YYYY-MM') IN (SELECT month FROM recent_months)
     GROUP BY TO_CHAR(sale_date, 'YYYY-MM'), broker ORDER BY month`;
   const sales = saleRows.map(mapSale);
@@ -298,28 +318,29 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
 
 export async function createSale(input: SaleInput): Promise<SaleRecord> {
   await ensurePerformanceSchema();
-  const rows = await database()`INSERT INTO site_sales (sale_date, broker, property, client, amount, deal_type)
-    VALUES (${input.date}, ${input.broker}, ${input.property}, ${input.client}, ${input.amount}, ${input.dealType || 'Venda'})
+  const rows = await database()`INSERT INTO site_sales (company_id, sale_date, broker, property, client, amount, deal_type)
+    VALUES (${supabaseCompanyId()}, ${input.date}, ${input.broker}, ${input.property}, ${input.client}, ${input.amount}, ${input.dealType || 'Venda'})
     RETURNING id, sale_date, broker, property, client, amount, deal_type, created_at`;
   return mapSale(rows[0]);
 }
 
 export async function deleteSale(id: string): Promise<boolean> {
   await ensurePerformanceSchema();
-  const rows = await database()`DELETE FROM site_sales WHERE id=${id} RETURNING id`;
+  const rows = await database()`DELETE FROM site_sales WHERE id=${id} AND company_id=${supabaseCompanyId()} RETURNING id`;
   return rows.length > 0;
 }
 
 export async function updatePerformanceSettings(input: PerformanceSettingsInput) {
   await ensurePerformanceSchema();
   const sql = database();
-  await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
-    VALUES (${input.month}, ${input.companyGoal}, ${input.leadsReceived}, ${input.convertedLeads}, ${input.recoveredLeads})
-    ON CONFLICT (month) DO UPDATE SET company_goal=EXCLUDED.company_goal, leads_received=EXCLUDED.leads_received,
+  const companyId = supabaseCompanyId();
+  await sql`INSERT INTO site_performance_months (company_id, month, company_goal, leads_received, converted_leads, recovered_leads)
+    VALUES (${companyId}, ${input.month}, ${input.companyGoal}, ${input.leadsReceived}, ${input.convertedLeads}, ${input.recoveredLeads})
+    ON CONFLICT (company_id, month) DO UPDATE SET company_goal=EXCLUDED.company_goal, leads_received=EXCLUDED.leads_received,
       converted_leads=EXCLUDED.converted_leads, recovered_leads=EXCLUDED.recovered_leads, updated_at=NOW()`;
   for (const item of input.brokerGoals) {
-    await sql`INSERT INTO site_broker_goals (month, broker, goal) VALUES (${input.month}, ${item.broker}, ${item.goal})
-      ON CONFLICT (month, broker) DO UPDATE SET goal=EXCLUDED.goal`;
+    await sql`INSERT INTO site_broker_goals (company_id, month, broker, goal) VALUES (${companyId}, ${input.month}, ${item.broker}, ${item.goal})
+      ON CONFLICT (company_id, month, broker) DO UPDATE SET goal=EXCLUDED.goal`;
   }
   return getPerformance(input.month);
 }

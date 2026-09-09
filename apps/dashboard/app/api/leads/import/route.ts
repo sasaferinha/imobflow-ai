@@ -1,3 +1,4 @@
+import { protectedRoute } from '@/lib/accounts';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { runAutomationsAfterEvent } from '@/lib/automations';
 import { importLeads } from '@/lib/database';
@@ -14,7 +15,7 @@ function clean(value: unknown, max = 500): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -43,3 +44,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Não foi possível importar a base de leads.' }, { status: 500 });
   }
 }
+
+export const POST = protectedRoute(handlePOST);

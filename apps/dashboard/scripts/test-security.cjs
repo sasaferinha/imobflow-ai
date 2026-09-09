@@ -77,6 +77,10 @@ const storage = compile('lib/supabase.ts', {
     const limit = Math.min(Number(params.get('limit')), 300); // Server can cap below requested page size.
     return { ok: true, status: 200, text: async () => JSON.stringify(records.slice(offset, offset + limit)) };
   },
+  require(name) {
+    if (name === './tenant-context') return { requireCompanyId: () => 'company' };
+    return require(name);
+  },
 });
 const complete = await storage.supabaseRequest('leads?company_id=eq.company&select=*', { allRows: true });
 assert.equal(complete.length, 1205);

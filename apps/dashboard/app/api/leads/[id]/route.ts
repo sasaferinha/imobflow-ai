@@ -1,3 +1,4 @@
+import { protectedRoute } from '@/lib/accounts';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { runAutomationsAfterEvent } from '@/lib/automations';
 import { updateLeadIntelligence } from '@/lib/database';
@@ -10,7 +11,7 @@ export const maxDuration = 60;
 
 const statuses: LeadLifecycleStatus[] = ['Novo', 'Em atendimento', 'Visita', 'Proposta', 'Convertido', 'Perdido'];
 
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function handlePATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -31,3 +32,5 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ error: 'Não foi possível atualizar o lead.' }, { status: 500 });
   }
 }
+
+export const PATCH = protectedRoute(handlePATCH);

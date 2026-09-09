@@ -35,7 +35,10 @@ export function isAdminCookie(value?: string) {
 }
 
 export function isAdminRequest(request: NextRequest) {
-  return isAdminCookie(request.cookies.get(COOKIE_NAME)?.value);
+  // Every protected route is wrapped by protectedRoute, which validates this
+  // opaque session against the database. This cheap guard prevents handler
+  // work if a wrapper is accidentally removed in a future route change.
+  return Boolean(request.cookies.get('imobflow_session')?.value);
 }
 
 export { COOKIE_NAME };

@@ -1,3 +1,4 @@
+import { protectedRoute } from '@/lib/accounts';
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { deleteSale } from '@/lib/database';
@@ -5,7 +6,7 @@ import { hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
 
-export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function handleDELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -17,3 +18,5 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     return NextResponse.json({ error: 'Não foi possível excluir a venda.' }, { status: 500 });
   }
 }
+
+export const DELETE = protectedRoute(handleDELETE);

@@ -1,4 +1,4 @@
-const COMPANY_ID = process.env.SUPABASE_COMPANY_ID || '00000000-0000-4000-8000-000000000001';
+import { requireCompanyId } from './tenant-context';
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -8,7 +8,7 @@ type RequestOptions = {
 };
 
 export function supabaseCompanyId() {
-  return COMPANY_ID;
+  return requireCompanyId();
 }
 
 export function hasSupabaseConfig() {

@@ -1,3 +1,4 @@
+import { protectedRoute } from '@/lib/accounts';
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { createSale, getPerformance, updatePerformanceSettings } from '@/lib/database';
@@ -19,7 +20,7 @@ function positiveNumber(value: unknown) {
   return Number.isFinite(number) && number >= 0 ? number : 0;
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   const month = request.nextUrl.searchParams.get('month') || new Date().toISOString().slice(0, 7);
   if (!validMonth(month)) return NextResponse.json({ error: 'Mês inválido.' }, { status: 400 });
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function handlePATCH(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -75,3 +76,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Não foi possível atualizar as metas.' }, { status: 500 });
   }
 }
+
+export const GET = protectedRoute(handleGET);
+export const POST = protectedRoute(handlePOST);
+export const PATCH = protectedRoute(handlePATCH);

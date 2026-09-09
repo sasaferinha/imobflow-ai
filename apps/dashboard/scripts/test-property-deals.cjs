@@ -15,7 +15,7 @@ async function sql(parts, ...values) {
   if (query.includes('SELECT broker, goal,')) return [{ broker: 'Corretor', goal: 200000, leads_received: 2, converted_leads: 1, recovered_leads: 0, visits: 0 }];
   if (query.includes('SELECT id, sale_date')) return [sale, { ...sale, id: 'rent', amount: 2500, deal_type: 'Aluguel' }];
   if (query.includes('WITH recent_months')) { assert.equal(query.split("deal_type='Venda'").length - 1, 2); return [{ month: '2026-09', broker: 'Corretor', sold: 100000 }]; }
-  if (query.includes('INSERT INTO site_sales (sale_date')) { assert.ok(query.includes('deal_type')); return [{ ...sale, amount: values[4], deal_type: values[5] }]; }
+  if (query.includes('INSERT INTO site_sales (company_id, sale_date')) { assert.ok(query.includes('deal_type')); return [{ ...sale, amount: values[5], deal_type: values[6] }]; }
   return [];
 }
 async function supabaseRequest(path, options = {}) {

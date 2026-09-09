@@ -1,3 +1,4 @@
+import { protectedRoute } from '@/lib/accounts';
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { automationSnapshot, completeAutomationResult, prepareMatchMessage, runAutomations, setAutomationActive } from '@/lib/automations';
@@ -7,13 +8,13 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   try { return NextResponse.json({ data: await automationSnapshot() }, { headers: { 'Cache-Control': 'no-store' } }); }
   catch { return NextResponse.json({ error: 'Não foi possível acessar o banco de automações.' }, { status: 503 }); }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   const origin = request.headers.get('origin');
   if (origin && origin !== request.nextUrl.origin) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
@@ -37,3 +38,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: await automationSnapshot() });
   } catch { return NextResponse.json({ error: 'A operação falhou. Verifique o histórico e tente novamente.' }, { status: 503 }); }
 }
+
+export const GET = protectedRoute(handleGET);
+export const POST = protectedRoute(handlePOST);

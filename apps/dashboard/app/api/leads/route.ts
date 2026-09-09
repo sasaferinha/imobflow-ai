@@ -1,9 +1,11 @@
+import { protectedRoute } from '@/lib/accounts';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { runAutomationsAfterEvent } from '@/lib/automations';
 import { createLead, listLeads } from '@/lib/database';
 import type { LeadInput } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { consumeRateLimit, hasSafeRequestSize, hasSameOrigin } from '@/lib/request-security';
+import { LEGACY_COMPANY_ID, withAccount } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -28,8 +30,8 @@ export async function POST(request: NextRequest) {
     if (!input.name || !input.phone || !input.goal || !input.propertyType || !input.region || !input.budget) {
       return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     }
-    const data = await createLead(input);
-    after(runAutomationsAfterEvent);
+    const data = await withAccount({ companyId: LEGACY_COMPANY_ID, company: 'Imobiliária', brokerId: 'system', name: 'Sistema', role: 'owner' }, () => createLead(input));
+    after(() => withAccount({ companyId: LEGACY_COMPANY_ID, company: 'Imobiliária', brokerId: 'system', name: 'Sistema', role: 'owner' }, runAutomationsAfterEvent));
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     console.error('lead_create_failed', error);
@@ -37,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   if (!isAdminRequest(request)) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   }
@@ -48,3 +50,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Não foi possível carregar os leads.' }, { status: 500 });
   }
 }
+
+export const GET = protectedRoute(handleGET);

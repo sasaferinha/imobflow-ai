@@ -1,3 +1,4 @@
+import { protectedRoute } from '@/lib/accounts';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { createProperty, listProperties } from '@/lib/database';
@@ -32,7 +33,7 @@ function propertyInput(body: Record<string, unknown>): PropertyInput {
   };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   try {
     return NextResponse.json({ data: await listProperties() });
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -57,3 +58,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Não foi possível salvar o imóvel.' }, { status: 500 });
   }
 }
+
+export const GET = protectedRoute(handleGET);
+export const POST = protectedRoute(handlePOST);

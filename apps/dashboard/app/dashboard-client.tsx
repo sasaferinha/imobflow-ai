@@ -191,7 +191,7 @@ function announcePropertyChange() {
   channel.close();
 }
 
-export default function DashboardClient() {
+export default function DashboardClient({ account }: { account?: { name: string; company: string; role: 'owner' | 'broker' } }) {
   const [view, setView] = useState<View>('overview');
   const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createLiveConversationState);
   const [leadSearch, setLeadSearch] = useState('');
@@ -212,11 +212,21 @@ export default function DashboardClient() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | null>(null);
-  const [profile, setProfile] = useState({ name: 'Marina Oliveira', company: 'Imobiliária Horizonte' });
+  const [profile, setProfile] = useState({ name: account?.name || 'Corretor', company: account?.company || 'Imobiliária' });
   const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: false });
   const [notifications, setNotifications] = useState<Array<{ id:number; text:string; unread:boolean }>>([]);
   const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>([]);
   const [selectedLead, setSelectedLead] = useState<DashboardLead | null>(null);
+
+  async function createBrokerInvitation() {
+    setProfileOpen(false);
+    try {
+      const response = await fetch('/api/account/invite', { method: 'POST' });
+      const result = await response.json().catch(() => ({})) as { invitation?: string; error?: string };
+      if (!response.ok || !result.invitation) { notify(result.error || 'Não foi possível gerar o convite.'); return; }
+      window.prompt('Envie este código ao corretor. Ele vale por 24 horas e pode ser usado uma única vez:', result.invitation);
+    } catch { notify('Não foi possível gerar o convite.'); }
+  }
 
   useEffect(() => {
     let active = true;
@@ -558,7 +568,7 @@ export default function DashboardClient() {
         <div className="sidebar-card"><span className="live-dot" /><div><strong>Sistema operacional</strong><span>Serviços funcionando normalmente</span></div></div>
         <div className="profile-wrap">
           <div className="profile-row"><button type="button" className="profile-identity" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}><span className="avatar">{profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span><div><strong>{profile.name}</strong><span>{profile.company}</span></div></button><button type="button" className="profile-options" aria-label="Mais opções do perfil" aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>•••</button></div>
-          {profileOpen && <div className="profile-menu popover"><strong>Perfil do corretor</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button><button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
+          {profileOpen && <div className="profile-menu popover"><strong>Perfil do corretor</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button>{account?.role === 'owner' && <button type="button" onClick={createBrokerInvitation}>Convidar corretor</button>}<button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
         </div>
       </aside>
 
@@ -579,7 +589,7 @@ export default function DashboardClient() {
         {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} leads={capturedLeads} properties={properties} />}
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} />{selectedLead ? <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /> : <section className="panel empty-live-data"><h2>Nenhum lead cadastrado</h2><p>Importe a carteira da imobiliária ou receba um novo contato pelo formulário do site.</p><button type="button" className="primary-button" onClick={() => setLeadImportOpen(true)}>Importar clientes</button></section>}</>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
-        {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} />}
+        {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} brokerName={profile.name} />}
         {view === 'automations' && <AutomationCenter notify={notify} />}
       </section>
 
@@ -953,7 +963,7 @@ function SettingsModal({ settings, close, save }: { settings:DashboardSettings; 
   return <div className="modal-backdrop" role="presentation" onMouseDown={close}><form className="modal-card" onSubmit={(event) => { event.preventDefault(); save(draft); }} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Preferências</p><h2>Configurações</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><label className="setting-row"><span><strong>Modo escuro</strong><small>Reduz o brilho e aplica contraste adequado em todo o painel.</small></span><input type="checkbox" checked={draft.dark} onChange={(event) => setDraft((current) => ({ ...current, dark:event.target.checked }))}/></label><label className="setting-row"><span><strong>Alertas do painel</strong><small>Exibe avisos de leads e visitas.</small></span><input type="checkbox" checked={draft.alerts} onChange={(event) => setDraft((current) => ({ ...current, alerts:event.target.checked }))}/></label><label className="setting-row"><span><strong>Visualização compacta</strong><small>Prepara o painel para maior densidade.</small></span><input type="checkbox" checked={draft.compact} onChange={(event) => setDraft((current) => ({ ...current, compact:event.target.checked }))}/></label><div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="submit" className="primary-button">Salvar configurações</button></div></form></div>;
 }
 
-function Agenda({ items, setItems, notify, leads, properties }: { items:AppointmentRecord[]; setItems:Dispatch<SetStateAction<AppointmentRecord[]>>; notify:(message:string)=>void; leads:DashboardLead[]; properties:Property[] }) {
+function Agenda({ items, setItems, notify, leads, properties, brokerName }: { items:AppointmentRecord[]; setItems:Dispatch<SetStateAction<AppointmentRecord[]>>; notify:(message:string)=>void; leads:DashboardLead[]; properties:Property[]; brokerName:string }) {
   const [week, setWeek] = useState(0);
   const [selectedDay, setSelectedDay] = useState(() => (new Date().getDay() + 6) % 7);
   const [formOpen, setFormOpen] = useState(false);
@@ -981,7 +991,7 @@ function Agenda({ items, setItems, notify, leads, properties }: { items:Appointm
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
-      const response = await fetch('/api/appointments', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:activeDate, time:String(form.get('time')), name:String(form.get('name')), property:String(form.get('property')), broker:'Marina Oliveira', status:'Aguardando', color:'amber' }) });
+      const response = await fetch('/api/appointments', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:activeDate, time:String(form.get('time')), name:String(form.get('name')), property:String(form.get('property')), broker:brokerName, status:'Aguardando', color:'amber' }) });
       const result = await response.json() as { data?:AppointmentRecord; error?:string };
       if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar o horário.');
       setItems((current) => [...current, result.data!]);
