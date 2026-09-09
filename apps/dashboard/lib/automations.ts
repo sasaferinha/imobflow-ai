@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { neon } from '@neondatabase/serverless';
 import { listLeads, listProperties } from './database';
-import { automationFlows, evaluateAutomation, type FlowId } from './automation-rules';
+import { automationFlows, evaluateAutomation, isFlowId, type FlowId } from './automation-rules';
 import { newPropertyCandidates, whatsappNumber } from './property-matching';
 import { supabaseCompanyId } from './supabase';
 
@@ -45,6 +45,7 @@ async function ensureSchema() {
   await sql`ALTER TABLE site_automation_lock DROP COLUMN IF EXISTS id`;
   await sql`ALTER TABLE site_automation_lock ADD PRIMARY KEY(company_id)`;
   const companyId = supabaseCompanyId();
+  await sql`UPDATE site_automation_settings SET active=FALSE WHERE company_id=${companyId} AND id IN ('qualification', 'recommendations') AND active=TRUE`;
   await sql`INSERT INTO site_automation_settings (company_id,id) SELECT ${companyId}, jsonb_array_elements_text(${JSON.stringify(automationFlows.map((flow) => flow.id))}::jsonb) ON CONFLICT DO NOTHING`;
 }
 
@@ -57,14 +58,15 @@ export async function automationSnapshot() {
     sql`SELECT * FROM site_automation_settings WHERE company_id=${companyId}`,
     sql`SELECT flow_id, count(*)::int AS total FROM site_automation_results WHERE company_id=${companyId} GROUP BY flow_id`,
     sql`SELECT id, flow_id, summary, detail, status, created_at FROM (
-      SELECT *, row_number() OVER (PARTITION BY flow_id ORDER BY created_at DESC) AS position FROM site_automation_results WHERE company_id=${companyId}
+      SELECT *, row_number() OVER (PARTITION BY flow_id ORDER BY created_at DESC) AS position FROM site_automation_results WHERE company_id=${companyId} AND flow_id IN ('followup', 'priority', 'new-property')
     ) recent WHERE position <= 100 ORDER BY created_at DESC`,
-    sql`SELECT * FROM site_automation_runs WHERE company_id=${companyId} ORDER BY created_at DESC LIMIT 40`,
+    sql`SELECT * FROM site_automation_runs WHERE company_id=${companyId} AND flow_id IN ('followup', 'priority', 'new-property', 'all') ORDER BY created_at DESC LIMIT 40`,
   ]);
   return { configured: true, schedulerConfigured: Boolean(process.env.CRON_SECRET), flows: automationFlows.map((flow) => ({ ...flow, active: settings.find((setting) => setting.id === flow.id)?.active === true, total: Number(counts.find((count) => count.flow_id === flow.id)?.total || 0) })), results, runs };
 }
 
 export async function setAutomationActive(id: FlowId, active: boolean) {
+  if (!isFlowId(id)) throw new Error('Automação indisponível.');
   await ensureSchema();
   await database()`UPDATE site_automation_settings SET active=${active} WHERE company_id=${supabaseCompanyId()} AND id=${id}`;
 }
@@ -90,6 +92,7 @@ export async function prepareMatchMessage(id: string) {
 }
 
 export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selected?: FlowId) {
+  if (selected !== undefined && !isFlowId(selected)) throw new Error('Automação indisponível.');
   await ensureSchema();
   const sql = database();
   const companyId = supabaseCompanyId();
@@ -105,7 +108,7 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
     if (leads.length > 10000) throw new Error('Lote acima do limite seguro.');
     const settings = await sql`SELECT id FROM site_automation_settings WHERE company_id=${companyId} AND active=TRUE`;
     const active = automationFlows.filter((flow) => (!selected || flow.id === selected) && settings.some((setting) => setting.id === flow.id));
-    const properties = active.some((flow) => flow.id === 'recommendations' || flow.id === 'new-property') ? await listProperties(true) : [];
+    const properties = active.some((flow) => flow.id === 'new-property') ? await listProperties(true) : [];
     // The CRM source of truth is Supabase. Close reminders that no longer match
     // the current lead state without consulting the retired site_leads table.
     const leadStates = leads.map((lead) => ({
@@ -138,7 +141,7 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
           ), inserted AS (
             INSERT INTO site_automation_results (company_id,flow_id, lead_id, fingerprint, summary, detail, status)
             SELECT ${companyId}, ${flow.id}, p.lead_id, p.fingerprint, p.summary, p.detail,
-              CASE WHEN ${flow.id}='qualification' THEN 'done' ELSE 'open' END FROM payload p
+              'open' FROM payload p
             ON CONFLICT DO NOTHING RETURNING lead_id, detail
           )
           INSERT INTO site_automation_runs (company_id,flow_id, trigger, status, processed)
