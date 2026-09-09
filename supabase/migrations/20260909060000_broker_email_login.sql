@@ -36,7 +36,7 @@ BEGIN
   IF length(p_name) NOT BETWEEN 2 AND 120 OR p_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' OR p_password_hash NOT LIKE 'scrypt-v1$%' THEN RAISE EXCEPTION 'invalid_broker'; END IF;
   SELECT seat_limit INTO broker_limit FROM public.account_companies WHERE company_id=p_company_id FOR UPDATE;
   IF broker_limit IS NULL THEN RAISE EXCEPTION 'company_not_found'; END IF;
-  SELECT count(*)::integer INTO broker_count FROM public.broker_accounts WHERE company_id=p_company_id AND role='broker' AND active=true;
+  SELECT count(*)::integer INTO broker_count FROM public.broker_accounts AS broker WHERE broker.company_id=p_company_id AND broker.role='broker' AND broker.active=true;
   IF broker_count >= broker_limit THEN RAISE EXCEPTION 'seat_limit_reached'; END IF;
   INSERT INTO public.broker_accounts(company_id,name,name_key,email,email_key,password_hash,role)
   VALUES(p_company_id,p_name,p_name_key,p_email,p_email_key,p_password_hash,'broker') RETURNING * INTO created;
