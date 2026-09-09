@@ -37,7 +37,7 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
 }
 
 type ConversationContact = DemoContact & { sourceLead?: LeadProfile };
-const emptyThread = { messages: [], draft: '', unread: 0, humanMode: false };
+const emptyThread = { messages: [] as DemoContact['messages'], draft: '', unread: 0, humanMode: false, assignedTo: undefined as string | undefined };
 const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'LD';
 const liveTemperature = (temperature: string) => {
@@ -88,14 +88,14 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   });
   const stage = lead?.lifecycleStatus || selected.stage;
   const temperature = contactTemperature(selected);
-  const assignedBroker = lead.assignedTo?.trim() || null;
+  const assignedBroker = (demonstration ? thread.assignedTo : lead.assignedTo)?.trim() || null;
   const isCurrentBroker = Boolean(assignedBroker && normalize(assignedBroker) === normalize(currentBrokerName));
   const sourceLabel = demonstration ? 'Perfil fictício para demonstração' : 'Dados do banco de leads';
   const leadHighlights = lead
     ? [['Objetivo', lead.goal], ['Tipo de imóvel', lead.propertyType], ['Região desejada', lead.region], ['Investimento', lead.budget]]
     : [['Objetivo', selected.goal], ['Tipo de imóvel', selected.propertyType], ['Região desejada', selected.region], ['Investimento', selected.budget]];
   const leadOperationalData = lead
-    ? [['Preferências', lead.details || 'Não informado'], ['Corretor responsável', lead.assignedTo || 'Sem corretor responsável'], ['Último contato', formatDate(lead.lastContactAt)], ['Telefone', lead.phone], ...(lead.email ? [['E-mail', lead.email]] : [])]
+    ? [['Preferências', lead.details || 'Não informado'], ['Corretor responsável', assignedBroker || 'Sem corretor responsável'], ['Último contato', formatDate(lead.lastContactAt)], ['Telefone', lead.phone], ...(lead.email ? [['E-mail', lead.email]] : [])]
     : [['Quartos', selected.rooms], ['Pagamento', selected.payment], ['Estilo de atendimento', selected.style]];
 
   async function send(event: FormEvent) {
@@ -103,6 +103,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     if (!lead || !thread.draft.trim()) return;
     try {
       const saved = await persistMessage({ leadId, content: thread.draft.trim() });
+      if (demonstration && !isCurrentBroker) dispatch({ type: 'assign', id: selected.id, assignedTo: currentBrokerName });
       if (!demonstration && !isCurrentBroker) await claimLead(lead);
       dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time });
       notify(demonstration ? 'Mensagem adicionada à prévia. Nenhum cliente foi contatado.' : 'Mensagem salva no histórico do lead.');
@@ -115,6 +116,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     const text = `Separei uma opção que combina com o seu perfil:\n\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
     try {
       const saved = await persistMessage({ leadId, content: text, images: property.images, propertyId: property.id });
+      if (demonstration && !isCurrentBroker) dispatch({ type: 'assign', id: selected.id, assignedTo: currentBrokerName });
       if (!demonstration && !isCurrentBroker) await claimLead(lead);
       dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: property.images, propertyTitle: property.title });
       setPropertyPickerOpen(false);
@@ -135,8 +137,13 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     }
   }
   async function claimConversation() {
-    if (!lead || demonstration || isCurrentBroker) return;
+    if (!lead || isCurrentBroker) return;
     try {
+      if (demonstration) {
+        dispatch({ type: 'assign', id: selected.id, assignedTo: currentBrokerName });
+        notify(`${selected.name} agora está no seu atendimento de demonstração.`);
+        return;
+      }
       await claimLead(lead);
       notify(`${selected.name} agora está no seu atendimento.`);
     } catch (error) {
@@ -162,14 +169,14 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
           const contactHeat = contactTemperature(contact);
           return <button type="button" className={`contact-row ${selected.id === contact.id ? 'selected' : ''}`} aria-pressed={selected.id === contact.id} onClick={() => dispatch({ type: 'select', id: contact.id })} key={contact.id}>
             <span className={`lead-avatar avatar-${contact.tone}`}>{contact.initials}</span>
-            <span><span className="conversation-name-line"><strong>{contact.name}</strong><span className="conversation-temperature" data-temperature={contactHeat}>{contactHeat}</span></span><small className="conversation-owner-line">{contact.sourceLead?.assignedTo ? `Atendimento: ${contact.sourceLead.assignedTo}` : 'Sem corretor responsável'}</small><small>{last?.text || 'Dados cadastrados; ainda sem mensagens neste painel.'}</small></span>
+            <span><span className="conversation-name-line"><strong>{contact.name}</strong><span className="conversation-temperature" data-temperature={contactHeat}>{contactHeat}</span></span><small className="conversation-owner-line">{demonstration ? (current.assignedTo ? `Atendimento: ${current.assignedTo}` : 'Sem corretor responsável') : (contact.sourceLead?.assignedTo ? `Atendimento: ${contact.sourceLead.assignedTo}` : 'Sem corretor responsável')}</small><small>{last?.text || 'Dados cadastrados; ainda sem mensagens neste painel.'}</small></span>
             <time>{last?.time || 'Base'}</time>{current.unread > 0 && <b aria-label={`${current.unread} mensagens não lidas`}>{current.unread}</b>}
           </button>;
         })}
         {!filtered.length && <p className="empty-filter">Nenhuma conversa encontrada. Ajuste a busca ou selecione “Todas”.</p>}
       </aside>
       <section className="full-chat panel" aria-label={`Conversa com ${selected.name}`}>
-        <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><span className="conversation-name-line"><strong>{selected.name}</strong><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}` : 'Sem corretor responsável'}</span></div>{!demonstration && !isCurrentBroker && <button type="button" className="conversation-claim-button" onClick={() => void claimConversation()}>Assumir atendimento</button>}{isCurrentBroker && <span className="conversation-assigned-state">Você está atendendo</span>}</div>
+        <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><span className="conversation-name-line"><strong>{selected.name}</strong><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}` : 'Sem corretor responsável'}</span></div>{!isCurrentBroker && <button type="button" className="conversation-claim-button" onClick={() => void claimConversation()}>Assumir atendimento</button>}{isCurrentBroker && <span className="conversation-assigned-state">Você está atendendo</span>}</div>
         <div className="full-chat-body" ref={bodyRef}><span className="chat-date">Conversa vinculada ao lead</span>{thread.messages.length ? thread.messages.map((message) => <div className={`bubble ${message.side} ${message.propertyTitle ? 'property-message' : ''}`} key={message.id}>{message.images?.length ? <div className="message-property-images">{message.images.slice(0,3).map((image,index) => <img key={index} src={image} alt={`${message.propertyTitle}, foto ${index + 1}`} />)}</div> : null}<span className="visually-hidden">{message.side === 'incoming' ? selected.name : 'Atendimento'}: </span>{message.propertyTitle && <strong>{message.propertyTitle}</strong>}<p>{message.text}</p><small>{message.time} · Painel</small></div>) : <p className="conversation-empty-thread">Ainda não há mensagens deste lead no painel. A ficha ao lado foi carregada da base para orientar o corretor.</p>}</div>
         <div className="conversation-suggestion"><span>Resposta sugerida · Dados do lead</span><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div>
         <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" disabled title="Anexos diretos serão habilitados com o canal de mensagens">＋</button><button type="button" className="conversation-property-button" disabled={loadingProperties} onClick={() => void openPropertyPicker()}>{loadingProperties ? 'Atualizando…' : '▦ Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>

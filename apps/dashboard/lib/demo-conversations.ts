@@ -120,14 +120,14 @@ export const demoContacts: DemoContact[] = [
 
 export type DemoConversationState = {
   selectedId: string;
-  threads: Record<string, { messages: DemoMessage[]; draft: string; unread: number; humanMode: boolean }>;
+  threads: Record<string, { messages: DemoMessage[]; draft: string; unread: number; humanMode: boolean; assignedTo?: string }>;
 };
 export type DemoConversationAction =
   | { type: 'select'; id: string }
   | { type: 'draft'; id: string; text: string }
   | { type: 'send'; id: string; messageId: string; time: string }
   | { type: 'share-property'; id: string; messageId: string; time: string; text: string; images: string[]; propertyTitle: string }
-  | { type: 'assign'; id: string }
+  | { type: 'assign'; id: string; assignedTo: string }
   | { type: 'sync'; contacts: Array<{ id: string; unread?: number }> }
   | { type: 'hydrate'; contacts: Array<{ id: string; messages: DemoMessage[] }> };
 export function createDemoConversationState(): DemoConversationState {
@@ -162,7 +162,7 @@ export function demoConversationReducer(state: DemoConversationState, action: De
   if (action.type === 'send' && !thread.draft.trim()) return state;
   const updated = action.type === 'select' ? { ...thread, unread: 0 }
     : action.type === 'draft' ? { ...thread, draft: action.text }
-    : action.type === 'assign' ? { ...thread, humanMode: !thread.humanMode }
+    : action.type === 'assign' ? { ...thread, humanMode: true, assignedTo: action.assignedTo }
     : action.type === 'share-property' ? { ...thread, messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: action.text, time: action.time, images: action.images, propertyTitle: action.propertyTitle }] }
     : { ...thread, draft: '', messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: thread.draft.trim(), time: action.time }] };
   return { selectedId: action.type === 'select' ? action.id : state.selectedId, threads: { ...state.threads, [action.id]: updated } };
