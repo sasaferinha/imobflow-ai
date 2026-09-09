@@ -20,8 +20,8 @@ export default function LoginClient({ legacy = false }: { legacy?: boolean }) {
   }
   return <main className="access-page"><section className="access-card">
     <aside className="access-brand"><Link href="/" className="access-logo"><span>I</span>ImobFlow</Link><div><p>Seu próximo negócio começa aqui.</p><h1>Sua empresa.<br />Sua equipe.<br />Tudo conectado.</h1></div><small>Clientes, imóveis e conversas no mesmo lugar.</small></aside>
-    <div className="access-form"><p className="access-eyebrow">PAINEL DA IMOBILIÁRIA</p><h2>{mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}</h2><p>{legacy ? 'Cadastre seu acesso individual para administrar a empresa atual.' : mode === 'login' ? 'Entre com os dados da sua empresa e do seu corretor.' : 'Cada corretor tem sua própria senha de acesso.'}</p>
-      {!legacy && <div className="access-tabs"><button type="button" aria-pressed={mode === 'login'} onClick={() => { setMode('login'); setError(''); }}>Entrar</button><button type="button" aria-pressed={mode === 'signup'} onClick={() => { setMode('signup'); setError(''); }}>Criar conta</button></div>}
+    <div className="access-form"><p className="access-eyebrow">PAINEL DA IMOBILIÁRIA</p><h2>{mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}</h2><p>{legacy && mode === 'signup' ? 'Cadastre seu acesso individual para administrar a empresa atual.' : mode === 'login' ? 'Entre com os dados da sua empresa e do seu corretor.' : 'Cada corretor tem sua própria senha de acesso.'}</p>
+      <div className="access-tabs"><button type="button" aria-pressed={mode === 'login'} onClick={() => { setMode('login'); setError(''); }}>Entrar</button><button type="button" aria-pressed={mode === 'signup'} onClick={() => { setMode('signup'); setError(''); }}>Criar conta</button></div>
       <form onSubmit={login}>
         <label>Nome da empresa<input name="company" autoComplete="organization" placeholder="Ex.: Imobiliária Central" required minLength={2} maxLength={120} /></label>
         <label>Nome do corretor<input name="name" autoComplete="username" placeholder="Seu nome completo" required minLength={2} maxLength={120} /></label>
