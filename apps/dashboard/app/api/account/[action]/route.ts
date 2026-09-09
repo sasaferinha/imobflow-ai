@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ACCOUNT_COOKIE, authenticate, cookieOptions, hashPassword, issueSession, normalizeName } from '@/lib/accounts';
-import { COOKIE_NAME, isValidAdminPassword } from '@/lib/admin-auth';
+import { ACCOUNT_COOKIE, authenticate, cookieOptions, hashPassword, issueSession, normalizeName, tokenHash } from '@/lib/accounts';
+import { COOKIE_NAME } from '@/lib/admin-auth';
+import { type Account } from '@/lib/tenant-context';
 import { consumeRateLimit, hasSameOrigin } from '@/lib/request-security';
 import { supabaseRequest } from '@/lib/supabase';
 
@@ -8,7 +9,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest, { params }: { params: Promise<{ action: string }> }) {
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   const { action } = await params;
-  if (!['login', 'provision'].includes(action)) return NextResponse.json({ error: 'Ação inválida.' }, { status: 404 });
+  if (!['login', 'enroll'].includes(action)) return NextResponse.json({ error: 'Ação inválida.' }, { status: 404 });
   try {
     if (!await consumeRateLimit(request, `account-${action}`, action === 'login' ? 10 : 5, 900)) return NextResponse.json({ error: 'Muitas tentativas. Aguarde 15 minutos.' }, { status: 429 });
     const raw = await request.text();
@@ -20,26 +21,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const name = typeof body.name === 'string' ? body.name.normalize('NFKC').trim().replace(/\s+/g, ' ') : '';
     const password = typeof body.password === 'string' ? body.password : '';
     if (company.length < 2 || company.length > 120 || name.length < 2 || name.length > 120 || !password || password.length > 128) return NextResponse.json({ error: 'Preencha empresa, nome do corretor e senha.' }, { status: 400 });
-    let token: string;
+    let account: Account | null;
     if (action === 'login') {
-      const account = await authenticate(company, name, password);
+      account = await authenticate(company, name, password);
       if (!account) return NextResponse.json({ error: 'Empresa, corretor ou senha incorretos.' }, { status: 401 });
-      token = await issueSession(account);
     } else {
-      const managementPassword = typeof body.managementPassword === 'string' ? body.managementPassword : '';
-      if (!isValidAdminPassword(managementPassword)) return NextResponse.json({ error: 'Senha administrativa incorreta.' }, { status: 401 });
+      const accessKey = typeof body.accessKey === 'string' ? body.accessKey.normalize('NFKC').trim() : '';
+      if (accessKey.length < 20 || accessKey.length > 160) return NextResponse.json({ error: 'Informe uma chave de acesso válida.' }, { status: 400 });
       if (password.length < 12) return NextResponse.json({ error: 'Use uma senha com pelo menos 12 caracteres.' }, { status: 400 });
-      const existingCompany = body.existingCompany === true;
-      const seatLimit = Number(body.seatLimit);
-      if (!Number.isInteger(seatLimit) || seatLimit < 1 || seatLimit > 500) return NextResponse.json({ error: 'Informe um limite de 1 a 500 corretores.' }, { status: 400 });
       try {
-        await supabaseRequest('rpc/admin_provision_broker', { method: 'POST', body: {
+        const rows = await supabaseRequest<Array<{ broker_id: string; company_id: string; company: string; broker_name: string; role: 'owner' | 'broker' }>>('rpc/redeem_access_license', { method: 'POST', body: {
           p_company: company, p_company_key: normalizeName(company), p_name: name, p_name_key: normalizeName(name),
-          p_password_hash: await hashPassword(password), p_seat_limit: seatLimit, p_existing_company: existingCompany,
+          p_password_hash: await hashPassword(password), p_key_hash: tokenHash(accessKey),
         } });
-      } catch { return NextResponse.json({ error: 'Não foi possível cadastrar. Confira o nome da empresa, o limite de corretores e se o corretor já existe.' }, { status: 409 }); }
-      return NextResponse.json({ ok: true });
+        const row = rows[0];
+        if (!row) throw new Error('empty_license_redemption');
+        account = { brokerId: row.broker_id, companyId: row.company_id, company: row.company, name: row.broker_name, role: row.role };
+      } catch { return NextResponse.json({ error: 'Não foi possível criar o acesso. Confira a chave, a empresa e se ainda há vagas no plano.' }, { status: 409 }); }
     }
+    const token = await issueSession(account);
     const response = NextResponse.json({ ok: true });
     response.cookies.set(ACCOUNT_COOKIE, token, cookieOptions);
     response.cookies.set(COOKIE_NAME, '', { ...cookieOptions, maxAge: 0 });

@@ -1,5 +1,5 @@
-import LoginClient from '../login-client';
+import LicenseAdminClient from './license-admin-client';
 
-export default function CompanyProvisionPage() {
-  return <LoginClient adminOnly />;
+export default function LicenseAdminPage() {
+  return <LicenseAdminClient />;
 }
