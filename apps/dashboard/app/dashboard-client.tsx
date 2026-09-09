@@ -556,6 +556,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
               <span className="nav-icon"><NavigationIcon view={item.id} /></span><span className="nav-label">{item.label}</span>{item.badge && <b>{item.badge}</b>}
             </button>
           ))}
+          {account?.role === 'owner' && <button type="button" className="nav-item" onClick={() => { setUtilityModal('team'); setProfileOpen(false); }} aria-label="Gerenciar corretores" title="Gerenciar corretores"><span className="nav-icon" aria-hidden="true">◉</span><span className="nav-label">Corretores</span></button>}
         </nav>
         <div className="sidebar-card"><span className="live-dot" /><div><strong>Sistema operacional</strong><span>Serviços funcionando normalmente</span></div></div>
         <div className="profile-wrap">
