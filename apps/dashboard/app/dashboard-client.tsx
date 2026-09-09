@@ -8,6 +8,7 @@ import AutomationCenter from './automation-center';
 import ConversationCenter from './conversation-center';
 import { createLiveConversationState, demoConversationReducer } from '@/lib/demo-conversations';
 import type { ConversationMessage } from '@/lib/conversations';
+import TeamModal from './team-modal';
 
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
 const DATA_SYNC_CHANNEL = 'imobflow_data_sync';
@@ -211,7 +212,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
   const [toast, setToast] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | null>(null);
+  const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | 'team' | null>(null);
   const [profile, setProfile] = useState({ name: account?.name || 'Corretor', company: account?.company || 'Imobiliária' });
   const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: false });
   const [notifications, setNotifications] = useState<Array<{ id:number; text:string; unread:boolean }>>([]);
@@ -559,7 +560,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
         <div className="sidebar-card"><span className="live-dot" /><div><strong>Sistema operacional</strong><span>Serviços funcionando normalmente</span></div></div>
         <div className="profile-wrap">
           <div className="profile-row"><button type="button" className="profile-identity" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}><span className="avatar">{profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span><div><strong>{profile.name}</strong><span>{profile.company}</span></div></button><button type="button" className="profile-options" aria-label="Mais opções do perfil" aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>•••</button></div>
-          {profileOpen && <div className="profile-menu popover"><strong>Perfil do corretor</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button><button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
+          {profileOpen && <div className="profile-menu popover"><strong>{account?.role === 'owner' ? 'Painel do administrador' : 'Perfil do corretor'}</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button>{account?.role === 'owner' && <button type="button" onClick={() => { setUtilityModal('team'); setProfileOpen(false); }}>Gerenciar corretores</button>}<button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
         </div>
       </aside>
 
@@ -608,6 +609,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
       {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { saveSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
       {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
+      {utilityModal === 'team' && account?.role === 'owner' && <TeamModal close={() => setUtilityModal(null)} notify={notify} />}
       {leadImportOpen && <LeadImportModal close={() => setLeadImportOpen(false)} notify={notify} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads((current) => [...decorated, ...current.filter((lead) => !decorated.some((item) => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
     </main>
