@@ -511,6 +511,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
     try {
       const content = String(form.get('message') || '').trim();
       const saved = await persistConversationMessage({ leadId: lead.id, content, images: sharingProperty.images, propertyId: sharingProperty.id });
+      await claimLead(lead);
       conversationDispatch({
         type: 'share-property', id: conversationId, messageId: saved.id, time: saved.time,
         text: content, images: sharingProperty.images, propertyTitle: sharingProperty.title,

@@ -16,7 +16,7 @@ const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
 }));
 
 export default function ConversationCenter(props: ComponentProps<typeof ConversationWorkspace>) {
-  const [preview, setPreview] = useState(!(props.leads?.length));
+  const [preview, setPreview] = useState(false);
   const [previewState, previewDispatch] = useReducer(demoConversationReducer, undefined, () => ({
     selectedId: `lead-example-${demoContacts[0].id}`,
     threads: Object.fromEntries(demoContacts.map(contact => [`lead-example-${contact.id}`, {
@@ -27,7 +27,7 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
     <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
       <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>Clientes cadastrados</button>
       <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>Ver demonstração</button>
-      {preview && <span>Contatos fictícios. As mensagens de teste ficam apenas nesta prévia.</span>}
+      {preview && <span>Contatos fictícios: esta prévia não envia mensagens nem atribui clientes a corretores.</span>}
     </div>
     {preview ? <ConversationWorkspace {...props} demonstration state={previewState} dispatch={previewDispatch} leads={previewLeads}
       persistMessage={async () => ({ id: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) })}
@@ -100,9 +100,10 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
 
   async function send(event: FormEvent) {
     event.preventDefault();
-    if (!thread.draft.trim()) return;
+    if (!lead || !thread.draft.trim()) return;
     try {
       const saved = await persistMessage({ leadId, content: thread.draft.trim() });
+      if (!demonstration && !isCurrentBroker) await claimLead(lead);
       dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time });
       notify(demonstration ? 'Mensagem adicionada à prévia. Nenhum cliente foi contatado.' : 'Mensagem salva no histórico do lead.');
     } catch (error) {
@@ -110,9 +111,11 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     }
   }
   async function shareProperty(property: PropertyRecord) {
+    if (!lead) return;
     const text = `Separei uma opção que combina com o seu perfil:\n\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
     try {
       const saved = await persistMessage({ leadId, content: text, images: property.images, propertyId: property.id });
+      if (!demonstration && !isCurrentBroker) await claimLead(lead);
       dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: property.images, propertyTitle: property.title });
       setPropertyPickerOpen(false);
       notify(demonstration ? `${property.title} adicionado apenas à demonstração.` : `${property.title} salvo na conversa com ${selected.name}.`);
