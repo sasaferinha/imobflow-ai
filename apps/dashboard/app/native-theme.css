@@ -107,6 +107,10 @@ body { -webkit-font-smoothing: antialiased; }
 .detail-information dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 14px; }
 .detail-information dt { color: var(--muted); }
 .detail-information dd { margin: 0; color: var(--ink); text-align: right; }
+.app-shell.app-shell .property-left-summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.app-shell.app-shell .property-left-summary > h3 { margin: 0 0 12px; color: var(--ink); font-size: 14px; font-weight: 600; }
+.app-shell.app-shell .property-left-summary .detail-facts { margin: 0 0 16px; }
+.app-shell.app-shell .property-left-summary .property-description { margin: 0; }
 .app-shell.app-shell .native-property-detail .modal-actions { margin-top: 28px; }
 .app-shell.app-shell .native-property-detail .danger-button { margin-right: auto; background: transparent; color: #b42318; border-color: transparent; }
 .app-shell.dark-mode .native-property-detail .danger-button { color: #ffa7a7; }
