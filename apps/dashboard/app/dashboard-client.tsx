@@ -420,7 +420,6 @@ export default function DashboardClient({ account }: { account?: { name: string;
   async function claimLead(lead: LeadProfile) {
     const claimed = await updateLead(lead, {
       assignedTo: profile.name,
-      lifecycleStatus: 'Em atendimento',
     });
     if (!claimed) throw new Error('Não foi possível assumir este atendimento.');
   }
