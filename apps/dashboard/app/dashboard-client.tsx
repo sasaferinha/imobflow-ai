@@ -228,9 +228,9 @@ export default function DashboardClient() {
       }
     };
     fetch('/api/leads')
-      .then(async (response) => response.ok ? (await response.json() as { data: LeadProfile[] }).data : [])
+      .then(async (response) => { if (!response.ok) throw new Error('Não foi possível carregar os clientes. Atualize a página para tentar novamente.'); return (await response.json() as { data: LeadProfile[] }).data; })
       .then(finishLoading)
-      .catch(() => finishLoading([]));
+      .catch(() => { if (active) notify('Falha ao carregar clientes. Atualize a página para tentar novamente.'); });
     return () => { active = false; };
   }, []);
 
@@ -262,7 +262,7 @@ export default function DashboardClient() {
     if (!capturedLeads.length) return;
     let active = true;
     fetch('/api/conversations', { cache: 'no-store' })
-      .then(async (response) => response.ok ? (await response.json() as { data: ConversationMessage[] }).data : [])
+      .then(async (response) => { if (!response.ok) throw new Error('Falha ao carregar conversas.'); return (await response.json() as { data: ConversationMessage[] }).data; })
       .then((messages) => {
         if (!active) return;
         const grouped = new Map<string, ConversationMessage[]>();
@@ -274,7 +274,7 @@ export default function DashboardClient() {
           }),
         });
       })
-      .catch(() => undefined);
+      .catch(() => { if (active) notify('Falha ao carregar conversas. Atualize a página para tentar novamente.'); });
     return () => { active = false; };
   }, [capturedLeads]);
 

@@ -771,3 +771,7 @@ body { -webkit-font-smoothing: antialiased; }
   .app-shell.app-shell .conversation-demo .lead-profile { padding: 16px; }
   .conversation-lead-highlights > div { min-height: 74px; padding: 11px; }
 }
+.conversation-preview-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.conversation-preview-toolbar button { padding: 10px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; cursor: pointer; }
+.conversation-preview-toolbar button[aria-pressed="true"] { background: #e8f0ff; color: #005bd3; border-color: #b9d2ff; }
+.conversation-preview-toolbar span { font-size: 14px; color: var(--muted); }

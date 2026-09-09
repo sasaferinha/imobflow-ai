@@ -4,6 +4,11 @@ import { analyzeLead, explainProfile } from './leads';
 import type { LeadLifecycleStatus } from './leads';
 import type { AppointmentInput, AppointmentRecord, PerformanceSettingsInput, PerformanceSnapshot, PropertyInput, PropertyRecord, SaleInput, SaleRecord } from './operations';
 import { supabaseCompanyId, supabaseRequest } from './supabase';
+import { moneyValue } from './property-matching';
+
+// Exact identifiers written by the retired demo bootstrap. Preserve the records
+// for review, but never count them as real sales.
+const demoSaleKeys = ['history-2026-04', 'history-2026-05', 'history-2026-06', 'history-2026-07', 'history-2026-08', 'sale-marina-aurora', 'sale-marina-horizonte', 'sale-paulo-bosque', 'sale-paulo-vila', 'sale-camila-studio'];
 
 function database() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL não configurada');
@@ -28,14 +33,14 @@ export async function createLead(input: LeadInput): Promise<LeadProfile> {
   return mapLead(rows[0]);
 }
 
-export async function listLeads(limit = 1000): Promise<LeadProfile[]> {
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`leads?company_id=eq.${supabaseCompanyId()}&select=*&order=created_at.desc&limit=${Math.max(1, Math.min(limit, 1000))}`);
+export async function listLeads(limit = 10000): Promise<LeadProfile[]> {
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`leads?company_id=eq.${supabaseCompanyId()}&select=*&order=created_at.desc&limit=${Math.max(1, Math.min(limit, 10001))}`, { allRows: true });
   return rows.map(mapLead);
 }
 
 export async function importLeads(inputs: LeadInput[]) {
   if (inputs.length === 0) return { imported: 0, skipped: 0, leads: [] as LeadProfile[] };
-  const existing = await supabaseRequest<Record<string, unknown>[]>(`leads?company_id=eq.${supabaseCompanyId()}&select=phone,email`);
+  const existing = await supabaseRequest<Record<string, unknown>[]>(`leads?company_id=eq.${supabaseCompanyId()}&select=phone,email`, { allRows: true });
   const knownPhones = new Set(existing.map((row) => normalizePhone(String(row.phone || ''))).filter(Boolean));
   const knownEmails = new Set(existing.map((row) => String(row.email || '').toLowerCase()).filter(Boolean));
   const unique = inputs.filter((input, index, all) => {
@@ -73,7 +78,7 @@ export async function updateLeadIntelligence(id: string, input: { lifecycleStatu
 
 export async function listProperties(forAutomation = false): Promise<PropertyRecord[]> {
   void forAutomation;
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`properties?company_id=eq.${supabaseCompanyId()}&select=*&order=created_at.desc`);
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`properties?company_id=eq.${supabaseCompanyId()}&select=*&order=created_at.desc`, { allRows: true });
   return rows.map(mapProperty);
 }
 
@@ -108,7 +113,7 @@ function mapProperty(row: Record<string, unknown>): PropertyRecord {
 }
 
 export async function listAppointments(): Promise<AppointmentRecord[]> {
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?company_id=eq.${supabaseCompanyId()}&select=*&order=scheduled_at.asc`);
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?company_id=eq.${supabaseCompanyId()}&select=*&order=scheduled_at.asc`, { allRows: true });
   const leads = await listLeads();
   const properties = await listProperties();
   const leadNames = new Map(leads.map((lead) => [lead.id, lead.name]));
@@ -144,7 +149,7 @@ function mapAppointment(row: Record<string, unknown>, leadNames = new Map<string
   const notes = String(row.notes || '');
   const [fallbackName, fallbackProperty] = notes.split(' · ');
   return {
-    id: String(row.id), date: scheduledAt.toISOString().slice(0, 10), time: scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+    id: String(row.id), date: scheduledAt.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), time: scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
     name: leadNames.get(String(row.lead_id)) || fallbackName || 'Cliente', property: propertyNames.get(String(row.property_id)) || fallbackProperty || 'Imóvel',
     broker: String(row.assigned_to || 'Marina Oliveira'), status: row.status === 'Confirmada' ? 'Confirmada' : 'Aguardando', color: row.status === 'Confirmada' ? 'mint' : 'amber',
     createdAt: new Date(String(row.created_at)).toISOString(),
@@ -168,7 +173,7 @@ function parseBudget(value: string): [number | null, number | null] {
 
 function formatMoney(value: number, monthly = false) {
   if (!Number.isFinite(value)) return 'Preço sob consulta';
-  const formatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
+  const formatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
   return monthly ? `${formatted}/mês` : formatted;
 }
 
@@ -192,9 +197,9 @@ function propertyPayload(input: PropertyInput) {
 }
 
 function parseMoney(value: string) {
-  const normalized = value.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
-  const amount = Number(normalized);
-  return Number.isFinite(amount) ? amount : 0;
+  const amount = moneyValue(value);
+  if (amount === null) throw new Error('Informe um preço válido, por exemplo R$ 500.000,00.');
+  return amount;
 }
 
 function propertyMeta(row: Record<string, unknown>) {
@@ -240,52 +245,26 @@ async function ensurePerformanceSchema() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
   await sql`ALTER TABLE site_sales ADD COLUMN IF NOT EXISTS deal_type TEXT NOT NULL DEFAULT 'Venda'`;
-  await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
-    VALUES ('2026-09', 3000000, 64, 18, 7) ON CONFLICT (month) DO NOTHING`;
-  await sql`INSERT INTO site_broker_goals (month, broker, goal, leads_received, converted_leads, recovered_leads, visits) VALUES
-    ('2026-09', 'Marina Oliveira', 1200000, 26, 9, 4, 7),
-    ('2026-09', 'Paulo Mendes', 1000000, 22, 6, 2, 5),
-    ('2026-09', 'Camila Rocha', 800000, 16, 3, 1, 4)
-    ON CONFLICT (month, broker) DO NOTHING`;
-  await sql`UPDATE site_broker_goals SET leads_received=26, converted_leads=9, recovered_leads=4, visits=7
-    WHERE month='2026-09' AND broker='Marina Oliveira' AND leads_received=0 AND converted_leads=0 AND recovered_leads=0 AND visits=0`;
-  await sql`UPDATE site_broker_goals SET leads_received=22, converted_leads=6, recovered_leads=2, visits=5
-    WHERE month='2026-09' AND broker='Paulo Mendes' AND leads_received=0 AND converted_leads=0 AND recovered_leads=0 AND visits=0`;
-  await sql`UPDATE site_broker_goals SET leads_received=16, converted_leads=3, recovered_leads=1, visits=4
-    WHERE month='2026-09' AND broker='Camila Rocha' AND leads_received=0 AND converted_leads=0 AND recovered_leads=0 AND visits=0`;
-  await sql`INSERT INTO site_sales (reference_key, sale_date, broker, property, client, amount) VALUES
-    ('history-2026-04', '2026-04-18', 'Marina Oliveira', 'Residencial Alameda', 'Cliente abril', 1420000),
-    ('history-2026-05', '2026-05-21', 'Paulo Mendes', 'Parque Imperial', 'Cliente maio', 1750000),
-    ('history-2026-06', '2026-06-16', 'Camila Rocha', 'Vila do Lago', 'Cliente junho', 1980000),
-    ('history-2026-07', '2026-07-24', 'Marina Oliveira', 'Reserva das Flores', 'Cliente julho', 2210000),
-    ('history-2026-08', '2026-08-27', 'Paulo Mendes', 'Edifício Central', 'Cliente agosto', 2360000),
-    ('sale-marina-aurora', '2026-09-01', 'Marina Oliveira', 'Residencial Aurora', 'Lucas Carvalho', 575000),
-    ('sale-marina-horizonte', '2026-09-02', 'Marina Oliveira', 'Edifício Horizonte', 'Ana Martins', 590000),
-    ('sale-paulo-bosque', '2026-09-03', 'Paulo Mendes', 'Casa Bosque Sereno', 'Rafael Borges', 820000),
-    ('sale-paulo-vila', '2026-09-04', 'Paulo Mendes', 'Casa Vila Verde', 'Bruno Lima', 360000),
-    ('sale-camila-studio', '2026-09-05', 'Camila Rocha', 'Studio Vila Nova', 'Juliana Reis', 295000)
-    ON CONFLICT (reference_key) DO NOTHING`;
 }
 
 export async function getPerformance(month: string): Promise<PerformanceSnapshot> {
   await ensurePerformanceSchema();
   const sql = database();
   await sql`INSERT INTO site_performance_months (month, company_goal, leads_received, converted_leads, recovered_leads)
-    VALUES (${month}, 3000000, 0, 0, 0) ON CONFLICT (month) DO NOTHING`;
-  const defaultBrokers = ['Marina Oliveira', 'Paulo Mendes', 'Camila Rocha'];
-  for (const broker of defaultBrokers) {
-    await sql`INSERT INTO site_broker_goals (month, broker, goal) VALUES (${month}, ${broker}, 0) ON CONFLICT (month, broker) DO NOTHING`;
-  }
+    VALUES (${month}, 0, 0, 0, 0) ON CONFLICT (month) DO NOTHING`;
   const settingsRows = await sql`SELECT company_goal, leads_received, converted_leads, recovered_leads FROM site_performance_months WHERE month=${month}`;
   const goalRows = await sql`SELECT broker, goal, leads_received, converted_leads, recovered_leads, visits FROM site_broker_goals WHERE month=${month} ORDER BY broker`;
   const saleRows = await sql`SELECT id, sale_date, broker, property, client, amount, deal_type, created_at FROM site_sales
-    WHERE TO_CHAR(sale_date, 'YYYY-MM')=${month} ORDER BY sale_date DESC, created_at DESC`;
+    WHERE TO_CHAR(sale_date, 'YYYY-MM')=${month}
+      AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[])) ORDER BY sale_date DESC, created_at DESC`;
   const historyRows = await sql`WITH recent_months AS (
       SELECT DISTINCT TO_CHAR(sale_date, 'YYYY-MM') AS month FROM site_sales
-      WHERE deal_type='Venda' AND sale_date < ((${month} || '-01')::date + INTERVAL '1 month') ORDER BY month DESC LIMIT 6
+      WHERE deal_type='Venda' AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[]))
+        AND sale_date < ((${month} || '-01')::date + INTERVAL '1 month') ORDER BY month DESC LIMIT 6
     )
     SELECT TO_CHAR(sale_date, 'YYYY-MM') AS month, broker, SUM(amount) AS sold FROM site_sales
-    WHERE deal_type='Venda' AND TO_CHAR(sale_date, 'YYYY-MM') IN (SELECT month FROM recent_months)
+    WHERE deal_type='Venda' AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[]))
+      AND TO_CHAR(sale_date, 'YYYY-MM') IN (SELECT month FROM recent_months)
     GROUP BY TO_CHAR(sale_date, 'YYYY-MM'), broker ORDER BY month`;
   const sales = saleRows.map(mapSale);
   const completedSales = sales.filter((sale) => sale.dealType !== 'Aluguel');

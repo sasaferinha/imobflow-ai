@@ -11,13 +11,12 @@ export type ConversationMessage = {
 
 export async function listConversationMessages(): Promise<ConversationMessage[]> {
   const conversations = await supabaseRequest<Record<string, unknown>[]>(
-    `conversations?company_id=eq.${supabaseCompanyId()}&select=id,lead_id`,
+    `conversations?company_id=eq.${supabaseCompanyId()}&select=id,lead_id`, { allRows: true },
   );
   if (!conversations.length) return [];
-  const conversationIds = conversations.map((row) => String(row.id));
   const leadByConversation = new Map(conversations.map((row) => [String(row.id), String(row.lead_id)]));
   const messages = await supabaseRequest<Record<string, unknown>[]>(
-    `messages?company_id=eq.${supabaseCompanyId()}&conversation_id=in.(${conversationIds.join(',')})&select=*&order=created_at.asc`,
+    `messages?company_id=eq.${supabaseCompanyId()}&select=*&order=created_at.asc`, { allRows: true },
   );
   return messages.map((row) => mapMessage(row, leadByConversation.get(String(row.conversation_id)) || ''));
 }

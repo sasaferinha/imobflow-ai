@@ -9,7 +9,7 @@ function compile(file, context = {}) {
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
   const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const module = { exports: {} };
-  vm.runInNewContext(output, { module, exports: module.exports, require, Buffer, Date, URL, console, ...context });
+  vm.runInNewContext(output, { module, exports: module.exports, require, Buffer, Date, URL, URLSearchParams, console, ...context });
   return module.exports;
 }
 
@@ -64,6 +64,25 @@ assert.equal(stored.length, 2);
 assert.equal(uploaded.length, 1);
 assert.match(stored[1], /^https:\/\/project\.supabase\.co\/storage\/v1\/object\/public\/property-images\//);
 assert.equal(uploaded[0].options.headers.Authorization, 'Bearer test-server-key');
+
+const records = Array.from({ length: 1205 }, (_, id) => ({ id }));
+let pageCalls = 0;
+const storage = compile('lib/supabase.ts', {
+  process: imageEnvironment,
+  fetch: async (url) => {
+    pageCalls++;
+    const params = new URL(url).searchParams;
+    assert.equal(params.get('company_id'), 'eq.company');
+    const offset = Number(params.get('offset'));
+    const limit = Math.min(Number(params.get('limit')), 300); // Server can cap below requested page size.
+    return { ok: true, status: 200, text: async () => JSON.stringify(records.slice(offset, offset + limit)) };
+  },
+});
+const complete = await storage.supabaseRequest('leads?company_id=eq.company&select=*', { allRows: true });
+assert.equal(complete.length, 1205);
+assert.equal(complete[1204].id, 1204);
+assert.equal(pageCalls, 6);
+await assert.rejects(() => storage.supabaseRequest('leads?company_id=eq.company&limit=1000', { allRows: true }), /limite de leitura/);
 
 console.log('PASS signed sessions, CSRF checks, persistent rate limits and trusted image storage');
 }

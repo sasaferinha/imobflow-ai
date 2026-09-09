@@ -1,10 +1,40 @@
 'use client';
 /* eslint-disable @next/next/no-img-element -- property previews use uploaded data URLs */
 
-import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type FormEvent, type ComponentProps } from 'react';
 import type { LeadProfile } from '@/lib/leads';
 import type { PropertyRecord } from '@/lib/operations';
-import { type DemoContact, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
+import { demoContacts, demoConversationReducer, demoTemperature, type DemoContact, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
+
+const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
+  id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
+  goal: contact.goal, propertyType: contact.propertyType, region: contact.region, budget: contact.budget,
+  details: `${contact.rooms} quartos · ${contact.payment}`, summary: contact.suggestion, score: contact.score,
+  temperature: demoTemperature(contact.score), source: 'Demonstração', assignedTo: null,
+  lifecycleStatus: 'Em atendimento', lastContactAt: null, inactivityDays: null,
+  recoveryPotential: 'Baixo', scoreReasons: [], recoverySelected: false, createdAt: '2026-09-08T12:00:00Z',
+}));
+
+export default function ConversationCenter(props: ComponentProps<typeof ConversationWorkspace>) {
+  const [preview, setPreview] = useState(!(props.leads?.length));
+  const [previewState, previewDispatch] = useReducer(demoConversationReducer, undefined, () => ({
+    selectedId: `lead-example-${demoContacts[0].id}`,
+    threads: Object.fromEntries(demoContacts.map(contact => [`lead-example-${contact.id}`, {
+      messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false,
+    }])),
+  }));
+  return <>
+    <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
+      <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>Clientes cadastrados</button>
+      <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>Ver demonstração</button>
+      {preview && <span>Contatos fictícios. As mensagens de teste ficam apenas nesta prévia.</span>}
+    </div>
+    {preview ? <ConversationWorkspace {...props} demonstration state={previewState} dispatch={previewDispatch} leads={previewLeads}
+      persistMessage={async () => ({ id: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) })}
+      openAgenda={() => props.notify('Exemplo de agendamento: selecione um cliente cadastrado para marcar uma visita real.')}
+    /> : <ConversationWorkspace {...props} />}
+  </>;
+}
 
 type ConversationContact = DemoContact & { sourceLead?: LeadProfile };
 const emptyThread = { messages: [], draft: '', unread: 0, humanMode: false };
@@ -17,12 +47,13 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-export default function ConversationCenter({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, leads = [], properties = [] }: {
+function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, leads = [], properties = [], demonstration = false }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
   notify: (message: string) => void; openAgenda: () => void;
   persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string }>;
   refreshProperties: () => Promise<void>;
   leads?: LeadProfile[]; properties?: PropertyRecord[];
+  demonstration?: boolean;
 }) {
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
@@ -55,7 +86,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
   });
   const stage = lead?.lifecycleStatus || selected.stage;
   const temperature = contactTemperature(selected);
-  const sourceLabel = 'Dados do banco de leads';
+  const sourceLabel = demonstration ? 'Perfil fictício para demonstração' : 'Dados do banco de leads';
   const leadHighlights = lead
     ? [['Objetivo', lead.goal], ['Tipo de imóvel', lead.propertyType], ['Região desejada', lead.region], ['Investimento', lead.budget]]
     : [['Objetivo', selected.goal], ['Tipo de imóvel', selected.propertyType], ['Região desejada', selected.region], ['Investimento', selected.budget]];
@@ -69,7 +100,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
     try {
       const saved = await persistMessage({ leadId, content: thread.draft.trim() });
       dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time });
-      notify('Mensagem salva no histórico do lead.');
+      notify(demonstration ? 'Mensagem adicionada à prévia. Nenhum cliente foi contatado.' : 'Mensagem salva no histórico do lead.');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível salvar a mensagem.');
     }
@@ -80,7 +111,7 @@ export default function ConversationCenter({ state, dispatch, notify, openAgenda
       const saved = await persistMessage({ leadId, content: text, images: property.images, propertyId: property.id });
       dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: property.images, propertyTitle: property.title });
       setPropertyPickerOpen(false);
-      notify(`${property.title} salvo na conversa com ${selected.name}.`);
+      notify(demonstration ? `${property.title} adicionado apenas à demonstração.` : `${property.title} salvo na conversa com ${selected.name}.`);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.');
     }

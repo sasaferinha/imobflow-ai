@@ -4,6 +4,7 @@ type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   prefer?: string;
+  allRows?: boolean;
 };
 
 export function supabaseCompanyId() {
@@ -15,6 +16,24 @@ export function hasSupabaseConfig() {
 }
 
 export async function supabaseRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if (options.allRows) {
+    if (options.method && options.method !== 'GET') throw new Error('Paginação disponível somente para leitura.');
+    const [table, query = ''] = path.split('?');
+    const params = new URLSearchParams(query);
+    const maximum = Math.min(Number(params.get('limit') || 10000), 10001);
+    const order = params.get('order');
+    params.set('order', order ? `${order},id.asc` : 'id.asc');
+    const rows: unknown[] = [];
+    while (true) {
+      params.set('offset', String(rows.length));
+      params.set('limit', String(Math.min(500, maximum + 1 - rows.length)));
+      const page = await supabaseRequest<unknown[]>(`${table}?${params}`, { ...options, allRows: false });
+      if (!Array.isArray(page)) throw new Error('Resposta inválida do banco.');
+      if (!page.length) return rows as T;
+      rows.push(...page);
+      if (rows.length > maximum) throw new Error('Base acima do limite de leitura. Refine a consulta antes de continuar.');
+    }
+  }
   const baseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '');
   const secretKey = process.env.SUPABASE_SECRET_KEY;
   if (!baseUrl || !secretKey) throw new Error('Supabase não configurado');
