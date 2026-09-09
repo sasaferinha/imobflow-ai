@@ -1,4 +1,5 @@
 import { supabaseCompanyId, supabaseRequest } from './supabase';
+import { currentAccount } from './tenant-context';
 
 export type ConversationMessage = {
   id: string;
@@ -28,6 +29,8 @@ export async function createConversationMessage(input: {
   propertyId?: string | null;
 }): Promise<ConversationMessage> {
   const companyId = supabaseCompanyId();
+  const account = currentAccount();
+  if (!account) throw new Error('Entre na sua conta para continuar.');
   const leads = await supabaseRequest<Array<{ id: string }>>(
     `leads?id=eq.${encodeURIComponent(input.leadId)}&company_id=eq.${companyId}&select=id&limit=1`,
   );
@@ -59,6 +62,9 @@ export async function createConversationMessage(input: {
     body: { company_id: companyId, conversation_id: conversationId, direction: 'outgoing', sender_type: 'human', content: input.content, media_urls: verifiedImages },
   });
   await supabaseRequest(`conversations?id=eq.${conversationId}`, { method: 'PATCH', body: { last_message_at: new Date().toISOString() } });
+  await supabaseRequest(`leads?id=eq.${encodeURIComponent(input.leadId)}&company_id=eq.${companyId}`, {
+    method: 'PATCH', body: { assigned_to: account.name },
+  });
   if (input.propertyId) {
     await supabaseRequest('lead_property_events', {
       method: 'POST',

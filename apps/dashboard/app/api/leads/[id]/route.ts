@@ -5,6 +5,7 @@ import { updateLeadIntelligence } from '@/lib/database';
 import type { LeadLifecycleStatus } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { hasSameOrigin } from '@/lib/request-security';
+import { currentAccount } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -17,12 +18,15 @@ async function handlePATCH(request: NextRequest, context: { params: Promise<{ id
   try {
     const { id } = await context.params;
     const body = await request.json() as Record<string, unknown>;
-    const lifecycleStatus = statuses.includes(body.lifecycleStatus as LeadLifecycleStatus) ? body.lifecycleStatus as LeadLifecycleStatus : 'Novo';
+    if ('lifecycleStatus' in body && !statuses.includes(body.lifecycleStatus as LeadLifecycleStatus)) return NextResponse.json({ error: 'Etapa inválida.' }, { status: 400 });
     const rawDate = typeof body.lastContactAt === 'string' ? body.lastContactAt : '';
     const lastContactAt = rawDate && !Number.isNaN(new Date(rawDate).getTime()) ? new Date(rawDate).toISOString() : null;
     const data = await updateLeadIntelligence(id, {
-      lifecycleStatus, lastContactAt, recoverySelected: Boolean(body.recoverySelected),
-      assignedTo: typeof body.assignedTo === 'string' && body.assignedTo.trim() ? body.assignedTo.trim().slice(0, 120) : null,
+      ...('lifecycleStatus' in body ? { lifecycleStatus: body.lifecycleStatus as LeadLifecycleStatus } : {}),
+      ...('lastContactAt' in body ? { lastContactAt } : {}),
+      ...(body.claim === true ? { assignedTo: currentAccount()!.name } : 'assignedTo' in body ? {
+        assignedTo: typeof body.assignedTo === 'string' && body.assignedTo.trim() ? body.assignedTo.trim().slice(0, 120) : null,
+      } : {}),
     });
     if (!data) return NextResponse.json({ error: 'Lead não encontrado.' }, { status: 404 });
     after(runAutomationsAfterEvent);

@@ -793,3 +793,8 @@ body { -webkit-font-smoothing: antialiased; }
 .conversation-preview-toolbar button { padding: 10px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; cursor: pointer; }
 .conversation-preview-toolbar button[aria-pressed="true"] { background: #e8f0ff; color: #005bd3; border-color: #b9d2ff; }
 .conversation-preview-toolbar span { font-size: 14px; color: var(--muted); }
+/* Operational notices stay visible without discarding an open form or draft. */
+.release-notice, .sync-notice { position: fixed; z-index: 120; bottom: 18px; left: 50%; transform: translateX(-50%); width: min(640px, calc(100vw - 32px)); padding: 14px 18px; border: 1px solid #c7dafa; border-radius: 16px; background: #f5f9ff; color: #1d3557; box-shadow: 0 8px 28px #163c7020; font-size: 14px; }
+.release-notice { display: flex; align-items: center; gap: 16px; }
+.release-notice button { flex-shrink: 0; border: 0; border-radius: 10px; padding: 10px 14px; background: #007aff; color: white; font: inherit; cursor: pointer; }
+.sync-notice { bottom: 98px; }

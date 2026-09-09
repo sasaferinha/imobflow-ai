@@ -48,7 +48,9 @@ export function protectedRoute<C>(handler: (request: NextRequest, context: C) =>
     try {
       const account = await readAccount(request.cookies.get(ACCOUNT_COOKIE)?.value);
       if (!account) return NextResponse.json({ error: 'Entre na sua conta para continuar.' }, { status: 401 });
-      return await withAccount(account, () => handler(request, context));
+      const response = await withAccount(account, () => handler(request, context));
+      response.headers.set('Cache-Control', 'private, no-store, max-age=0');
+      return response;
     } catch { return NextResponse.json({ error: 'Não foi possível verificar o acesso. Tente novamente.' }, { status: 503 }); }
   };
 }

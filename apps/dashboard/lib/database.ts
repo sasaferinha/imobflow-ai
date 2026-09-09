@@ -68,10 +68,12 @@ export async function importLeads(inputs: LeadInput[]) {
   return { imported: leads.length, skipped: inputs.length - leads.length, leads };
 }
 
-export async function updateLeadIntelligence(id: string, input: { lifecycleStatus: LeadLifecycleStatus; lastContactAt: string | null; recoverySelected: boolean; assignedTo: string | null }) {
+export async function updateLeadIntelligence(id: string, input: Partial<{ lifecycleStatus: LeadLifecycleStatus; lastContactAt: string | null; recoverySelected: boolean; assignedTo: string | null }>) {
   const rows = await supabaseRequest<Record<string, unknown>[]>(`leads?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, {
     method: 'PATCH', prefer: 'return=representation',
-    body: { lifecycle_status: input.lifecycleStatus, last_contact_at: input.lastContactAt, assigned_to: input.assignedTo },
+    body: { ...(input.lifecycleStatus === undefined ? {} : { lifecycle_status: input.lifecycleStatus }),
+      ...(input.lastContactAt === undefined ? {} : { last_contact_at: input.lastContactAt }),
+      ...(input.assignedTo === undefined ? {} : { assigned_to: input.assignedTo }) },
   });
   return rows[0] ? mapLead(rows[0]) : null;
 }

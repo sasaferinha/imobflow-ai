@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:production": "node scripts/test-dashboard-sync.cjs && node scripts/test-demo-conversations.cjs && next build",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "node scripts/test-security.cjs && node scripts/test-demo-conversations.cjs && node scripts/test-match-workflow.cjs && node scripts/test-automations.cjs && node scripts/test-property-deals.cjs"

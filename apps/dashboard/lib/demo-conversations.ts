@@ -120,16 +120,16 @@ export const demoContacts: DemoContact[] = [
 
 export type DemoConversationState = {
   selectedId: string;
-  threads: Record<string, { messages: DemoMessage[]; draft: string; unread: number; humanMode: boolean; assignedTo?: string }>;
+  threads: Record<string, { messages: DemoMessage[]; draft: string; unread: number; humanMode: boolean; assignedTo?: string; assignedBrokerId?: string | null; revision?: number }>;
 };
 export type DemoConversationAction =
   | { type: 'select'; id: string }
   | { type: 'draft'; id: string; text: string }
-  | { type: 'send'; id: string; messageId: string; time: string }
+  | { type: 'send'; id: string; messageId: string; time: string; text?: string }
   | { type: 'share-property'; id: string; messageId: string; time: string; text: string; images: string[]; propertyTitle: string }
   | { type: 'assign'; id: string; assignedTo: string }
   | { type: 'sync'; contacts: Array<{ id: string; unread?: number }> }
-  | { type: 'hydrate'; contacts: Array<{ id: string; messages: DemoMessage[] }> };
+  | { type: 'hydrate'; contacts: Array<{ id: string; messages: DemoMessage[]; assignedTo?: string | null; assignedBrokerId?: string | null; revision?: number }> };
 export function createDemoConversationState(): DemoConversationState {
   return { selectedId: demoContacts[0].id, threads: Object.fromEntries(demoContacts.map(contact => [contact.id, { messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false }])) };
 }
@@ -142,7 +142,10 @@ export function demoConversationReducer(state: DemoConversationState, action: De
     const threads = { ...state.threads };
     for (const contact of action.contacts) {
       const current = threads[contact.id] || { messages: [], draft: '', unread: 0, humanMode: false };
-      threads[contact.id] = { ...current, messages: contact.messages };
+      if (contact.revision !== undefined && (current.revision || 0) > contact.revision) continue;
+      threads[contact.id] = { ...current, messages: contact.messages,
+        ...(contact.revision === undefined ? {} : { revision: contact.revision, assignedTo: contact.assignedTo || undefined,
+          assignedBrokerId: contact.assignedBrokerId, humanMode: Boolean(contact.assignedTo) }) };
     }
     return { ...state, threads };
   }
@@ -159,12 +162,17 @@ export function demoConversationReducer(state: DemoConversationState, action: De
   }
   const thread = state.threads[action.id];
   if (!thread) return state;
-  if (action.type === 'send' && !thread.draft.trim()) return state;
+  if (action.type === 'send' && !(action.text ?? thread.draft).trim()) return state;
+  if ((action.type === 'send' || action.type === 'share-property') && thread.messages.some(message => message.id === action.messageId)) {
+    return action.type === 'send' && thread.draft.trim() === (action.text ?? thread.draft).trim()
+      ? { ...state, threads: { ...state.threads, [action.id]: { ...thread, draft: '' } } } : state;
+  }
   const updated = action.type === 'select' ? { ...thread, unread: 0 }
     : action.type === 'draft' ? { ...thread, draft: action.text }
     : action.type === 'assign' ? { ...thread, humanMode: true, assignedTo: action.assignedTo }
     : action.type === 'share-property' ? { ...thread, messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: action.text, time: action.time, images: action.images, propertyTitle: action.propertyTitle }] }
-    : { ...thread, draft: '', messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: thread.draft.trim(), time: action.time }] };
+    : { ...thread, draft: thread.draft.trim() === (action.text ?? thread.draft).trim() ? '' : thread.draft,
+      messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: (action.text ?? thread.draft).trim(), time: action.time }] };
   return { selectedId: action.type === 'select' ? action.id : state.selectedId, threads: { ...state.threads, [action.id]: updated } };
 }
 

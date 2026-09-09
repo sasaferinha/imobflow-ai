@@ -14,7 +14,7 @@ function load(file) {
   const module = { exports: {} };
   vm.runInNewContext(output, {
     module, exports: module.exports,
-    require: name => name === '@/lib/demo-conversations' ? load('lib/demo-conversations.ts') : require(name),
+    require: name => name.startsWith('@/lib/') ? load(name.replace('@/', '') + '.ts') : require(name),
   });
   modules.set(file, module.exports);
   return module.exports;
@@ -56,15 +56,16 @@ assert.equal(state.threads.beatriz, beatrizThread);
 assert.equal(demoContacts[0].messages.length, originalMarianaCount);
 const empty = reduce(state, { type: 'send', id: 'mariana', messageId: 'empty', time: '14:01' });
 assert.equal(empty, state);
-state = reduce(state, { type: 'assign', id: 'mariana' });
+state = reduce(state, { type: 'assign', id: 'mariana', assignedTo: 'Corretor A' });
+assert.equal(state.threads.mariana.assignedTo, 'Corretor A');
 assert.equal(state.threads.mariana.humanMode, true);
 assert.equal(state.threads.beatriz.humanMode, false);
 assert.equal(reduce(state, { type: 'select', id: 'unknown' }), state);
 console.log('PASS draft, unread count, assignment and outgoing messages isolated per contact; seed immutable');
 const Component = load('app/conversation-center.tsx').default;
 const emptyHtml = renderToStaticMarkup(createElement(Component, { state: createLiveConversationState(), dispatch() {}, notify() {}, openAgenda() {}, persistMessage: async () => ({}), refreshProperties: async () => {} }));
-assert.ok(emptyHtml.includes('Mariana Costa'));
-assert.ok(emptyHtml.includes('Contatos fictícios'));
+assert.ok(!emptyHtml.includes('Mariana Costa'));
+assert.ok(emptyHtml.includes('Nenhuma conversa disponível'));
 assert.ok(emptyHtml.includes('Clientes cadastrados'));
 const liveLead = { id:'00000000-0000-4000-8000-000000000100', name:'Cliente Real', phone:'35999999999', email:null, goal:'Comprar', propertyType:'Casa', region:'Centro', budget:'Até R$ 500.000', details:null, summary:'Busca cadastrada', score:72, temperature:'Quente', source:'Formulário', assignedTo:null, lifecycleStatus:'Novo', lastContactAt:null, inactivityDays:0, recoveryPotential:'Baixo', scoreReasons:[], recoverySelected:false, createdAt:'2026-09-08T12:00:00.000Z' };
 let liveState = reduce(createLiveConversationState(), { type:'sync', contacts:[{ id:`lead-${liveLead.id}`, unread:0 }] });
@@ -74,3 +75,16 @@ assert.ok(liveHtml.includes('Dados do banco de leads'));
 assert.ok(liveHtml.includes('Usar resposta'));
 assert.ok(!liveHtml.includes('Mariana Costa'));
 console.log('PASS production conversation view renders only persisted leads and a truthful empty state');
+
+let shared = reduce(state, { type: 'draft', id: 'mariana', text: 'Rascunho do administrador' });
+const received = [...shared.threads.mariana.messages, { id:'broker-message', side:'outgoing', text:'Mensagem do corretor', time:'15:00' }];
+shared = reduce(shared, { type:'hydrate', contacts:[{ id:'mariana', revision:5, assignedTo:'Corretor B', assignedBrokerId:'broker-b', messages:received }] });
+assert.equal(shared.threads.mariana.assignedTo, 'Corretor B');
+assert.equal(shared.threads.mariana.draft, 'Rascunho do administrador');
+shared = reduce(shared, { type:'hydrate', contacts:[{ id:'mariana', revision:4, assignedTo:null, messages:[] }] });
+assert.equal(shared.threads.mariana.assignedTo, 'Corretor B');
+assert.equal(shared.threads.mariana.messages.length, received.length);
+shared = reduce(shared, { type:'send', id:'mariana', messageId:'broker-message', text:'Mensagem do corretor', time:'15:00' });
+assert.equal(shared.threads.mariana.messages.length, received.length);
+assert.equal(shared.threads.mariana.draft, 'Rascunho do administrador');
+console.log('PASS shared assignment, stale revision rejection, draft preservation and message deduplication');

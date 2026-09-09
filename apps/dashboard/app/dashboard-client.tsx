@@ -9,9 +9,10 @@ import ConversationCenter from './conversation-center';
 import { createLiveConversationState, demoConversationReducer } from '@/lib/demo-conversations';
 import type { ConversationMessage } from '@/lib/conversations';
 import TeamModal from './team-modal';
+import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
+import ReleaseNotice from './release-notice';
 
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
-const DATA_SYNC_CHANNEL = 'imobflow_data_sync';
 
 type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations';
 type Property = PropertyRecord;
@@ -186,17 +187,7 @@ async function loadRemoteProperties() {
 }
 
 function announcePropertyChange() {
-  if (!('BroadcastChannel' in window)) return;
-  const channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
-  channel.postMessage({ entity: 'properties', changedAt: Date.now() });
-  channel.close();
-}
-
-function announceDashboardChange(entity: 'leads' | 'conversations') {
-  if (!('BroadcastChannel' in window)) return;
-  const channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
-  channel.postMessage({ entity, changedAt: Date.now() });
-  channel.close();
+  announceDashboardChange('properties');
 }
 
 export default function DashboardClient({ account }: { account?: { name: string; company: string; role: 'owner' | 'broker' } }) {
@@ -225,95 +216,51 @@ export default function DashboardClient({ account }: { account?: { name: string;
   const [notifications, setNotifications] = useState<Array<{ id:number; text:string; unread:boolean }>>([]);
   const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>([]);
   const [selectedLead, setSelectedLead] = useState<DashboardLead | null>(null);
+  const [syncFailed, setSyncFailed] = useState(false);
 
 
-  useEffect(() => {
-    let active = true;
-    let channel: BroadcastChannel | null = null;
-    const finishLoading = (remoteLeads: LeadProfile[]) => {
+  useEffect(() => subscribeDashboardSync({
+    entities: ['leads', 'conversations'],
+    load: async signal => {
+      const [leadResponse, messageResponse] = await Promise.all([
+        fetch('/api/leads', { cache: 'no-store', signal }),
+        fetch('/api/conversations', { cache: 'no-store', signal }),
+      ]);
+      if (!leadResponse.ok || !messageResponse.ok) throw new Error('Não foi possível atualizar os atendimentos.');
+      return { leads: (await leadResponse.json() as { data: LeadProfile[] }).data,
+        messages: (await messageResponse.json() as { data: ConversationMessage[] }).data };
+    },
+    apply: ({ leads: remoteLeads, messages }) => {
       const combined = remoteLeads.filter((lead, index, all) => all.findIndex((item) => item.id === lead.id) === index).map(decorateLead);
-      if (active) {
-        setCapturedLeads(combined);
-        setSelectedLead((current) => current ? combined.find((lead) => lead.id === current.id) || combined[0] || null : combined[0] || null);
-      }
-    };
-    const synchronize = () => {
-      if (document.visibilityState === 'hidden') return;
-      void fetch('/api/leads', { cache: 'no-store' })
-        .then(async (response) => { if (!response.ok) throw new Error('Falha ao carregar clientes.'); return (await response.json() as { data: LeadProfile[] }).data; })
-        .then(finishLoading)
-        .catch(() => undefined);
-    };
-    synchronize();
-    if ('BroadcastChannel' in window) {
-      channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
-      channel.onmessage = (event) => { if (event.data?.entity === 'leads' || event.data?.entity === 'conversations') synchronize(); };
-    }
-    window.addEventListener('focus', synchronize);
-    document.addEventListener('visibilitychange', synchronize);
-    const interval = window.setInterval(synchronize, 3_000);
-    return () => { active = false; channel?.close(); window.removeEventListener('focus', synchronize); document.removeEventListener('visibilitychange', synchronize); window.clearInterval(interval); };
-  }, []);
+      setCapturedLeads(combined);
+      setSelectedLead(current => combined.find(lead => lead.id === current?.id) || combined[0] || null);
+      const grouped = new Map<string, ConversationMessage[]>();
+      for (const message of messages) grouped.set(message.leadId, [...(grouped.get(message.leadId) || []), message]);
+      conversationDispatch({ type: 'hydrate', contacts: combined.map(lead => ({ id: `lead-${lead.id}`, messages: grouped.get(lead.id) || [] })) });
+      setSyncFailed(false);
+    },
+    onError: () => setSyncFailed(true),
+  }), []);
 
-  useEffect(() => {
-    let active = true;
-    let channel: BroadcastChannel | null = null;
-    const synchronize = () => {
-      if (document.visibilityState === 'hidden') return;
-      void loadRemoteProperties().then((items) => { if (active) setProperties(items); }).catch(() => undefined);
-    };
-    const onVisibilityChange = () => { if (document.visibilityState === 'visible') synchronize(); };
-    if ('BroadcastChannel' in window) {
-      channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
-      channel.onmessage = (event) => { if (event.data?.entity === 'properties') synchronize(); };
-    }
-    window.addEventListener('focus', synchronize);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    const interval = window.setInterval(synchronize, 30_000);
-    return () => {
-      active = false;
-      channel?.close();
-      window.removeEventListener('focus', synchronize);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.clearInterval(interval);
-    };
-  }, []);
+  useEffect(() => subscribeDashboardSync({
+    entities: ['properties'],
+    load: async signal => {
+      const response = await fetch('/api/properties', { cache: 'no-store', signal });
+      if (!response.ok) throw new Error('Falha ao atualizar imóveis.');
+      return (await response.json() as { data: Property[] }).data;
+    },
+    apply: items => { setProperties(items); setSelectedProperty(current => current ? items.find(item => item.id === current.id) || null : null); },
+  }), []);
 
-  useEffect(() => {
-    if (!capturedLeads.length) return;
-    let active = true;
-    fetch('/api/conversations', { cache: 'no-store' })
-      .then(async (response) => { if (!response.ok) throw new Error('Falha ao carregar conversas.'); return (await response.json() as { data: ConversationMessage[] }).data; })
-      .then((messages) => {
-        if (!active) return;
-        const grouped = new Map<string, ConversationMessage[]>();
-        for (const message of messages) grouped.set(message.leadId, [...(grouped.get(message.leadId) || []), message]);
-        conversationDispatch({
-          type: 'hydrate',
-          contacts: [...grouped.entries()].map(([leadId, items]) => {
-            return { id: `lead-${leadId}`, messages: items.map((item) => ({ id: item.id, side: item.side, text: item.text, time: item.time, images: item.images })) };
-          }),
-        });
-      })
-      .catch(() => { if (active) notify('Falha ao carregar conversas. Atualize a página para tentar novamente.'); });
-    return () => { active = false; };
-  }, [capturedLeads]);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      fetch('/api/properties').then(async (response) => response.ok ? (await response.json() as { data: Property[] }).data : []),
-      fetch('/api/appointments').then(async (response) => response.ok ? (await response.json() as { data: AppointmentRecord[] }).data : []),
-    ]).then(([remoteProperties, remoteAppointments]) => {
-      if (active) {
-        setProperties(remoteProperties);
-        setAppointments(remoteAppointments);
-      }
-    }).catch(() => {
-      // Mantém listas vazias: dados fictícios nunca substituem uma falha da base real.
-    });
-    return () => { active = false; };
-  }, []);
+  useEffect(() => subscribeDashboardSync({
+    entities: ['appointments'],
+    load: async signal => {
+      const response = await fetch('/api/appointments', { cache: 'no-store', signal });
+      if (!response.ok) throw new Error('Falha ao atualizar agenda.');
+      return (await response.json() as { data: AppointmentRecord[] }).data;
+    },
+    apply: setAppointments,
+  }), []);
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -420,11 +367,10 @@ export default function DashboardClient({ account }: { account?: { name: string;
   }
 
   async function updateLead(lead: LeadProfile, changes: Partial<Pick<LeadProfile, 'lifecycleStatus' | 'lastContactAt' | 'recoverySelected' | 'assignedTo'>>) {
-    const optimistic = { ...lead, ...changes };
     try {
       const response = await fetch(`/api/leads/${lead.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lifecycleStatus: optimistic.lifecycleStatus, lastContactAt: optimistic.lastContactAt, recoverySelected: optimistic.recoverySelected, assignedTo: optimistic.assignedTo }),
+        body: JSON.stringify(changes),
       });
       const result = await response.json() as { data?: LeadProfile; error?: string };
       if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível atualizar o lead.');
@@ -439,10 +385,11 @@ export default function DashboardClient({ account }: { account?: { name: string;
   }
 
   async function claimLead(lead: LeadProfile) {
-    const claimed = await updateLead(lead, {
-      assignedTo: profile.name,
-    });
-    if (!claimed) throw new Error('Não foi possível assumir este atendimento.');
+    const response = await fetch(`/api/leads/${lead.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ claim: true }) });
+    const result = await response.json() as { data?: LeadProfile; error?: string };
+    if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível assumir este atendimento.');
+    replaceLead(result.data);
+    announceDashboardChange('leads');
   }
 
   async function saveProperty(event: FormEvent<HTMLFormElement>) {
@@ -532,7 +479,6 @@ export default function DashboardClient({ account }: { account?: { name: string;
     try {
       const content = String(form.get('message') || '').trim();
       const saved = await persistConversationMessage({ leadId: lead.id, content, images: sharingProperty.images, propertyId: sharingProperty.id });
-      await claimLead(lead);
       conversationDispatch({
         type: 'share-property', id: conversationId, messageId: saved.id, time: saved.time,
         text: content, images: sharingProperty.images, propertyTitle: sharingProperty.title,
@@ -580,6 +526,8 @@ export default function DashboardClient({ account }: { account?: { name: string;
 
   return (
     <main className={`app-shell ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
+      <ReleaseNotice />
+      {syncFailed && <div className="sync-notice" role="status">Não foi possível atualizar os atendimentos. Tentando reconectar…</div>}
       <aside className="sidebar">
         <button type="button" className="brand brand-button" onClick={() => openView('overview')} aria-label="Ir para a visão geral">
           <span className="brand-mark"><svg viewBox="0 0 32 44" width="32" height="44" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 41V24l8-4v21M11 20V7l12-5v39M23 16h6v25" /></svg></span>

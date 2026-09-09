@@ -5,6 +5,8 @@ import { useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type F
 import type { LeadProfile } from '@/lib/leads';
 import type { PropertyRecord } from '@/lib/operations';
 import { demoContacts, demoConversationReducer, demoTemperature, type DemoContact, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
+import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
+import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
 
 const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
   id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
@@ -17,20 +19,46 @@ const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
 
 export default function ConversationCenter(props: ComponentProps<typeof ConversationWorkspace>) {
   const [preview, setPreview] = useState(false);
+  const [demoReady, setDemoReady] = useState(false);
+  const [demoSyncFailed, setDemoSyncFailed] = useState(false);
   const [previewState, previewDispatch] = useReducer(demoConversationReducer, undefined, () => ({
     selectedId: `lead-example-${demoContacts[0].id}`,
     threads: Object.fromEntries(demoContacts.map(contact => [`lead-example-${contact.id}`, {
       messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false,
     }])),
   }));
+  useEffect(() => subscribeDashboardSync({
+    entities: ['demo-conversations'],
+    load: async signal => {
+      const response = await fetch('/api/conversations/demo', { cache: 'no-store', signal });
+      if (!response.ok) throw new Error('Falha ao sincronizar a demonstração.');
+      return (await response.json() as { data: SharedDemoThread[] }).data;
+    },
+    apply: contacts => { previewDispatch({ type: 'hydrate', contacts }); setDemoReady(true); setDemoSyncFailed(false); },
+    onError: () => setDemoSyncFailed(true),
+  }), []);
+  async function saveDemoAction(input: { contactId: string; action: 'claim' | 'message'; content?: string; messageId?: string; propertyId?: string }) {
+    const response = await fetch('/api/conversations/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    const result = await response.json() as { data?: SharedDemoThread; error?: string };
+    if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar o atendimento.');
+    previewDispatch({ type: 'hydrate', contacts: [result.data] });
+    announceDashboardChange('demo-conversations');
+    return result.data;
+  }
   return <>
     <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
       <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>Clientes cadastrados</button>
       <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>Ver demonstração</button>
-      {preview && <span>Contatos fictícios: esta prévia permite simular o atendimento, sem enviar mensagens nem alterar clientes reais.</span>}
+      {preview && <span role="status">{demoSyncFailed ? 'Não foi possível atualizar a demonstração. Tentando reconectar…' : !demoReady ? 'Carregando atendimentos da empresa…' : 'Demonstração compartilhada com sua equipe. Nenhuma mensagem é enviada a clientes reais.'}</span>}
     </div>
-    {preview ? <ConversationWorkspace {...props} demonstration state={previewState} dispatch={previewDispatch} leads={previewLeads}
-      persistMessage={async () => ({ id: crypto.randomUUID(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) })}
+    {preview ? <ConversationWorkspace {...props} demonstration ready={demoReady} state={previewState} dispatch={previewDispatch} leads={previewLeads}
+      claimLead={async lead => { await saveDemoAction({ contactId: lead.id, action: 'claim' }); }}
+      persistMessage={async input => {
+        const messageId = crypto.randomUUID();
+        const thread = await saveDemoAction({ contactId: input.leadId, action: 'message', content: input.content, messageId, propertyId: input.propertyId });
+        const message = thread.messages.find(item => item.id === messageId)!;
+        return { id: message.id, time: message.time };
+      }}
       openAgenda={() => props.notify('Exemplo de agendamento: selecione um cliente cadastrado para marcar uma visita real.')}
     /> : <ConversationWorkspace {...props} />}
   </>;
@@ -47,7 +75,7 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, leads = [], properties = [], demonstration = false }: {
+function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, leads = [], properties = [], demonstration = false, ready = true }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
   notify: (message: string) => void; openAgenda: () => void;
   persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string }>;
@@ -56,7 +84,10 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   currentBrokerName: string;
   leads?: LeadProfile[]; properties?: PropertyRecord[];
   demonstration?: boolean;
+  ready?: boolean;
 }) {
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [propertyPickerOpen, setPropertyPickerOpen] = useState(false);
@@ -100,29 +131,32 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
 
   async function send(event: FormEvent) {
     event.preventDefault();
-    if (!lead || !thread.draft.trim()) return;
+    if (!lead || !thread.draft.trim() || !ready || savingRef.current) return;
+    const content = thread.draft.trim();
+    savingRef.current = true; setSaving(true);
     try {
-      const saved = await persistMessage({ leadId, content: thread.draft.trim() });
-      if (demonstration && !isCurrentBroker) dispatch({ type: 'assign', id: selected.id, assignedTo: currentBrokerName });
-      if (!demonstration && !isCurrentBroker) await claimLead(lead);
-      dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time });
+      const saved = await persistMessage({ leadId, content });
+      dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time, text: content });
       notify(demonstration ? 'Mensagem adicionada à prévia. Nenhum cliente foi contatado.' : 'Mensagem salva no histórico do lead.');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível salvar a mensagem.');
+    } finally {
+      savingRef.current = false; setSaving(false);
     }
   }
   async function shareProperty(property: PropertyRecord) {
-    if (!lead) return;
+    if (!lead || !ready || savingRef.current) return;
+    savingRef.current = true; setSaving(true);
     const text = `Separei uma opção que combina com o seu perfil:\n\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
     try {
       const saved = await persistMessage({ leadId, content: text, images: property.images, propertyId: property.id });
-      if (demonstration && !isCurrentBroker) dispatch({ type: 'assign', id: selected.id, assignedTo: currentBrokerName });
-      if (!demonstration && !isCurrentBroker) await claimLead(lead);
       dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: property.images, propertyTitle: property.title });
       setPropertyPickerOpen(false);
       notify(demonstration ? `${property.title} adicionado apenas à demonstração.` : `${property.title} salvo na conversa com ${selected.name}.`);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.');
+    } finally {
+      savingRef.current = false; setSaving(false);
     }
   }
   async function openPropertyPicker() {
@@ -137,17 +171,15 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     }
   }
   async function claimConversation() {
-    if (!lead || isCurrentBroker) return;
+    if (!lead || isCurrentBroker || !ready || savingRef.current) return;
+    savingRef.current = true; setSaving(true);
     try {
-      if (demonstration) {
-        dispatch({ type: 'assign', id: selected.id, assignedTo: currentBrokerName });
-        notify(`${selected.name} agora está no seu atendimento de demonstração.`);
-        return;
-      }
       await claimLead(lead);
       notify(`${selected.name} agora está no seu atendimento.`);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível assumir este atendimento.');
+    } finally {
+      savingRef.current = false; setSaving(false);
     }
   }
   return <div className="conversation-demo">
@@ -176,10 +208,10 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
         {!filtered.length && <p className="empty-filter">Nenhuma conversa encontrada. Ajuste a busca ou selecione “Todas”.</p>}
       </aside>
       <section className="full-chat panel" aria-label={`Conversa com ${selected.name}`}>
-        <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><span className="conversation-name-line"><strong>{selected.name}</strong><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}` : 'Sem corretor responsável'}</span></div>{!isCurrentBroker && <button type="button" className="conversation-claim-button" onClick={() => void claimConversation()}>Assumir atendimento</button>}{isCurrentBroker && <span className="conversation-assigned-state">Você está atendendo</span>}</div>
+        <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><span className="conversation-name-line"><strong>{selected.name}</strong><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}` : 'Sem corretor responsável'}</span></div>{!isCurrentBroker && <button type="button" className="conversation-claim-button" disabled={!ready || saving} onClick={() => void claimConversation()}>Assumir atendimento</button>}{isCurrentBroker && <span className="conversation-assigned-state">Você está atendendo</span>}</div>
         <div className="full-chat-body" ref={bodyRef}><span className="chat-date">Conversa vinculada ao lead</span>{thread.messages.length ? thread.messages.map((message) => <div className={`bubble ${message.side} ${message.propertyTitle ? 'property-message' : ''}`} key={message.id}>{message.images?.length ? <div className="message-property-images">{message.images.slice(0,3).map((image,index) => <img key={index} src={image} alt={`${message.propertyTitle}, foto ${index + 1}`} />)}</div> : null}<span className="visually-hidden">{message.side === 'incoming' ? selected.name : 'Atendimento'}: </span>{message.propertyTitle && <strong>{message.propertyTitle}</strong>}<p>{message.text}</p><small>{message.time} · Painel</small></div>) : <p className="conversation-empty-thread">Ainda não há mensagens deste lead no painel. A ficha ao lado foi carregada da base para orientar o corretor.</p>}</div>
         <div className="conversation-suggestion"><span>Resposta sugerida · Dados do lead</span><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div>
-        <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" disabled title="Anexos diretos serão habilitados com o canal de mensagens">＋</button><button type="button" className="conversation-property-button" disabled={loadingProperties} onClick={() => void openPropertyPicker()}>{loadingProperties ? 'Atualizando…' : '▦ Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim()} aria-label="Adicionar mensagem">➜</button></form>
+        <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" disabled title="Anexos diretos serão habilitados com o canal de mensagens">＋</button><button type="button" className="conversation-property-button" disabled={loadingProperties} onClick={() => void openPropertyPicker()}>{loadingProperties ? 'Atualizando…' : '▦ Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim() || !ready || saving} aria-label="Adicionar mensagem">➜</button></form>
       </section>
       <aside className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
         <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><span className="conversation-name-line"><h3>{selected.name}</h3><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-data-source">{sourceLabel}{lead?.source ? ` · ${lead.source}` : ''}</span></div></header>
