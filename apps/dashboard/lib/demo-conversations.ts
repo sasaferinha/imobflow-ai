@@ -133,6 +133,10 @@ export type DemoConversationAction =
 export function createDemoConversationState(): DemoConversationState {
   return { selectedId: demoContacts[0].id, threads: Object.fromEntries(demoContacts.map(contact => [contact.id, { messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false }])) };
 }
+
+export function createLiveConversationState(): DemoConversationState {
+  return { selectedId: '', threads: {} };
+}
 export function demoConversationReducer(state: DemoConversationState, action: DemoConversationAction): DemoConversationState {
   if (action.type === 'hydrate') {
     const threads = { ...state.threads };

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { createAppointment, listAppointments } from '@/lib/database';
 import type { AppointmentInput } from '@/lib/operations';
+import { hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
 
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const body = await request.json() as Record<string, unknown>;
     const input: AppointmentInput = {

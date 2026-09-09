@@ -649,6 +649,10 @@ body { -webkit-font-smoothing: antialiased; }
 .app-shell.app-shell .score-explanation strong { color: var(--ink); font-size: 28px; font-weight: 600; letter-spacing: -.045em; }
 .app-shell.app-shell .score-explanation > i { height: 7px; margin-block: 12px; background: var(--line); }
 .app-shell.app-shell .score-explanation > i b { background: linear-gradient(90deg, #0066df, #58d5ae); transform-origin: left; animation: data-bar-rise .7s cubic-bezier(.16, 1, .3, 1) both; }
+
+.app-shell.app-shell .empty-live-data { margin: 18px 0; padding: 48px 28px; text-align: center; }
+.app-shell.app-shell .empty-live-data h2 { margin: 0 0 8px; font-size: 1.15rem; }
+.app-shell.app-shell .empty-live-data p { margin: 0 auto 20px; max-width: 560px; color: var(--muted); }
 .app-shell.app-shell .score-explanation li { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--muted); font-size: 12px; }
 .app-shell.app-shell .lead-action-grid button { min-height: 46px; border-radius: 8px; }
 .app-shell.app-shell .profile-whatsapp { min-height: 46px; border-radius: 8px; background: #0066df; color: #fff; }

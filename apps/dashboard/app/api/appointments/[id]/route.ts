@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { deleteAppointment, updateAppointmentStatus } from '@/lib/database';
+import { hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const body = await request.json() as { status?: string };
     const status = body.status === 'Confirmada' ? 'Confirmada' : 'Aguardando';
@@ -19,6 +21,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     return await deleteAppointment((await context.params).id)
       ? NextResponse.json({ ok: true })

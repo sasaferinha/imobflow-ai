@@ -6,10 +6,9 @@ import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
 import AutomationCenter from './automation-center';
 import ConversationCenter from './conversation-center';
-import { createDemoConversationState, demoConversationReducer, demoContacts } from '@/lib/demo-conversations';
+import { createLiveConversationState, demoConversationReducer } from '@/lib/demo-conversations';
 import type { ConversationMessage } from '@/lib/conversations';
 
-const LOCAL_LEADS_KEY = 'imobflow_local_leads';
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
 const DATA_SYNC_CHANNEL = 'imobflow_data_sync';
 
@@ -29,7 +28,7 @@ const leadFilterGroups: Array<{ id: LeadFilterGroup; label: string; options: Arr
 
 const navItems: Array<{ id: View; icon: string; label: string; badge?: string }> = [
   { id: 'overview', icon: '⌂', label: 'Visão geral' },
-  { id: 'conversations', icon: '◌', label: 'Conversas', badge: String(demoContacts.length) },
+  { id: 'conversations', icon: '◌', label: 'Conversas' },
   { id: 'leads', icon: '◎', label: 'Leads' },
   { id: 'properties', icon: '▦', label: 'Imóveis' },
   { id: 'agenda', icon: '□', label: 'Agenda' },
@@ -56,13 +55,6 @@ const headers: Record<View, { eyebrow: string; title: string; copy: string }> = 
   agenda: { eyebrow: 'Compromissos comerciais', title: 'Agenda', copy: 'Organize visitas, responsáveis e confirmações em um só lugar.' },
   automations: { eyebrow: 'Processos operacionais', title: 'Automações', copy: 'Monitore e controle os fluxos recorrentes da operação.' },
 };
-
-const seedLeadProfiles: LeadProfile[] = [
-  { id: 'seed-lucas', name: 'Lucas Carvalho', phone: '(35) 99992-4120', email: 'lucas@exemplo.com', goal: 'Comprar', propertyType: 'Apartamento', region: 'Centro', budget: 'R$ 300 mil a R$ 600 mil', details: '3 quartos e possibilidade de financiamento.', summary: 'Lucas deseja comprar um apartamento no Centro, com orçamento entre R$ 300 mil e R$ 600 mil.', score: 96, temperature: 'Muito quente', source: 'Base demonstrativa', assignedTo: 'Marina Oliveira', lifecycleStatus: 'Proposta', lastContactAt: '2026-09-03T13:30:00.000Z', inactivityDays: 2, recoveryPotential: 'Baixo', scoreReasons: ['Telefone disponível', 'Objetivo definido', 'Orçamento informado', 'Proposta em andamento'], recoverySelected: false, createdAt: '2026-09-01T10:42:00.000Z' },
-  { id: 'seed-ana', name: 'Ana Martins', phone: '(35) 98814-2031', email: 'ana@exemplo.com', goal: 'Comprar', propertyType: 'Apartamento', region: 'Jardim Floresta', budget: 'R$ 600 mil a R$ 1 milhão', details: 'Prefere varanda e duas vagas.', summary: 'Ana procura um apartamento no Jardim Floresta com varanda e duas vagas.', score: 75, temperature: 'Quente', source: 'Portal imobiliário', assignedTo: 'Marina Oliveira', lifecycleStatus: 'Em atendimento', lastContactAt: '2026-07-15T14:00:00.000Z', inactivityDays: 52, recoveryPotential: 'Alto', scoreReasons: ['Perfil completo', 'Sem contato há 52 dias'], recoverySelected: true, createdAt: '2026-07-10T10:31:00.000Z' },
-  { id: 'seed-rafael', name: 'Rafael Borges', phone: '(35) 97751-0928', email: null, goal: 'Alugar', propertyType: 'Casa', region: 'Vila Nova', budget: 'Aluguel até R$ 3 mil/mês', details: 'Precisa aceitar pet.', summary: 'Rafael deseja alugar uma casa na Vila Nova por até R$ 3 mil mensais.', score: 67, temperature: 'Quente', source: 'Indicação', assignedTo: 'Paulo Mendes', lifecycleStatus: 'Novo', lastContactAt: '2026-05-20T09:00:00.000Z', inactivityDays: 108, recoveryPotential: 'Alto', scoreReasons: ['Telefone disponível', 'Objetivo definido', 'Inativo há 108 dias'], recoverySelected: false, createdAt: '2026-05-18T10:08:00.000Z' },
-  { id: 'seed-carla', name: 'Carla Souza', phone: '(35) 96632-7744', email: null, goal: 'Investir', propertyType: 'Terreno', region: 'Reserva Sul', budget: 'Até R$ 300 mil', details: null, summary: 'Carla busca um terreno na Reserva Sul para investimento.', score: 52, temperature: 'Morno', source: 'Planilha antiga', assignedTo: null, lifecycleStatus: 'Novo', lastContactAt: null, inactivityDays: null, recoveryPotential: 'Médio', scoreReasons: ['Telefone disponível', 'Sem histórico de contato'], recoverySelected: false, createdAt: '2026-04-09T09:42:00.000Z' },
-];
 
 function decorateLead(lead: LeadProfile, index: number): DashboardLead {
   return {
@@ -94,22 +86,6 @@ function matchesLeadFilters(lead: DashboardLead, filters: LeadFilter[]) {
     return activeInGroup.length === 0 || activeInGroup.some((option) => matchesLeadFilter(lead, option.id));
   });
 }
-
-const initialProperties: Property[] = [
-  { id: 'aurora', title: 'Residencial Aurora', district: 'Centro', price: 'R$ 575.000', meta: '3 quartos • 2 vagas • 98 m²', tone: 'orchid', purpose: 'Venda', images: [], createdAt: '' },
-  { id: 'horizonte', title: 'Edifício Horizonte', district: 'Jardim Floresta', price: 'R$ 590.000', meta: '3 quartos • 1 vaga • 91 m²', tone: 'sky', purpose: 'Venda', images: [], createdAt: '' },
-  { id: 'bosque-sereno', title: 'Casa Bosque Sereno', district: 'Alto da Serra', price: 'R$ 820.000', meta: '4 quartos • 3 vagas • 184 m²', tone: 'sage', purpose: 'Venda', images: [], createdAt: '' },
-  { id: 'studio-vila-nova', title: 'Studio Vila Nova', district: 'Vila Nova', price: 'R$ 2.950/mês', meta: '1 quarto • mobiliado • 42 m²', tone: 'sand', purpose: 'Aluguel', images: [], createdAt: '' },
-  { id: 'oliveiras', title: 'Parque das Oliveiras', district: 'Pinheiros', price: 'R$ 745.000', meta: '2 quartos • varanda • 76 m²', tone: 'rose', purpose: 'Venda', images: [], createdAt: '' },
-  { id: 'ipe-amarelo', title: 'Casa Ipê Amarelo', district: 'Jardim Campestre', price: 'R$ 2.400/mês', meta: '2 quartos • quintal • 80 m²', tone: 'slate', purpose: 'Aluguel', images: [], createdAt: '' },
-];
-
-const initialAppointments: AppointmentRecord[] = [
-  { id:'ana-horizonte', date:'2026-09-01', time:'09:00', name:'Ana Martins', property:'Edifício Horizonte', broker:'Marina Oliveira', status:'Confirmada', color:'mint', createdAt:'' },
-  { id:'lucas-aurora', date:'2026-09-01', time:'10:30', name:'Lucas Carvalho', property:'Residencial Aurora', broker:'Paulo Mendes', status:'Aguardando', color:'amber', createdAt:'' },
-  { id:'carla-reserva', date:'2026-09-01', time:'14:00', name:'Carla Souza', property:'Terreno Reserva Sul', broker:'Marina Oliveira', status:'Confirmada', color:'violet', createdAt:'' },
-  { id:'rafael-bosque', date:'2026-09-01', time:'16:30', name:'Rafael Borges', property:'Casa Bosque Sereno', broker:'Paulo Mendes', status:'Confirmada', color:'blue', createdAt:'' },
-];
 
 async function preparePropertyImage(file: File) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error(`${file.name}: formato não aceito.`);
@@ -217,12 +193,12 @@ function announcePropertyChange() {
 
 export default function DashboardClient() {
   const [view, setView] = useState<View>('overview');
-  const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createDemoConversationState);
+  const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createLiveConversationState);
   const [leadSearch, setLeadSearch] = useState('');
   const [leadFilters, setLeadFilters] = useState<LeadFilter[]>([]);
   const [leadMode, setLeadMode] = useState<LeadMode>('all');
   const [leadImportOpen, setLeadImportOpen] = useState(false);
-  const [properties, setProperties] = useState(initialProperties);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [propertySearch, setPropertySearch] = useState('');
   const [propertyModalOpen, setPropertyModalOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
@@ -231,35 +207,24 @@ export default function DashboardClient() {
   const [savingProperty, setSavingProperty] = useState(false);
   const [propertyImages, setPropertyImages] = useState<string[]>([]);
   const [preparingImages, setPreparingImages] = useState(false);
-  const [appointments, setAppointments] = useState(initialAppointments);
+  const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | null>(null);
   const [profile, setProfile] = useState({ name: 'Marina Oliveira', company: 'Imobiliária Horizonte' });
   const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: false });
-  const [notifications, setNotifications] = useState([
-    { id: 1, text: 'Lucas pediu uma visita', unread: true },
-    { id: 2, text: 'Novo perfil comercial recebido', unread: true },
-    { id: 3, text: 'Fluxos executados sem falhas', unread: false },
-  ]);
-  const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>(() => seedLeadProfiles.map(decorateLead));
-  const [selectedLead, setSelectedLead] = useState<DashboardLead>(() => decorateLead(seedLeadProfiles[0], 0));
+  const [notifications, setNotifications] = useState<Array<{ id:number; text:string; unread:boolean }>>([]);
+  const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>([]);
+  const [selectedLead, setSelectedLead] = useState<DashboardLead | null>(null);
 
   useEffect(() => {
     let active = true;
     const finishLoading = (remoteLeads: LeadProfile[]) => {
-      try {
-        const stored = JSON.parse(window.localStorage.getItem(LOCAL_LEADS_KEY) || '[]') as LeadProfile[];
-        const available = [...remoteLeads, ...stored];
-        const unique = (available.length ? available : seedLeadProfiles).filter((lead, index, all) => all.findIndex((item) => item.id === lead.id) === index);
-        const combined = unique.map(decorateLead);
-        if (active) {
-          setCapturedLeads(combined);
-          setSelectedLead(combined[0]);
-        }
-      } catch {
-        // Os registros padrão continuam disponíveis se o armazenamento local estiver bloqueado.
+      const combined = remoteLeads.filter((lead, index, all) => all.findIndex((item) => item.id === lead.id) === index).map(decorateLead);
+      if (active) {
+        setCapturedLeads(combined);
+        setSelectedLead(combined[0] || null);
       }
     };
     fetch('/api/leads')
@@ -294,7 +259,7 @@ export default function DashboardClient() {
   }, []);
 
   useEffect(() => {
-    if (!capturedLeads.some((lead) => !lead.id.startsWith('seed-'))) return;
+    if (!capturedLeads.length) return;
     let active = true;
     fetch('/api/conversations', { cache: 'no-store' })
       .then(async (response) => response.ok ? (await response.json() as { data: ConversationMessage[] }).data : [])
@@ -305,9 +270,7 @@ export default function DashboardClient() {
         conversationDispatch({
           type: 'hydrate',
           contacts: [...grouped.entries()].map(([leadId, items]) => {
-            const lead = capturedLeads.find((candidate) => candidate.id === leadId);
-            const demo = lead && demoContacts.find((contact) => normalizeCsvHeader(contact.name) === normalizeCsvHeader(lead.name));
-            return { id: demo?.id || `lead-${leadId}`, messages: items.map((item) => ({ id: item.id, side: item.side, text: item.text, time: item.time, images: item.images })) };
+            return { id: `lead-${leadId}`, messages: items.map((item) => ({ id: item.id, side: item.side, text: item.text, time: item.time, images: item.images })) };
           }),
         });
       })
@@ -318,15 +281,15 @@ export default function DashboardClient() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      fetch('/api/properties').then(async (response) => response.ok ? (await response.json() as { data: Property[] }).data : initialProperties),
-      fetch('/api/appointments').then(async (response) => response.ok ? (await response.json() as { data: AppointmentRecord[] }).data : initialAppointments),
+      fetch('/api/properties').then(async (response) => response.ok ? (await response.json() as { data: Property[] }).data : []),
+      fetch('/api/appointments').then(async (response) => response.ok ? (await response.json() as { data: AppointmentRecord[] }).data : []),
     ]).then(([remoteProperties, remoteAppointments]) => {
       if (active) {
         setProperties(remoteProperties);
         setAppointments(remoteAppointments);
       }
     }).catch(() => {
-      // Os dados de referência mantêm o painel utilizável durante indisponibilidades temporárias.
+      // Mantém listas vazias: dados fictícios nunca substituem uma falha da base real.
     });
     return () => { active = false; };
   }, []);
@@ -436,11 +399,6 @@ export default function DashboardClient() {
 
   async function updateLead(lead: DashboardLead, changes: Partial<Pick<LeadProfile, 'lifecycleStatus' | 'lastContactAt' | 'recoverySelected' | 'assignedTo'>>) {
     const optimistic = { ...lead, ...changes };
-    if (lead.id.startsWith('seed-')) {
-      replaceLead(optimistic);
-      notify('Lead demonstrativo atualizado no painel');
-      return;
-    }
     try {
       const response = await fetch(`/api/leads/${lead.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -533,8 +491,7 @@ export default function DashboardClient() {
     const form = new FormData(event.currentTarget);
     const lead = capturedLeads.find((item) => item.id === String(form.get('leadId')));
     if (!lead) return notify('Selecione um lead para continuar.');
-    const matchingDemo = demoContacts.find((contact) => normalizeCsvHeader(contact.name) === normalizeCsvHeader(lead.name));
-    const conversationId = matchingDemo?.id || `lead-${lead.id}`;
+    const conversationId = `lead-${lead.id}`;
     conversationDispatch({ type: 'sync', contacts: [{ id: conversationId }] });
     try {
       const content = String(form.get('message') || '').trim();
@@ -577,8 +534,7 @@ export default function DashboardClient() {
   }
 
   function openLeadConversation(lead: DashboardLead) {
-    const matchingDemo = demoContacts.find((contact) => normalizeCsvHeader(contact.name) === normalizeCsvHeader(lead.name));
-    const conversationId = matchingDemo?.id || `lead-${lead.id}`;
+    const conversationId = `lead-${lead.id}`;
     conversationDispatch({ type: 'sync', contacts: [{ id: conversationId }] });
     conversationDispatch({ type: 'select', id: conversationId });
     setSelectedLead(lead);
@@ -621,7 +577,7 @@ export default function DashboardClient() {
 
         {view === 'overview' && <Overview notify={notify} />}
         {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} leads={capturedLeads} properties={properties} />}
-        {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} /><Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /></>}
+        {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} />{selectedLead ? <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /> : <section className="panel empty-live-data"><h2>Nenhum lead cadastrado</h2><p>Importe a carteira da imobiliária ou receba um novo contato pelo formulário do site.</p><button type="button" className="primary-button" onClick={() => setLeadImportOpen(true)}>Importar clientes</button></section>}</>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} />}
         {view === 'automations' && <AutomationCenter notify={notify} />}
@@ -651,7 +607,7 @@ export default function DashboardClient() {
       {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { saveSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
       {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
-      {leadImportOpen && <LeadImportModal close={() => setLeadImportOpen(false)} notify={notify} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads((current) => [...decorated, ...current.filter((lead) => !lead.id.startsWith('seed-') && !decorated.some((item) => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
+      {leadImportOpen && <LeadImportModal close={() => setLeadImportOpen(false)} notify={notify} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads((current) => [...decorated, ...current.filter((lead) => !decorated.some((item) => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
     </main>
   );
@@ -1092,7 +1048,7 @@ function Agenda({ items, setItems, notify, leads, properties }: { items:Appointm
       <div className="summary-number"><strong>{visibleItems.length}</strong><span>visitas agendadas</span></div>
       <ul><li><span><i className="mint"/>Confirmadas</span><strong>{visibleItems.filter((item) => item.status === 'Confirmada').length}</strong></li><li><span><i className="amber"/>Aguardando</span><strong>{visibleItems.filter((item) => item.status === 'Aguardando').length}</strong></li><li><span><i className="blue"/>Corretores</span><strong>{brokerCount}</strong></li></ul>
       <button type="button" className="primary-button" aria-expanded={formOpen} onClick={() => setFormOpen((open) => !open)}>＋ Novo horário</button>
-      {formOpen && <form className="inline-form" onSubmit={addAppointment}><h3>Nova visita</h3><span>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR')}</span><label>Horário<input name="time" type="time" required/></label><label>Cliente<select name="name" required defaultValue=""><option value="" disabled>Selecione um lead</option>{leads.filter((lead) => !lead.id.startsWith('seed-')).map((lead) => <option key={lead.id} value={lead.name}>{lead.name}</option>)}</select></label><label>Imóvel<select name="property" required defaultValue=""><option value="" disabled>Selecione um imóvel</option>{properties.map((property) => <option key={property.id} value={property.title}>{property.title}</option>)}</select></label><div><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div></form>}
+      {formOpen && <form className="inline-form" onSubmit={addAppointment}><h3>Nova visita</h3><span>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR')}</span><label>Horário<input name="time" type="time" required/></label><label>Cliente<select name="name" required defaultValue=""><option value="" disabled>Selecione um lead</option>{leads.map((lead) => <option key={lead.id} value={lead.name}>{lead.name}</option>)}</select></label><label>Imóvel<select name="property" required defaultValue=""><option value="" disabled>Selecione um imóvel</option>{properties.map((property) => <option key={property.id} value={property.title}>{property.title}</option>)}</select></label><div><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div></form>}
     </aside>
   </div>;
 }

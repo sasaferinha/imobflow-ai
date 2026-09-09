@@ -3,6 +3,7 @@ import { runAutomationsAfterEvent } from '@/lib/automations';
 import { importLeads } from '@/lib/database';
 import type { LeadInput, LeadLifecycleStatus } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
+import { hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -15,6 +16,7 @@ function clean(value: unknown, max = 500): string {
 
 export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const body = await request.json() as { leads?: Array<Record<string, unknown>> };
     const rawLeads = Array.isArray(body.leads) ? body.leads.slice(0, 500) : [];

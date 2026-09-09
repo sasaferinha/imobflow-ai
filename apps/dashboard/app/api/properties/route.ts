@@ -4,6 +4,8 @@ import { createProperty, listProperties } from '@/lib/database';
 import type { PropertyInput } from '@/lib/operations';
 
 import { runAutomationsAfterEvent } from '@/lib/automations';
+import { persistPropertyImages } from '@/lib/property-images';
+import { hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -14,7 +16,7 @@ function clean(value: unknown, max = 300) {
 
 function cleanImages(value: unknown) {
   if (!Array.isArray(value)) return [];
-  const images = value.filter((image): image is string => typeof image === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(image) && image.length <= 700_000).slice(0, 5);
+  const images = value.filter((image): image is string => typeof image === 'string' && (/^data:image\/(jpeg|png|webp);base64,/.test(image) || /^https:\/\//.test(image)) && image.length <= 700_000).slice(0, 5);
   return images.reduce<string[]>((accepted, image) => accepted.join('').length + image.length <= 3_200_000 ? [...accepted, image] : accepted, []);
 }
 
@@ -42,9 +44,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const input = propertyInput(await request.json() as Record<string, unknown>);
     if (!input.code || !input.title || !input.description || !input.district || !input.city || !input.price || !input.propertyType || input.bedrooms == null || input.parkingSpaces == null || input.area == null) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
+    input.images = await persistPropertyImages(input.images);
     const data = await createProperty(input);
     after(runAutomationsAfterEvent);
     return NextResponse.json({ data }, { status: 201 });

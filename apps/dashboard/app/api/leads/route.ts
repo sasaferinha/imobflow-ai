@@ -3,6 +3,7 @@ import { runAutomationsAfterEvent } from '@/lib/automations';
 import { createLead, listLeads } from '@/lib/database';
 import type { LeadInput } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
+import { consumeRateLimit, hasSafeRequestSize, hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -13,6 +14,11 @@ function clean(value: unknown, max = 500): string {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
+    if (!hasSafeRequestSize(request, 16_384)) return NextResponse.json({ error: 'Requisição muito grande.' }, { status: 413 });
+    if (!await consumeRateLimit(request, 'public-lead', 12, 60 * 60)) {
+      return NextResponse.json({ error: 'Muitas solicitações. Tente novamente mais tarde.' }, { status: 429, headers: { 'Retry-After': '3600' } });
+    }
     const body = await request.json() as Record<string, unknown>;
     const input: LeadInput = {
       name: clean(body.name, 120), phone: clean(body.phone, 30), email: clean(body.email, 160) || null,

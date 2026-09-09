@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 
 const COOKIE_NAME = 'imobflow_admin';
@@ -16,12 +16,22 @@ export function isValidAdminPassword(password: string) {
 
 export function adminSessionToken() {
   const secret = process.env.ADMIN_PANEL_SECRET;
-  return secret ? createHash('sha256').update(`imobflow-admin:${secret}`).digest('hex') : '';
+  if (!secret) return '';
+  const issuedAt = Math.floor(Date.now() / 1000).toString();
+  const signature = createHmac('sha256', secret).update(`imobflow-admin:${issuedAt}`).digest('hex');
+  return `${issuedAt}.${signature}`;
 }
 
 export function isAdminCookie(value?: string) {
-  const token = adminSessionToken();
-  return Boolean(token && value && safeEqual(value, token));
+  const secret = process.env.ADMIN_PANEL_SECRET;
+  if (!secret || !value) return false;
+  const [issuedAt, signature, extra] = value.split('.');
+  const timestamp = Number(issuedAt);
+  if (extra || !issuedAt || !signature || !Number.isInteger(timestamp)) return false;
+  const age = Math.floor(Date.now() / 1000) - timestamp;
+  if (age < -60 || age > 60 * 60 * 12) return false;
+  const expected = createHmac('sha256', secret).update(`imobflow-admin:${issuedAt}`).digest('hex');
+  return safeEqual(signature, expected);
 }
 
 export function isAdminRequest(request: NextRequest) {

@@ -63,7 +63,7 @@ export async function createConversationMessage(input: {
   if (input.propertyId) {
     await supabaseRequest('lead_property_events', {
       method: 'POST',
-      body: { company_id: companyId, lead_id: input.leadId, property_id: input.propertyId, event_type: 'sent' },
+      body: { company_id: companyId, lead_id: input.leadId, property_id: input.propertyId, event_type: 'Enviado' },
     });
   }
   return mapMessage(message, input.leadId);
@@ -73,7 +73,7 @@ function mapMessage(row: Record<string, unknown>, leadId: string): ConversationM
   const createdAt = new Date(String(row.created_at));
   return {
     id: String(row.id), leadId,
-    side: row.direction === 'incoming' ? 'incoming' : 'outgoing',
+    side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing',
     text: String(row.content || ''),
     time: createdAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
     images: Array.isArray(row.media_urls) ? row.media_urls.filter((item): item is string => typeof item === 'string') : [],

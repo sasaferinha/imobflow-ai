@@ -10,7 +10,8 @@ export default function LoginClient() {
     event.preventDefault(); setLoading(true); setError('');
     const password = String(new FormData(event.currentTarget).get('password') || '');
     const response = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-    if (response.ok) window.location.reload(); else { setError('Senha incorreta.'); setLoading(false); }
+    const result = await response.json().catch(() => ({})) as { error?: string };
+    if (response.ok) window.location.reload(); else { setError(result.error || 'Não foi possível entrar.'); setLoading(false); }
   }
   return <main className="admin-login"><form onSubmit={login}><Link className="landing-brand" href="/"><span>I</span><strong>ImobFlow</strong></Link><p className="eyebrow">Área restrita</p><h1>Painel do corretor</h1><p>Entre para acessar os perfis e dados dos clientes.</p><label>Senha de acesso<input name="password" type="password" autoFocus required placeholder="Digite sua senha" /></label><button type="submit" disabled={loading}>{loading ? 'Entrando…' : 'Entrar no painel'}</button>{error && <small role="alert">{error}</small>}</form></main>;
 }

@@ -19,7 +19,7 @@ function load(file) {
   modules.set(file, module.exports);
   return module.exports;
 }
-const { demoContacts, demoTemperature, createDemoConversationState, demoConversationReducer: reduce } = load('lib/demo-conversations.ts');
+const { demoContacts, demoTemperature, createDemoConversationState, createLiveConversationState, demoConversationReducer: reduce } = load('lib/demo-conversations.ts');
 assert.equal(demoTemperature(44), 'Frio');
 assert.equal(demoTemperature(45), 'Morno');
 assert.equal(demoTemperature(64), 'Morno');
@@ -62,18 +62,15 @@ assert.equal(state.threads.beatriz.humanMode, false);
 assert.equal(reduce(state, { type: 'select', id: 'unknown' }), state);
 console.log('PASS draft, unread count, assignment and outgoing messages isolated per contact; seed immutable');
 const Component = load('app/conversation-center.tsx').default;
-for (const contact of demoContacts) {
-  const selectedState = reduce(state, { type: 'select', id: contact.id });
-  const html = renderToStaticMarkup(createElement(Component, { state: selectedState, dispatch() {}, notify() {}, openAgenda() {} }));
-  assert.ok(html.includes('perfis fictícios'));
-  assert.ok(html.includes('Cliente fictício'));
-  assert.ok(html.includes('Usar resposta'));
-  assert.ok(html.includes('Etapa: ' + contact.stage));
-  assert.ok(html.includes('data-temperature="' + demoTemperature(contact.score) + '"'));
-  assert.ok(html.includes('>' + demoTemperature(contact.score) + '</span>'));
-  assert.ok(html.includes(contact.messages[0].text));
-  assert.ok(html.includes(contact.suggestion));
-  assert.ok(!html.includes('Atendimento online'));
-  assert.ok(!html.includes('✓✓'));
-}
-console.log('PASS all ten views render with their own dialogue, suggested response and clear demo labeling');
+const emptyHtml = renderToStaticMarkup(createElement(Component, { state: createLiveConversationState(), dispatch() {}, notify() {}, openAgenda() {}, persistMessage: async () => ({}), refreshProperties: async () => {} }));
+assert.ok(emptyHtml.includes('Nenhuma conversa disponível'));
+assert.ok(!emptyHtml.includes('perfis fictícios'));
+assert.ok(!emptyHtml.includes('Cliente fictício'));
+const liveLead = { id:'00000000-0000-4000-8000-000000000100', name:'Cliente Real', phone:'35999999999', email:null, goal:'Comprar', propertyType:'Casa', region:'Centro', budget:'Até R$ 500.000', details:null, summary:'Busca cadastrada', score:72, temperature:'Quente', source:'Formulário', assignedTo:null, lifecycleStatus:'Novo', lastContactAt:null, inactivityDays:0, recoveryPotential:'Baixo', scoreReasons:[], recoverySelected:false, createdAt:'2026-09-08T12:00:00.000Z' };
+let liveState = reduce(createLiveConversationState(), { type:'sync', contacts:[{ id:`lead-${liveLead.id}`, unread:0 }] });
+const liveHtml = renderToStaticMarkup(createElement(Component, { state: liveState, dispatch() {}, notify() {}, openAgenda() {}, persistMessage: async () => ({}), refreshProperties: async () => {}, leads:[liveLead], properties:[] }));
+assert.ok(liveHtml.includes('Cliente Real'));
+assert.ok(liveHtml.includes('Dados do banco de leads'));
+assert.ok(liveHtml.includes('Usar resposta'));
+assert.ok(!liveHtml.includes('demonstra'));
+console.log('PASS production conversation view renders only persisted leads and a truthful empty state');

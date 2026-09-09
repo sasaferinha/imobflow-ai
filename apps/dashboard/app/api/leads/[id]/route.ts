@@ -3,6 +3,7 @@ import { runAutomationsAfterEvent } from '@/lib/automations';
 import { updateLeadIntelligence } from '@/lib/database';
 import type { LeadLifecycleStatus } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
+import { hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -11,6 +12,7 @@ const statuses: LeadLifecycleStatus[] = ['Novo', 'Em atendimento', 'Visita', 'Pr
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const { id } = await context.params;
     const body = await request.json() as Record<string, unknown>;
