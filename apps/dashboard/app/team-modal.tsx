@@ -2,13 +2,132 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import styles from './team-modal.module.css';
-type Broker = { id: string; name: string; email: string | null; role: 'owner' | 'broker'; active: boolean; created_at: string };
+
+type Broker = {
+  id: string;
+  name: string;
+  email: string | null;
+  role: 'owner' | 'broker';
+  active: boolean;
+  created_at: string;
+};
+
 export default function TeamModal({ close, notify }: { close: () => void; notify: (message: string) => void }) {
-  const [team, setTeam] = useState<Broker[]>([]); const [limit, setLimit] = useState(5); const [tab, setTab] = useState<'team' | 'key'>('team'); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
-  useEffect(() => { let active = true; fetch('/api/brokers', { cache: 'no-store' }).then(async (response) => { const result = await response.json() as { data?: Broker[]; brokerLimit?: number; error?: string }; if (!response.ok) throw new Error(result.error || 'Não foi possível carregar a equipe.'); if (active) { setTeam(result.data || []); setLimit(result.brokerLimit || 5); } }).catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a equipe.'); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
-  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); setError(''); const form = new FormData(event.currentTarget); const response = await fetch('/api/brokers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: form.get('name'), email: form.get('email'), password: form.get('password') }) }).catch(() => null); const result = await response?.json().catch(() => ({})) as { data?: Broker; error?: string } | undefined; if (!response?.ok || !result?.data) { setError(result?.error || 'Não foi possível cadastrar o corretor.'); setSaving(false); return; } setTeam((current) => [...current, result.data!]); setSaving(false); event.currentTarget.reset(); notify('Corretor cadastrado. Envie a ele o nome da empresa, o e-mail e a senha.'); }
+  const [team, setTeam] = useState<Broker[]>([]);
+  const [limit, setLimit] = useState(5);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/brokers', { cache: 'no-store' })
+      .then(async (response) => {
+        const result = await response.json() as { data?: Broker[]; brokerLimit?: number; error?: string };
+        if (!response.ok) throw new Error(result.error || 'Não foi possível carregar a equipe.');
+        if (active) {
+          setTeam(result.data || []);
+          setLimit(result.brokerLimit || 5);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a equipe.');
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    const form = new FormData(event.currentTarget);
+    const response = await fetch('/api/brokers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: form.get('name'), email: form.get('email'), password: form.get('password') }),
+    }).catch(() => null);
+    const result = await response?.json().catch(() => ({})) as { data?: Broker; error?: string } | undefined;
+    if (!response?.ok || !result?.data) {
+      setError(result?.error || 'Não foi possível cadastrar o corretor.');
+      setSaving(false);
+      return;
+    }
+    setTeam((current) => [...current, result.data!]);
+    setSaving(false);
+    event.currentTarget.reset();
+    notify('Corretor cadastrado. Envie a ele o nome da empresa, o e-mail e a senha.');
+  }
+
   const brokers = team.filter((item) => item.role === 'broker' && item.active);
   const administrator = team.find((person) => person.role === 'owner');
-  async function saveAdministratorEmail(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const response = await fetch('/api/brokers', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: form.get('email') }) }).catch(() => null); const result = await response?.json().catch(() => ({})) as { data?: Broker; error?: string } | undefined; if (!response?.ok || !result?.data) { setError(result?.error || 'Não foi possível salvar o e-mail.'); return; } setTeam((current) => current.map((person) => person.id === result.data!.id ? result.data! : person)); notify('E-mail de login do administrador salvo.'); }
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className={`modal-card ${styles.card}`} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Painel do administrador</p><h2>Corretores</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><div className={styles.tabs} role="tablist"><button type="button" role="tab" aria-selected={tab === 'team'} onClick={() => setTab('team')}>Equipe</button><button type="button" role="tab" aria-selected={tab === 'key'} onClick={() => setTab('key')}>Chave de acesso</button></div>{tab === 'key' ? <section className={styles.keyInfo}><strong>Chave de ativação protegida</strong><p>A chave foi usada apenas para ativar esta imobiliária e não pode ser exibida novamente. Novos corretores são criados na aba Equipe pelo administrador.</p><small>Plano Basic: 1 administrador + até 5 corretores.</small></section> : <><p className={styles.plan}><strong>Plano Basic</strong><span>{brokers.length} de {limit} corretores cadastrados</span></p>{administrator && !administrator.email && <form className={styles.adminEmail} onSubmit={saveAdministratorEmail}><strong>Defina seu e-mail de administrador</strong><small>Ele será seu login nas próximas entradas no painel.</small><label>E-mail de acesso<input name="email" type="email" required maxLength={254} autoComplete="email" placeholder="seuemail@imobiliaria.com.br" /></label><button type="submit">Salvar e-mail</button></form>}{loading ? <p className={styles.empty}>Carregando equipe…</p> : <ul className={styles.list}>{team.map((person) => <li key={person.id}><span>{person.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><div><strong>{person.name}</strong><small>{person.role === 'owner' ? 'Administrador' : 'Corretor'}{person.email ? ` · ${person.email}` : ''}</small></div><em>{person.active ? 'Ativo' : 'Inativo'}</em></li>)}</ul>}<form className={styles.form} onSubmit={create}><h3>Novo corretor</h3><label>Nome completo<input name="name" required minLength={2} maxLength={120} autoComplete="off" placeholder="Ex.: Ana Martins" /></label><label>E-mail de acesso<input name="email" type="email" required maxLength={254} autoComplete="email" placeholder="ana@imobiliaria.com.br" /></label><label>Senha inicial<input name="password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" /></label>{error && <p className="access-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" onClick={close}>Fechar</button><button className="primary-button" type="submit" disabled={saving || loading || brokers.length >= limit}>{saving ? 'Cadastrando…' : brokers.length >= limit ? 'Limite do Basic atingido' : 'Cadastrar corretor'}</button></div></form></>}</article></div>;
+
+  async function saveAdministratorEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const response = await fetch('/api/brokers', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: form.get('email') }),
+    }).catch(() => null);
+    const result = await response?.json().catch(() => ({})) as { data?: Broker; error?: string } | undefined;
+    if (!response?.ok || !result?.data) {
+      setError(result?.error || 'Não foi possível salvar o e-mail.');
+      return;
+    }
+    setTeam((current) => current.map((person) => person.id === result.data!.id ? result.data! : person));
+    notify('E-mail de login do administrador salvo.');
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={close}>
+      <article className={`modal-card ${styles.card}`} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div><p className="eyebrow">Painel do administrador</p><h2>Corretores</h2></div>
+          <button type="button" aria-label="Fechar" onClick={close}>×</button>
+        </div>
+
+        <p className={styles.plan}><strong>Plano Basic</strong><span>{brokers.length} de {limit} corretores cadastrados</span></p>
+
+        <section className={styles.accessKey} aria-label="Informação da chave de acesso">
+          <div><strong>Chave de acesso</strong><small>Validada no cadastro da empresa.</small></div>
+          <span>Ativada</span>
+        </section>
+
+        {administrator && !administrator.email && (
+          <form className={styles.adminEmail} onSubmit={saveAdministratorEmail}>
+            <strong>Defina seu e-mail de administrador</strong>
+            <small>Ele será seu login nas próximas entradas no painel.</small>
+            <label>E-mail de acesso<input name="email" type="email" required maxLength={254} autoComplete="email" placeholder="seuemail@imobiliaria.com.br" /></label>
+            <button type="submit">Salvar e-mail</button>
+          </form>
+        )}
+
+        {loading ? <p className={styles.empty}>Carregando equipe…</p> : (
+          <ul className={styles.list}>
+            {team.map((person) => (
+              <li key={person.id}>
+                <span>{person.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span>
+                <div><strong>{person.name}</strong><small>{person.role === 'owner' ? 'Administrador' : 'Corretor'}{person.email ? ` · ${person.email}` : ''}</small></div>
+                <em>{person.active ? 'Ativo' : 'Inativo'}</em>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form className={styles.form} onSubmit={create}>
+          <h3>Novo corretor</h3>
+          <label>Nome completo<input name="name" required minLength={2} maxLength={120} autoComplete="off" placeholder="Ex.: Ana Martins" /></label>
+          <label>E-mail de acesso<input name="email" type="email" required maxLength={254} autoComplete="email" placeholder="ana@imobiliaria.com.br" /></label>
+          <label>Senha inicial<input name="password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" /></label>
+          <label className={styles.accessKeyField}>Chave de acesso<input value="Plano Basic ativado" readOnly aria-readonly="true" tabIndex={-1} /><small>Esta chave foi usada somente no cadastro da empresa.</small></label>
+          {error && <p className="access-error" role="alert">{error}</p>}
+          <div className="modal-actions">
+            <button type="button" onClick={close}>Fechar</button>
+            <button className="primary-button" type="submit" disabled={saving || loading || brokers.length >= limit}>{saving ? 'Cadastrando…' : brokers.length >= limit ? 'Limite do Basic atingido' : 'Cadastrar corretor'}</button>
+          </div>
+        </form>
+      </article>
+    </div>
+  );
 }
