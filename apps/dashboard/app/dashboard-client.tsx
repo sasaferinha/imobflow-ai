@@ -192,6 +192,13 @@ function announcePropertyChange() {
   channel.close();
 }
 
+function announceDashboardChange(entity: 'leads' | 'conversations') {
+  if (!('BroadcastChannel' in window)) return;
+  const channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
+  channel.postMessage({ entity, changedAt: Date.now() });
+  channel.close();
+}
+
 export default function DashboardClient({ account }: { account?: { name: string; company: string; role: 'owner' | 'broker' } }) {
   const [view, setView] = useState<View>('overview');
   const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createLiveConversationState);
@@ -222,18 +229,30 @@ export default function DashboardClient({ account }: { account?: { name: string;
 
   useEffect(() => {
     let active = true;
+    let channel: BroadcastChannel | null = null;
     const finishLoading = (remoteLeads: LeadProfile[]) => {
       const combined = remoteLeads.filter((lead, index, all) => all.findIndex((item) => item.id === lead.id) === index).map(decorateLead);
       if (active) {
         setCapturedLeads(combined);
-        setSelectedLead(combined[0] || null);
+        setSelectedLead((current) => current ? combined.find((lead) => lead.id === current.id) || combined[0] || null : combined[0] || null);
       }
     };
-    fetch('/api/leads')
-      .then(async (response) => { if (!response.ok) throw new Error('Não foi possível carregar os clientes. Atualize a página para tentar novamente.'); return (await response.json() as { data: LeadProfile[] }).data; })
-      .then(finishLoading)
-      .catch(() => { if (active) notify('Falha ao carregar clientes. Atualize a página para tentar novamente.'); });
-    return () => { active = false; };
+    const synchronize = () => {
+      if (document.visibilityState === 'hidden') return;
+      void fetch('/api/leads', { cache: 'no-store' })
+        .then(async (response) => { if (!response.ok) throw new Error('Falha ao carregar clientes.'); return (await response.json() as { data: LeadProfile[] }).data; })
+        .then(finishLoading)
+        .catch(() => undefined);
+    };
+    synchronize();
+    if ('BroadcastChannel' in window) {
+      channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
+      channel.onmessage = (event) => { if (event.data?.entity === 'leads' || event.data?.entity === 'conversations') synchronize(); };
+    }
+    window.addEventListener('focus', synchronize);
+    document.addEventListener('visibilitychange', synchronize);
+    const interval = window.setInterval(synchronize, 3_000);
+    return () => { active = false; channel?.close(); window.removeEventListener('focus', synchronize); document.removeEventListener('visibilitychange', synchronize); window.clearInterval(interval); };
   }, []);
 
   useEffect(() => {
@@ -366,6 +385,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
     });
     const result = await response.json() as { data?: ConversationMessage; error?: string };
     if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar a mensagem.');
+    announceDashboardChange('conversations');
     return { id: result.data.id, time: result.data.time };
   }
 
@@ -409,6 +429,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
       const result = await response.json() as { data?: LeadProfile; error?: string };
       if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível atualizar o lead.');
       replaceLead(result.data);
+      announceDashboardChange('leads');
       notify('Lead atualizado');
       return true;
     } catch (error) {
