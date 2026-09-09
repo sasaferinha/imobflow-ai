@@ -4,8 +4,8 @@ import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import './access.css';
 
-export default function LoginClient({ legacy = false }: { legacy?: boolean }) {
-  const [mode, setMode] = useState<'login' | 'provision'>(legacy ? 'provision' : 'login');
+export default function LoginClient({ adminOnly = false }: { adminOnly?: boolean }) {
+  const [mode] = useState<'login' | 'provision'>(adminOnly ? 'provision' : 'login');
   const [existingCompany, setExistingCompany] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,7 +13,7 @@ export default function LoginClient({ legacy = false }: { legacy?: boolean }) {
     event.preventDefault(); setLoading(true); setError('');
     const form = new FormData(event.currentTarget);
     try {
-    const response = await fetch(`/api/account/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company: form.get('company'), name: form.get('name'), password: form.get('password'), managementPassword: form.get('managementPassword'), seatLimit: form.get('seatLimit'), existingCompany, claimLegacy: legacy }) });
+    const response = await fetch(`/api/account/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company: form.get('company'), name: form.get('name'), password: form.get('password'), managementPassword: form.get('managementPassword'), seatLimit: form.get('seatLimit'), existingCompany }) });
     const result = await response.json().catch(() => ({})) as { error?: string };
     if (response.ok && mode === 'login') window.location.reload(); else if (response.ok) { setError('Cadastro concluído. Entregue os dados de acesso ao corretor.'); setLoading(false); event.currentTarget.reset(); } else { setError(result.error || 'Não foi possível continuar.'); setLoading(false); }
     } catch { setError('Não foi possível conectar. Verifique sua internet e tente novamente.'); setLoading(false); }
@@ -21,7 +21,7 @@ export default function LoginClient({ legacy = false }: { legacy?: boolean }) {
   return <main className="access-page"><section className="access-card">
     <aside className="access-brand"><Link href="/" className="access-logo"><span>I</span>ImobFlow</Link><div><p>Seu próximo negócio começa aqui.</p><h1>Sua empresa.<br />Sua equipe.<br />Tudo conectado.</h1></div><small>Clientes, imóveis e conversas no mesmo lugar.</small></aside>
     <div className="access-form"><p className="access-eyebrow">PAINEL DA IMOBILIÁRIA</p><h2>{mode === 'login' ? 'Bem-vindo de volta' : 'Cadastrar empresa'}</h2><p>{mode === 'login' ? 'Entre com os dados da sua empresa e do seu corretor.' : 'Área administrativa: crie empresas e acessos individuais para a equipe.'}</p>
-      <div className="access-tabs"><button type="button" aria-pressed={mode === 'login'} onClick={() => { setMode('login'); setError(''); }}>Entrar</button><button type="button" aria-pressed={mode === 'provision'} onClick={() => { setMode('provision'); setError(''); }}>Cadastrar empresa</button></div>
+      {!adminOnly && <div className="access-tabs"><button type="button" aria-pressed>Entrar</button></div>}
       <form onSubmit={login}>
         <label>Nome da empresa<input name="company" autoComplete="organization" placeholder="Ex.: Imobiliária Central" required minLength={2} maxLength={120} /></label>
         <label>Nome do corretor<input name="name" autoComplete="username" placeholder="Seu nome completo" required minLength={2} maxLength={120} /></label>
