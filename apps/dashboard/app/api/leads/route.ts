@@ -5,7 +5,8 @@ import { createLead, listLeads } from '@/lib/database';
 import type { LeadInput } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { consumeRateLimit, hasSafeRequestSize, hasSameOrigin } from '@/lib/request-security';
-import { LEGACY_COMPANY_ID, withAccount } from '@/lib/tenant-context';
+import { withAccount } from '@/lib/tenant-context';
+import { publicCompany } from '@/lib/public-company';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -21,7 +22,12 @@ export async function POST(request: NextRequest) {
     if (!await consumeRateLimit(request, 'public-lead', 12, 60 * 60)) {
       return NextResponse.json({ error: 'Muitas solicitações. Tente novamente mais tarde.' }, { status: 429, headers: { 'Retry-After': '3600' } });
     }
-    const body = await request.json() as Record<string, unknown>;
+    const raw = await request.text();
+    if (Buffer.byteLength(raw)>16384) return NextResponse.json({error:'Requisição muito grande.'},{status:413});
+    const body = JSON.parse(raw) as Record<string, unknown>;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({error:'Dados inválidos.'},{status:400});
+    const company = await publicCompany(body.companySlug);
+    if (!company) return NextResponse.json({error:'Use o link de atendimento fornecido pela sua imobiliária.'},{status:400});
     const input: LeadInput = {
       name: clean(body.name, 120), phone: clean(body.phone, 30), email: clean(body.email, 160) || null,
       goal: clean(body.goal, 50), propertyType: clean(body.propertyType, 50), region: clean(body.region, 160),
@@ -30,9 +36,10 @@ export async function POST(request: NextRequest) {
     if (!input.name || !input.phone || !input.goal || !input.propertyType || !input.region || !input.budget) {
       return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     }
-    const data = await withAccount({ companyId: LEGACY_COMPANY_ID, company: 'Imobiliária', brokerId: 'system', name: 'Sistema', role: 'owner' }, () => createLead(input));
-    after(() => withAccount({ companyId: LEGACY_COMPANY_ID, company: 'Imobiliária', brokerId: 'system', name: 'Sistema', role: 'owner' }, runAutomationsAfterEvent));
-    return NextResponse.json({ data }, { status: 201 });
+    const context = { companyId:company.id, company:company.name, brokerId:'system', name:'Formulário público', role:'owner' as const };
+    await withAccount(context, () => createLead(input));
+    after(() => withAccount(context, runAutomationsAfterEvent));
+    return NextResponse.json({ ok:true }, { status: 201 });
   } catch (error) {
     console.error('lead_create_failed', error);
     return NextResponse.json({ error: 'Não foi possível registrar sua solicitação.' }, { status: 500 });

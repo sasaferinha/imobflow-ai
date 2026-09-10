@@ -9,6 +9,7 @@ import ConversationCenter from './conversation-center';
 import { createLiveConversationState, demoConversationReducer } from '@/lib/demo-conversations';
 import type { ConversationMessage } from '@/lib/conversations';
 import TeamModal from './team-modal';
+import PasswordModal from './password-modal';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import ReleaseNotice from './release-notice';
 
@@ -210,7 +211,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
   const [toast, setToast] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | 'team' | null>(null);
+  const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | 'team' | 'password' | null>(null);
   const [profile, setProfile] = useState({ name: account?.name || 'Corretor', company: account?.company || 'Imobiliária' });
   const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: false });
   const [notifications, setNotifications] = useState<Array<{ id:number; text:string; unread:boolean }>>([]);
@@ -544,7 +545,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
         <div className="sidebar-card"><span className="live-dot" /><div><strong>Sistema operacional</strong><span>Serviços funcionando normalmente</span></div></div>
         <div className="profile-wrap">
           <div className="profile-row"><button type="button" className="profile-identity" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}><span className="avatar">{profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span><div><strong>{profile.name}</strong><span>{profile.company}</span></div></button><button type="button" className="profile-options" aria-label="Mais opções do perfil" aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>•••</button></div>
-          {profileOpen && <div className="profile-menu popover"><strong>{account?.role === 'owner' ? 'Painel do administrador' : 'Perfil do corretor'}</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button>{account?.role === 'owner' && <button type="button" onClick={() => { setUtilityModal('team'); setProfileOpen(false); }}>Gerenciar corretores</button>}<button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
+          {profileOpen && <div className="profile-menu popover"><strong>{account?.role === 'owner' ? 'Painel do administrador' : 'Perfil do corretor'}</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button>{account?.role === 'owner' && <button type="button" onClick={() => { setUtilityModal('team'); setProfileOpen(false); }}>Gerenciar corretores</button>}<button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={() => { setUtilityModal('password'); setProfileOpen(false); }}>Trocar minha senha</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
         </div>
       </aside>
 
@@ -561,7 +562,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
           </div>
         </header>
 
-        {view === 'overview' && <Overview notify={notify} />}
+        {view === 'overview' && <Overview notify={notify} canEditGoals={account?.role === 'owner'} />}
         {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} claimLead={claimLead} currentBrokerName={profile.name} leads={capturedLeads} properties={properties} />}
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} />{selectedLead ? <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /> : <section className="panel empty-live-data"><h2>Nenhum lead cadastrado</h2><p>Importe a carteira da imobiliária ou receba um novo contato pelo formulário do site.</p><button type="button" className="primary-button" onClick={() => setLeadImportOpen(true)}>Importar clientes</button></section>}</>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
@@ -592,6 +593,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
       {selectedProperty && <PropertyDetail property={selectedProperty} close={() => setSelectedProperty(null)} share={() => openPropertyShare(selectedProperty)} edit={() => { setEditingProperty(selectedProperty); setPropertyImages(selectedProperty.images); setSelectedProperty(null); setPropertyModalOpen(true); }} remove={() => removeProperty(selectedProperty)} />}
       {sharingProperty && <PropertyShareModal property={sharingProperty} leads={capturedLeads} close={() => setSharingProperty(null)} submit={sharePropertyWithLead} />}
       {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
+      {utilityModal === 'password' && <PasswordModal close={() => setUtilityModal(null)} />}
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { saveSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
       {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
       {utilityModal === 'team' && account?.role === 'owner' && <TeamModal close={() => setUtilityModal(null)} notify={notify} />}
@@ -601,7 +603,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
   );
 }
 
-function Overview({ notify }: { notify:(message:string)=>void }) {
+function Overview({ notify, canEditGoals }: { notify:(message:string)=>void; canEditGoals:boolean }) {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
   const [modal, setModal] = useState<'sale' | 'goals' | null>(null);
@@ -683,7 +685,7 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
   const performanceKey = `${month}-${performance.totalSold}-${performance.salesCount}-${performance.history.map((item) => `${item.month}:${item.sold}`).join('|')}`;
   return <>
     <div className="performance-animated" key={performanceKey}>
-    <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setLoadError(null); setMonth(event.target.value); }} /></label><button type="button" onClick={() => setModal('goals')}>Editar metas</button><button type="button" className="primary-button" onClick={() => setModal('sale')}>＋ Registrar negócio</button></div></section>
+    <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setLoadError(null); setMonth(event.target.value); }} /></label>{canEditGoals && <button type="button" onClick={() => setModal('goals')}>Editar metas</button>}<button type="button" className="primary-button" onClick={() => setModal('sale')}>＋ Registrar negócio</button></div></section>
 
     <section className="company-goal-card">
       <div className="company-goal-copy"><p>Meta mensal da imobiliária</p><strong>{money.format(performance.totalSold)}</strong><span>de {money.format(performance.companyGoal)}</span></div>
@@ -719,7 +721,7 @@ function Overview({ notify }: { notify:(message:string)=>void }) {
       <div className="modal-actions"><button type="button" disabled={savingDeal} onClick={() => setModal(null)}>Cancelar</button><button type="submit" disabled={savingDeal} className="primary-button">{savingDeal ? 'Salvando…' : dealType === 'Venda' ? 'Registrar venda' : 'Registrar aluguel'}</button></div>
     </form></div>}
 
-    {modal === 'goals' && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card performance-settings-modal" onSubmit={saveGoals} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Planejamento mensal</p><h2>Metas e conversão</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><label>Meta da imobiliária<input name="companyGoal" type="number" min="0" step="10000" defaultValue={performance.companyGoal} required /></label><div className="form-grid"><label>Leads recebidos<input name="leadsReceived" type="number" min="0" defaultValue={performance.leadsReceived} required /></label><label>Leads convertidos<input name="convertedLeads" type="number" min="0" defaultValue={performance.convertedLeads} required /></label></div><label>Leads recuperados<input name="recoveredLeads" type="number" min="0" defaultValue={performance.recoveredLeads} required /></label><div className="broker-goal-fields"><strong>Metas individuais</strong>{performance.brokers.map((broker,index) => <label key={broker.broker}>{broker.broker}<input name={`broker-goal-${index}`} type="number" min="0" step="10000" defaultValue={broker.goal} required /></label>)}</div><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar indicadores</button></div></form></div>}
+    {modal === 'goals' && canEditGoals && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card performance-settings-modal" onSubmit={saveGoals} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Planejamento mensal</p><h2>Metas e conversão</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><label>Meta da imobiliária<input name="companyGoal" type="number" min="0" step="10000" defaultValue={performance.companyGoal} required /></label><div className="form-grid"><label>Leads recebidos<input name="leadsReceived" type="number" min="0" defaultValue={performance.leadsReceived} required /></label><label>Leads convertidos<input name="convertedLeads" type="number" min="0" defaultValue={performance.convertedLeads} required /></label></div><label>Leads recuperados<input name="recoveredLeads" type="number" min="0" defaultValue={performance.recoveredLeads} required /></label><div className="broker-goal-fields"><strong>Metas individuais</strong>{performance.brokers.map((broker,index) => <label key={broker.broker}>{broker.broker}<input name={`broker-goal-${index}`} type="number" min="0" step="10000" defaultValue={broker.goal} required /></label>)}</div><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar indicadores</button></div></form></div>}
   </>;
 }
 

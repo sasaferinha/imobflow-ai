@@ -22,15 +22,15 @@ export async function verifyPassword(password: string, hash: string) {
   if (extra || version !== 'scrypt-v1' || !/^[a-f0-9]{32}$/.test(salt || '') || !/^[a-f0-9]{128}$/.test(encoded || '')) return false;
   return timingSafeEqual(await derive(password, salt), Buffer.from(encoded, 'hex'));
 }
-type BrokerRow = { id: string; company_id: string; name: string; role: 'owner' | 'broker'; password_hash: string; active: boolean };
-export async function authenticate(company: string, email: string, password: string): Promise<Account | null> {
+type BrokerRow = { id: string; company_id: string; name: string; role: 'owner' | 'broker'; password_hash: string; active: boolean; auth_version: number };
+export async function authenticate(company: string, email: string, password: string): Promise<(Account & { passwordVersion: string; authVersion: number }) | null> {
   const companies = await supabaseRequest<Array<{ company_id: string; name: string }>>(`account_companies?name_key=eq.${encodeURIComponent(normalizeName(company))}&select=company_id,name&limit=1`);
   const brokers = companies[0] ? await supabaseRequest<BrokerRow[]>(`broker_accounts?company_id=eq.${companies[0].company_id}&email_key=eq.${encodeURIComponent(normalizeEmail(email))}&select=*&limit=1`) : [];
   const broker = brokers[0];
   // Equivalent expensive work for missing users avoids a cheap username oracle.
   const valid = await verifyPassword(password, broker?.password_hash || `scrypt-v1$${'0'.repeat(32)}$${'0'.repeat(128)}`);
   if (!broker?.active || !valid) return null;
-  return { companyId: broker.company_id, company: companies[0].name, brokerId: broker.id, name: broker.name, role: broker.role };
+  return { companyId: broker.company_id, company: companies[0].name, brokerId: broker.id, name: broker.name, role: broker.role, passwordVersion: broker.password_hash, authVersion: broker.auth_version };
 }
 export async function readAccount(token?: string): Promise<Account | null> {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
@@ -38,9 +38,10 @@ export async function readAccount(token?: string): Promise<Account | null> {
   const row = rows[0];
   return row ? { brokerId: row.broker_id, companyId: row.company_id, name: row.name, company: row.company, role: row.role } : null;
 }
-export async function issueSession(account: Account) {
+export async function issueSession(account: Account, expectedHash: string, expectedAuthVersion: number) {
   const token = newToken();
-  await supabaseRequest('account_sessions', { method: 'POST', body: { token_hash: tokenHash(token), broker_id: account.brokerId, expires_at: new Date(Date.now() + SESSION_SECONDS * 1000).toISOString() } });
+  const issued = await supabaseRequest<boolean>('rpc/issue_account_session', { method: 'POST', body: { p_token_hash: tokenHash(token), p_broker_id: account.brokerId, p_expected_hash: expectedHash, p_expected_auth_version: expectedAuthVersion } });
+  if (!issued) throw new Error('account_changed_during_login');
   return token;
 }
 export function protectedRoute<C>(handler: (request: NextRequest, context: C) => Promise<Response>) {

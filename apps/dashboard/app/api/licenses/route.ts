@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     const body = JSON.parse(raw) as Record<string, unknown>;
     const managementPassword = typeof body.managementPassword === 'string' ? body.managementPassword : '';
     if (!isValidAdminPassword(managementPassword)) return NextResponse.json({ error: 'Senha administrativa incorreta.' }, { status: 401 });
-    const seatLimit = 5;
+    const seatLimit = 3;
     const key = `IMF-${newToken()}`;
     await supabaseRequest('rpc/create_access_license', { method: 'POST', body: {
       p_key_hash: tokenHash(key), p_seat_limit: seatLimit, p_company_key: null,

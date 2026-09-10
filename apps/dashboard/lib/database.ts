@@ -216,64 +216,8 @@ function propertyMeta(row: Record<string, unknown>) {
   return items.join(' • ') || String(row.property_type || 'Imóvel');
 }
 
-async function ensurePerformanceSchema() {
-  const sql = database();
-  const legacyCompany = process.env.SUPABASE_COMPANY_ID || '00000000-0000-4000-8000-000000000001';
-  await sql`CREATE TABLE IF NOT EXISTS site_performance_months (
-    company_id TEXT NOT NULL,
-    month TEXT NOT NULL,
-    company_goal NUMERIC(14,2) NOT NULL DEFAULT 0,
-    leads_received INTEGER NOT NULL DEFAULT 0,
-    converted_leads INTEGER NOT NULL DEFAULT 0,
-    recovered_leads INTEGER NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (company_id, month)
-  )`;
-  await sql`CREATE TABLE IF NOT EXISTS site_broker_goals (
-    company_id TEXT NOT NULL,
-    month TEXT NOT NULL,
-    broker TEXT NOT NULL,
-    goal NUMERIC(14,2) NOT NULL DEFAULT 0,
-    leads_received INTEGER NOT NULL DEFAULT 0,
-    converted_leads INTEGER NOT NULL DEFAULT 0,
-    recovered_leads INTEGER NOT NULL DEFAULT 0,
-    visits INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (company_id, month, broker)
-  )`;
-  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS leads_received INTEGER NOT NULL DEFAULT 0`;
-  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS converted_leads INTEGER NOT NULL DEFAULT 0`;
-  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS recovered_leads INTEGER NOT NULL DEFAULT 0`;
-  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS visits INTEGER NOT NULL DEFAULT 0`;
-  await sql`ALTER TABLE site_performance_months ADD COLUMN IF NOT EXISTS company_id TEXT`;
-  await sql`UPDATE site_performance_months SET company_id=${legacyCompany} WHERE company_id IS NULL`;
-  await sql`ALTER TABLE site_performance_months ALTER COLUMN company_id SET NOT NULL`;
-  await sql`ALTER TABLE site_performance_months DROP CONSTRAINT IF EXISTS site_performance_months_pkey`;
-  await sql`ALTER TABLE site_performance_months ADD PRIMARY KEY (company_id, month)`;
-  await sql`ALTER TABLE site_broker_goals ADD COLUMN IF NOT EXISTS company_id TEXT`;
-  await sql`UPDATE site_broker_goals SET company_id=${legacyCompany} WHERE company_id IS NULL`;
-  await sql`ALTER TABLE site_broker_goals ALTER COLUMN company_id SET NOT NULL`;
-  await sql`ALTER TABLE site_broker_goals DROP CONSTRAINT IF EXISTS site_broker_goals_pkey`;
-  await sql`ALTER TABLE site_broker_goals ADD PRIMARY KEY (company_id, month, broker)`;
-  await sql`CREATE TABLE IF NOT EXISTS site_sales (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id TEXT NOT NULL,
-    reference_key TEXT,
-    sale_date DATE NOT NULL,
-    broker TEXT NOT NULL,
-    property TEXT NOT NULL,
-    client TEXT NOT NULL,
-    amount NUMERIC(14,2) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
-  await sql`ALTER TABLE site_sales ADD COLUMN IF NOT EXISTS deal_type TEXT NOT NULL DEFAULT 'Venda'`;
-  await sql`ALTER TABLE site_sales ADD COLUMN IF NOT EXISTS company_id TEXT`;
-  await sql`UPDATE site_sales SET company_id=${legacyCompany} WHERE company_id IS NULL`;
-  await sql`ALTER TABLE site_sales ALTER COLUMN company_id SET NOT NULL`;
-  await sql`ALTER TABLE site_sales DROP CONSTRAINT IF EXISTS site_sales_reference_key_key`;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS site_sales_company_reference_key ON site_sales(company_id, reference_key) WHERE reference_key IS NOT NULL`;
-}
 
 export async function getPerformance(month: string): Promise<PerformanceSnapshot> {
-  await ensurePerformanceSchema();
   const sql = database();
   const companyId = supabaseCompanyId();
   await sql`INSERT INTO site_performance_months (company_id, month, company_goal, leads_received, converted_leads, recovered_leads)
@@ -323,7 +267,6 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
 }
 
 export async function createSale(input: SaleInput): Promise<SaleRecord> {
-  await ensurePerformanceSchema();
   const rows = await database()`INSERT INTO site_sales (company_id, sale_date, broker, property, client, amount, deal_type)
     VALUES (${supabaseCompanyId()}, ${input.date}, ${input.broker}, ${input.property}, ${input.client}, ${input.amount}, ${input.dealType || 'Venda'})
     RETURNING id, sale_date, broker, property, client, amount, deal_type, created_at`;
@@ -331,13 +274,11 @@ export async function createSale(input: SaleInput): Promise<SaleRecord> {
 }
 
 export async function deleteSale(id: string): Promise<boolean> {
-  await ensurePerformanceSchema();
   const rows = await database()`DELETE FROM site_sales WHERE id=${id} AND company_id=${supabaseCompanyId()} RETURNING id`;
   return rows.length > 0;
 }
 
 export async function updatePerformanceSettings(input: PerformanceSettingsInput) {
-  await ensurePerformanceSchema();
   const sql = database();
   const companyId = supabaseCompanyId();
   await sql`INSERT INTO site_performance_months (company_id, month, company_goal, leads_received, converted_leads, recovered_leads)

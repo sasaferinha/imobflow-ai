@@ -4,6 +4,7 @@ import { isAdminRequest } from '@/lib/admin-auth';
 import { createSale, getPerformance, updatePerformanceSettings } from '@/lib/database';
 import type { PerformanceSettingsInput, SaleInput } from '@/lib/operations';
 import { hasSameOrigin } from '@/lib/request-security';
+import { currentAccount } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
 
@@ -54,6 +55,7 @@ async function handlePOST(request: NextRequest) {
 
 async function handlePATCH(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (currentAccount()?.role !== 'owner') return NextResponse.json({ error: 'Somente o administrador pode alterar metas e indicadores.' }, { status: 403 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const body = await request.json() as Record<string, unknown>;

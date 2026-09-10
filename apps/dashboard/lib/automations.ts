@@ -10,40 +10,9 @@ function database() {
   return neon(process.env.DATABASE_URL);
 }
 
-// Additive PostgreSQL schema, following the project's existing database bootstrap.
-async function ensureSchema() {
+// Schema is applied by versioned Neon migrations, never on incoming requests.
+async function ensureAutomationSettings() {
   const sql = database();
-  const legacyCompany = process.env.SUPABASE_COMPANY_ID || '00000000-0000-4000-8000-000000000001';
-  await sql`CREATE TABLE IF NOT EXISTS site_automation_settings (company_id TEXT NOT NULL, id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, PRIMARY KEY(company_id,id))`;
-  await sql`CREATE TABLE IF NOT EXISTS site_automation_results (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id TEXT NOT NULL, flow_id TEXT NOT NULL, lead_id UUID NOT NULL,
-    fingerprint TEXT NOT NULL, summary TEXT NOT NULL, detail JSONB NOT NULL,
-    status TEXT NOT NULL DEFAULT 'open', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (company_id, flow_id, lead_id, fingerprint))`;
-  await sql`CREATE TABLE IF NOT EXISTS site_automation_runs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id TEXT NOT NULL, flow_id TEXT NOT NULL, trigger TEXT NOT NULL,
-    status TEXT NOT NULL, processed INTEGER NOT NULL DEFAULT 0, message TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
-  await sql`CREATE TABLE IF NOT EXISTS site_automation_lock (company_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL)`;
-  await sql`ALTER TABLE site_automation_settings ADD COLUMN IF NOT EXISTS company_id TEXT`;
-  await sql`UPDATE site_automation_settings SET company_id=${legacyCompany} WHERE company_id IS NULL`;
-  await sql`ALTER TABLE site_automation_settings ALTER COLUMN company_id SET NOT NULL`;
-  await sql`ALTER TABLE site_automation_settings DROP CONSTRAINT IF EXISTS site_automation_settings_pkey`;
-  await sql`ALTER TABLE site_automation_settings ADD PRIMARY KEY(company_id,id)`;
-  await sql`ALTER TABLE site_automation_results ADD COLUMN IF NOT EXISTS company_id TEXT`;
-  await sql`UPDATE site_automation_results SET company_id=${legacyCompany} WHERE company_id IS NULL`;
-  await sql`ALTER TABLE site_automation_results ALTER COLUMN company_id SET NOT NULL`;
-  await sql`ALTER TABLE site_automation_results DROP CONSTRAINT IF EXISTS site_automation_results_flow_id_lead_id_fingerprint_key`;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS site_automation_results_company_unique ON site_automation_results(company_id,flow_id,lead_id,fingerprint)`;
-  await sql`ALTER TABLE site_automation_runs ADD COLUMN IF NOT EXISTS company_id TEXT`;
-  await sql`UPDATE site_automation_runs SET company_id=${legacyCompany} WHERE company_id IS NULL`;
-  await sql`ALTER TABLE site_automation_runs ALTER COLUMN company_id SET NOT NULL`;
-  await sql`ALTER TABLE site_automation_lock ADD COLUMN IF NOT EXISTS company_id TEXT`;
-  await sql`UPDATE site_automation_lock SET company_id=${legacyCompany} WHERE company_id IS NULL`;
-  await sql`ALTER TABLE site_automation_lock ALTER COLUMN company_id SET NOT NULL`;
-  await sql`ALTER TABLE site_automation_lock DROP CONSTRAINT IF EXISTS site_automation_lock_pkey`;
-  await sql`ALTER TABLE site_automation_lock DROP COLUMN IF EXISTS id`;
-  await sql`ALTER TABLE site_automation_lock ADD PRIMARY KEY(company_id)`;
   const companyId = supabaseCompanyId();
   await sql`UPDATE site_automation_settings SET active=FALSE WHERE company_id=${companyId} AND id IN ('qualification', 'recommendations') AND active=TRUE`;
   await sql`INSERT INTO site_automation_settings (company_id,id) SELECT ${companyId}, jsonb_array_elements_text(${JSON.stringify(automationFlows.map((flow) => flow.id))}::jsonb) ON CONFLICT DO NOTHING`;
@@ -51,7 +20,7 @@ async function ensureSchema() {
 
 export async function automationSnapshot() {
   if (!process.env.DATABASE_URL) return { configured: false, schedulerConfigured: false, flows: [], results: [], runs: [] };
-  await ensureSchema();
+  await ensureAutomationSettings();
   const sql = database();
   const companyId = supabaseCompanyId();
   const [settings, counts, results, runs] = await Promise.all([
@@ -67,19 +36,19 @@ export async function automationSnapshot() {
 
 export async function setAutomationActive(id: FlowId, active: boolean) {
   if (!isFlowId(id)) throw new Error('Automação indisponível.');
-  await ensureSchema();
+  await ensureAutomationSettings();
   await database()`UPDATE site_automation_settings SET active=${active} WHERE company_id=${supabaseCompanyId()} AND id=${id}`;
 }
 
 export async function completeAutomationResult(id: string) {
-  await ensureSchema();
+  await ensureAutomationSettings();
   return database()`UPDATE site_automation_results SET status='done' WHERE company_id=${supabaseCompanyId()} AND id=${id} AND status='open' RETURNING id`;
 }
 
 // A fresh read prevents an old draft from offering a sold property or a profile
 // that has changed. Opening WhatsApp is a handoff, never an automatic send.
 export async function prepareMatchMessage(id: string) {
-  await ensureSchema();
+  await ensureAutomationSettings();
   const rows = await database()`SELECT lead_id, detail FROM site_automation_results
     WHERE company_id=${supabaseCompanyId()} AND id=${id} AND flow_id='new-property' AND status='open'`;
   if (!rows.length) return { error: 'Este rascunho não está mais disponível.' };
@@ -93,7 +62,7 @@ export async function prepareMatchMessage(id: string) {
 
 export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selected?: FlowId) {
   if (selected !== undefined && !isFlowId(selected)) throw new Error('Automação indisponível.');
-  await ensureSchema();
+  await ensureAutomationSettings();
   const sql = database();
   const companyId = supabaseCompanyId();
   const token = randomUUID();
