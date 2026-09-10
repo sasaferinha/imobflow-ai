@@ -45,7 +45,7 @@ export type LeadInput = {
 
 function isKnown(value: string) {
   const normalized = value.trim().toLowerCase();
-  return Boolean(normalized && normalized !== 'não informado' && normalized !== 'nao informado' && normalized !== '-');
+  return Boolean(normalized && !['não informado', 'nao informado', '-', 'null', 'undefined'].includes(normalized));
 }
 
 export function hasCommercialQualification(input: Pick<LeadInput, 'goal' | 'propertyType' | 'region' | 'budget'>): boolean {

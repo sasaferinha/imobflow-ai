@@ -190,6 +190,13 @@ function formatBudget(row: Record<string, unknown>) {
   return 'Não informado';
 }
 
+function leadField(row: Record<string, unknown>, field: string) {
+  const value = row[field];
+  if (value == null) return 'Não informado';
+  const text = String(value).trim();
+  return text && !['null', 'undefined'].includes(text.toLowerCase()) ? text : 'Não informado';
+}
+
 function propertyPayload(input: PropertyInput) {
   return {
     company_id: supabaseCompanyId(), code: input.code || null, title: input.title, description: input.description || null,
@@ -309,7 +316,7 @@ function mapLead(row: Record<string, unknown>): LeadProfile {
   const source = String(row.source || 'Formulário do site');
   const qualificationInput = {
     name: String(row.name), phone: String(row.phone), email: row.email ? String(row.email) : null,
-    goal: String(row.goal), propertyType: String(row.property_type), region: String(row.region),
+    goal: leadField(row, 'goal'), propertyType: leadField(row, 'property_type'), region: leadField(row, 'region'),
     budget: formatBudget(row), details: row.details ? String(row.details) : null,
     lifecycleStatus, lastContactAt,
   };
@@ -317,8 +324,8 @@ function mapLead(row: Record<string, unknown>): LeadProfile {
   const scoreDefined = !source.trim().toLowerCase().includes('whatsapp') || hasCommercialQualification(qualificationInput);
   return {
     id: String(row.id), name: String(row.name), phone: String(row.phone),
-    email: row.email ? String(row.email) : null, goal: String(row.goal),
-    propertyType: String(row.property_type), region: String(row.region), budget: formatBudget(row),
+    email: row.email ? String(row.email) : null, goal: qualificationInput.goal,
+    propertyType: qualificationInput.propertyType, region: qualificationInput.region, budget: formatBudget(row),
     details: row.details ? String(row.details) : null, summary: String(row.summary || ''),
     score: analysis.score, scoreDefined, temperature: scoreDefined ? analysis.temperature : 'Indefinido', source,
     assignedTo: row.assigned_to ? String(row.assigned_to) : null, lifecycleStatus, lastContactAt,
