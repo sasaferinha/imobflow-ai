@@ -77,5 +77,10 @@ export async function saveIncomingWhatsAppMessage(input: IncomingWhatsAppMessage
   await supabaseServiceRequest(`leads?id=eq.${leadId}&company_id=eq.${input.companyId}`, {
     method: 'PATCH', body: { last_contact_at: input.occurredAt || new Date().toISOString() },
   });
-  return { saved: true as const };
+  return {
+    saved: true as const, companyId: input.companyId, leadId, conversationId,
+    incomingExternalMessageId: input.externalMessageId, message: input.text, hasImage: Boolean(input.media),
+    recipientPhone: input.phone, phoneNumberId: input.phoneNumberId, accessToken: input.accessToken,
+    apiVersion: input.apiVersion, occurredAt: input.occurredAt || new Date().toISOString(),
+  };
 }

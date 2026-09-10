@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import {
   configuredMetaWhatsAppConnections,
   parseIncomingWhatsAppMessages,
@@ -6,9 +6,11 @@ import {
   verifyMetaWebhookToken,
 } from '@/lib/meta-whatsapp';
 import { saveIncomingWhatsAppMessage } from '@/lib/meta-whatsapp-store';
+import { requestAttendanceSuggestion } from '@/lib/n8n-attendance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const MAX_WEBHOOK_BYTES = 512 * 1024;
 
@@ -39,7 +41,13 @@ export async function POST(request: NextRequest) {
   }
   try {
     const messages = parseIncomingWhatsAppMessages(payload, configuredMetaWhatsAppConnections());
-    for (const message of messages) await saveIncomingWhatsAppMessage(message);
+    for (const message of messages) {
+      const saved = await saveIncomingWhatsAppMessage(message);
+      if (saved.saved) after(async () => {
+        try { await requestAttendanceSuggestion(saved); }
+        catch { console.error('n8n_attendance_delivery_failed'); }
+      });
+    }
     return NextResponse.json({ received: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('meta_whatsapp_webhook_processing_failed', error instanceof Error ? error.message : 'unknown');

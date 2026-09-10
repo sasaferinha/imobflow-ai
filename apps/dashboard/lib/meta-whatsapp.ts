@@ -13,6 +13,7 @@ type RawConnection = Partial<MetaWhatsAppConnection>;
 
 export type IncomingWhatsAppMessage = {
   companyId: string;
+  phoneNumberId: string;
   phone: string;
   externalMessageId: string;
   text: string;
@@ -123,6 +124,7 @@ export function parseIncomingWhatsAppMessages(payload: unknown, connections: Met
         const unixSeconds = typeof row.timestamp === 'string' && /^\d+$/.test(row.timestamp) ? Number(row.timestamp) : NaN;
         output.push({
           companyId: connection.companyId,
+          phoneNumberId: connection.phoneNumberId,
           phone,
           externalMessageId,
           text,
