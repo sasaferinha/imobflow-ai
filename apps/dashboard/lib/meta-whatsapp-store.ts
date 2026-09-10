@@ -1,5 +1,6 @@
 import { IncomingWhatsAppMessage, normalizePhone } from './meta-whatsapp';
 import { supabaseServiceRequest } from './supabase';
+import { persistIncomingWhatsAppImage } from './whatsapp-media';
 
 type LeadRow = { id: string; phone: string | null };
 type ConversationRow = { id: string };
@@ -48,6 +49,10 @@ export async function saveIncomingWhatsAppMessage(input: IncomingWhatsAppMessage
   const conversationId = conversations[0]?.id;
   if (!conversationId) throw new Error('Não foi possível criar a conversa do WhatsApp.');
   try {
+    const mediaUrls = input.media ? [await persistIncomingWhatsAppImage({
+      companyId: input.companyId, mediaId: input.media.id, mimeType: input.media.mimeType,
+      accessToken: input.accessToken, apiVersion: input.apiVersion,
+    })] : [];
     await supabaseServiceRequest('messages', {
       method: 'POST',
       body: {
@@ -56,6 +61,7 @@ export async function saveIncomingWhatsAppMessage(input: IncomingWhatsAppMessage
         direction: 'incoming',
         sender_type: 'client',
         content: input.text,
+        media_urls: mediaUrls,
         external_message_id: input.externalMessageId,
         created_at: input.occurredAt || new Date().toISOString(),
       },

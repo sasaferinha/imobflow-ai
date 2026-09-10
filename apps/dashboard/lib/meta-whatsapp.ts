@@ -4,6 +4,9 @@ export type MetaWhatsAppConnection = {
   companyId: string;
   phoneNumberId: string;
   enabled: boolean;
+  /** Server-only token used exclusively to retrieve media sent to this number. */
+  accessToken: string | null;
+  apiVersion: string;
 };
 
 type RawConnection = Partial<MetaWhatsAppConnection>;
@@ -15,6 +18,9 @@ export type IncomingWhatsAppMessage = {
   text: string;
   contactName: string | null;
   occurredAt: string | null;
+  media: { id: string; mimeType: string; caption: string | null } | null;
+  accessToken: string | null;
+  apiVersion: string;
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -33,6 +39,9 @@ export function configuredMetaWhatsAppConnections(raw = process.env.WHATSAPP_MET
   }
   if (!Array.isArray(parsed)) throw new Error('WHATSAPP_META_CONNECTIONS deve ser uma lista.');
   const ids = new Set<string>();
+  const sharedAccessToken = typeof process.env.META_WHATSAPP_ACCESS_TOKEN === 'string' && process.env.META_WHATSAPP_ACCESS_TOKEN.trim()
+    ? process.env.META_WHATSAPP_ACCESS_TOKEN.trim() : null;
+  const sharedApiVersion = /^v\d+\.\d+$/.test(process.env.META_WHATSAPP_GRAPH_VERSION || '') ? process.env.META_WHATSAPP_GRAPH_VERSION! : 'v26.0';
   return parsed.map((entry) => {
     const item = entry as RawConnection;
     const companyId = typeof item.companyId === 'string' ? item.companyId : '';
@@ -40,7 +49,9 @@ export function configuredMetaWhatsAppConnections(raw = process.env.WHATSAPP_MET
     if (!UUID.test(companyId) || !phoneNumberId) throw new Error('Conexão WhatsApp inválida.');
     if (ids.has(phoneNumberId)) throw new Error('Há mais de uma empresa para o mesmo número WhatsApp.');
     ids.add(phoneNumberId);
-    return { companyId, phoneNumberId, enabled: item.enabled !== false };
+    const accessToken = typeof item.accessToken === 'string' && item.accessToken.trim() ? item.accessToken.trim() : sharedAccessToken;
+    const apiVersion = typeof item.apiVersion === 'string' && /^v\d+\.\d+$/.test(item.apiVersion) ? item.apiVersion : sharedApiVersion;
+    return { companyId, phoneNumberId, enabled: item.enabled !== false, accessToken, apiVersion };
   });
 }
 
@@ -71,6 +82,15 @@ function readableText(message: Record<string, unknown>) {
   return '';
 }
 
+function incomingImage(message: Record<string, unknown>) {
+  if (message.type !== 'image' || !message.image || typeof message.image !== 'object') return null;
+  const image = message.image as Record<string, unknown>;
+  const id = typeof image.id === 'string' ? image.id.trim().slice(0, 255) : '';
+  const mimeType = typeof image.mime_type === 'string' ? image.mime_type.trim().toLowerCase().slice(0, 100) : '';
+  const caption = typeof image.caption === 'string' ? image.caption.trim().slice(0, 4000) || null : null;
+  return id ? { id, mimeType, caption } : null;
+}
+
 export function parseIncomingWhatsAppMessages(payload: unknown, connections: MetaWhatsAppConnection[]): IncomingWhatsAppMessage[] {
   if (!payload || typeof payload !== 'object' || (payload as Record<string, unknown>).object !== 'whatsapp_business_account') return [];
   const byPhoneNumberId = new Map(connections.filter((connection) => connection.enabled).map((connection) => [connection.phoneNumberId, connection]));
@@ -97,7 +117,8 @@ export function parseIncomingWhatsAppMessages(payload: unknown, connections: Met
         const row = message as Record<string, unknown>;
         const phone = normalizePhone(String(row.from || ''));
         const externalMessageId = typeof row.id === 'string' ? row.id.slice(0, 255) : '';
-        const text = readableText(row);
+        const media = incomingImage(row);
+        const text = readableText(row) || media?.caption || (media ? '📷 Foto recebida' : '');
         if (!phone || !externalMessageId || !text) continue;
         const unixSeconds = typeof row.timestamp === 'string' && /^\d+$/.test(row.timestamp) ? Number(row.timestamp) : NaN;
         output.push({
@@ -107,6 +128,9 @@ export function parseIncomingWhatsAppMessages(payload: unknown, connections: Met
           text,
           contactName,
           occurredAt: Number.isFinite(unixSeconds) ? new Date(unixSeconds * 1000).toISOString() : null,
+          media,
+          accessToken: connection.accessToken,
+          apiVersion: connection.apiVersion,
         });
       }
     }

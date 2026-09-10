@@ -29,6 +29,12 @@ ignorados pelo identificador externo da mensagem.
 ]
 ```
 
+Para receber fotos, crie também `META_WHATSAPP_ACCESS_TOKEN` como segredo de
+Production. Use um token de acesso do sistema com acesso ao número WhatsApp;
+ele fica apenas no servidor e não deve ser enviado pelo navegador. Fotos de até
+5 MB são armazenadas de forma privada e só aparecem para membros autenticados
+da mesma imobiliária.
+
 4. Faça uma nova publicação na Vercel para os segredos entrarem em vigor.
 5. Na Meta, em **WhatsApp → Configuração**, informe a URL acima como
    *Callback URL* e use exatamente o mesmo valor de

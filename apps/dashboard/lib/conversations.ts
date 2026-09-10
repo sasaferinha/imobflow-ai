@@ -1,5 +1,6 @@
 import { supabaseCompanyId, supabaseRequest } from './supabase';
 import { currentAccount } from './tenant-context';
+import { isWhatsAppMediaPath, readStoredWhatsAppImage } from './whatsapp-media';
 
 export type ConversationMessage = {
   id: string;
@@ -74,6 +75,17 @@ export async function createConversationMessage(input: {
   return mapMessage(message, input.leadId);
 }
 
+export async function readConversationImage(messageId: string, index: number) {
+  const companyId = supabaseCompanyId();
+  if (!/^[0-9a-f-]{36}$/i.test(messageId) || !Number.isInteger(index) || index < 0 || index > 4) throw new Error('Foto inválida.');
+  const messages = await supabaseRequest<Array<{ media_urls: unknown }>>(
+    `messages?id=eq.${encodeURIComponent(messageId)}&company_id=eq.${companyId}&select=media_urls&limit=1`,
+  );
+  const path = Array.isArray(messages[0]?.media_urls) && typeof messages[0].media_urls[index] === 'string' ? messages[0].media_urls[index] : '';
+  if (!isWhatsAppMediaPath(path, companyId)) throw new Error('Foto não encontrada.');
+  return readStoredWhatsAppImage(path);
+}
+
 function mapMessage(row: Record<string, unknown>, leadId: string): ConversationMessage {
   const createdAt = new Date(String(row.created_at));
   return {
@@ -81,6 +93,8 @@ function mapMessage(row: Record<string, unknown>, leadId: string): ConversationM
     side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing',
     text: String(row.content || ''),
     time: createdAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
-    images: Array.isArray(row.media_urls) ? row.media_urls.filter((item): item is string => typeof item === 'string') : [],
+    images: Array.isArray(row.media_urls) ? row.media_urls.filter((item): item is string => typeof item === 'string').map((item, index) =>
+      isWhatsAppMediaPath(item, String(row.company_id || '')) ? `/api/conversations/media?messageId=${encodeURIComponent(String(row.id))}&index=${index}` : item,
+    ) : [],
   };
 }

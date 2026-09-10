@@ -18,7 +18,7 @@ function load(relative, env = {}) {
 }
 
 const companyId = '00000000-0000-4000-8000-000000000001';
-const rawConnections = JSON.stringify([{ companyId, phoneNumberId: '123456789', enabled: true }]);
+const rawConnections = JSON.stringify([{ companyId, phoneNumberId: '123456789', enabled: true, accessToken: 'test-media-token' }]);
 const env = { META_APP_SECRET: 'test-app-secret', META_WHATSAPP_WEBHOOK_VERIFY_TOKEN: 'test-verify-token', WHATSAPP_META_CONNECTIONS: rawConnections };
 const meta = load('lib/meta-whatsapp.ts', env);
 const connections = meta.configuredMetaWhatsAppConnections();
@@ -49,6 +49,16 @@ assert.equal(parsed.length, 1);
 assert.equal(parsed[0].companyId, companyId);
 assert.equal(parsed[0].phone, '5535999999999');
 assert.equal(parsed[0].text, 'Olá, quero visitar.');
+assert.equal(parsed[0].media, null);
+const imagePayload = { ...payload, entry: [{ changes: [{ field: 'messages', value: {
+  ...payload.entry[0].changes[0].value,
+  messages: [{ id: 'wamid.image', from: '5535999999999', timestamp: '1789000001', type: 'image', image: { id: 'media-123', mime_type: 'image/jpeg', caption: 'Foto da fachada' } }],
+} }] }] };
+const parsedImage = meta.parseIncomingWhatsAppMessages(imagePayload, connections);
+assert.equal(parsedImage.length, 1);
+assert.equal(parsedImage[0].text, 'Foto da fachada');
+assert.equal(parsedImage[0].media.id, 'media-123');
+assert.equal(parsedImage[0].accessToken, 'test-media-token');
 assert.equal(meta.parseIncomingWhatsAppMessages({ ...payload, object: 'other' }, connections).length, 0);
 assert.equal(meta.parseIncomingWhatsAppMessages({ ...payload, entry: [{ changes: [{ field: 'messages', value: { metadata: { phone_number_id: 'other' }, messages: payload.entry[0].changes[0].value.messages } }] }] }, connections).length, 0);
 console.log('PASS Meta WhatsApp webhook signature, tenant mapping and inbound payload contracts');
