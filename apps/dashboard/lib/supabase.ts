@@ -16,6 +16,15 @@ export function hasSupabaseConfig() {
 }
 
 export async function supabaseRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return supabaseServiceRequest<T>(path, options);
+}
+
+/**
+ * Server-only REST client. Unlike supabaseRequest, this does not derive a
+ * company from the current browser session. It is reserved for verified
+ * provider webhooks, which establish the company from their own connection.
+ */
+export async function supabaseServiceRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (options.allRows) {
     if (options.method && options.method !== 'GET') throw new Error('Paginação disponível somente para leitura.');
     const [table, query = ''] = path.split('?');
@@ -27,7 +36,7 @@ export async function supabaseRequest<T>(path: string, options: RequestOptions =
     while (true) {
       params.set('offset', String(rows.length));
       params.set('limit', String(Math.min(500, maximum + 1 - rows.length)));
-      const page = await supabaseRequest<unknown[]>(`${table}?${params}`, { ...options, allRows: false });
+      const page = await supabaseServiceRequest<unknown[]>(`${table}?${params}`, { ...options, allRows: false });
       if (!Array.isArray(page)) throw new Error('Resposta inválida do banco.');
       if (!page.length) return rows as T;
       rows.push(...page);
