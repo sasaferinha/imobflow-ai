@@ -11,7 +11,7 @@ import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
 const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
   id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
   goal: contact.goal, propertyType: contact.propertyType, region: contact.region, budget: contact.budget,
-  details: `${contact.rooms} quartos · ${contact.payment}`, summary: contact.suggestion, score: contact.score,
+  details: `${contact.rooms} quartos · ${contact.payment}`, summary: contact.suggestion, score: contact.score, scoreDefined: true,
   temperature: demoTemperature(contact.score), source: 'Demonstração', assignedTo: null,
   lifecycleStatus: 'Em atendimento', lastContactAt: null, inactivityDays: null,
   recoveryPotential: 'Baixo', scoreReasons: [], recoverySelected: false, createdAt: '2026-09-08T12:00:00Z',
