@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import type { LeadInput, LeadProfile } from './leads';
-import { analyzeLead, explainProfile } from './leads';
+import { analyzeLead, explainProfile, hasCommercialQualification } from './leads';
 import type { LeadLifecycleStatus } from './leads';
 import type { AppointmentInput, AppointmentRecord, PerformanceSettingsInput, PerformanceSnapshot, PropertyInput, PropertyRecord, SaleInput, SaleRecord } from './operations';
 import { supabaseCompanyId, supabaseRequest } from './supabase';
@@ -306,21 +306,24 @@ function mapLead(row: Record<string, unknown>): LeadProfile {
     ? String(row.lifecycle_status) as LeadLifecycleStatus
     : 'Novo';
   const lastContactAt = row.last_contact_at ? new Date(String(row.last_contact_at)).toISOString() : null;
-  const analysis = analyzeLead({
+  const source = String(row.source || 'Formulário do site');
+  const qualificationInput = {
     name: String(row.name), phone: String(row.phone), email: row.email ? String(row.email) : null,
     goal: String(row.goal), propertyType: String(row.property_type), region: String(row.region),
     budget: formatBudget(row), details: row.details ? String(row.details) : null,
     lifecycleStatus, lastContactAt,
-  });
+  };
+  const analysis = analyzeLead(qualificationInput);
+  const scoreDefined = !source.trim().toLowerCase().includes('whatsapp') || hasCommercialQualification(qualificationInput);
   return {
     id: String(row.id), name: String(row.name), phone: String(row.phone),
     email: row.email ? String(row.email) : null, goal: String(row.goal),
     propertyType: String(row.property_type), region: String(row.region), budget: formatBudget(row),
     details: row.details ? String(row.details) : null, summary: String(row.summary || ''),
-    score: analysis.score, temperature: analysis.temperature, source: String(row.source || 'Formulário do site'),
+    score: analysis.score, scoreDefined, temperature: scoreDefined ? analysis.temperature : 'Indefinido', source,
     assignedTo: row.assigned_to ? String(row.assigned_to) : null, lifecycleStatus, lastContactAt,
     inactivityDays: analysis.inactivityDays, recoveryPotential: analysis.recoveryPotential,
-    scoreReasons: analysis.scoreReasons, recoverySelected: false,
+    scoreReasons: scoreDefined ? analysis.scoreReasons : ['Aguardando objetivo, tipo de imóvel, região e faixa de investimento'], recoverySelected: false,
     createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }

@@ -70,7 +70,7 @@ const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'LD';
 const liveTemperature = (temperature: string) => {
   const value = normalize(temperature);
-  return value.includes('frio') ? 'Frio' : value.includes('morno') ? 'Morno' : 'Quente';
+  return value.includes('indefinido') ? 'Indefinido' : value.includes('frio') ? 'Frio' : value.includes('morno') ? 'Morno' : 'Quente';
 };
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
@@ -186,6 +186,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     <section className="conversation-temperature-guide" aria-label="Como interpretar a temperatura dos leads">
       <div><strong>Temperatura do lead</strong><span>Use o nível de interesse para priorizar os atendimentos.</span></div>
       <dl>
+        <div><dt className="conversation-temperature" data-temperature="Indefinido">Indefinido</dt><dd>Aguardando objetivo, tipo, região e investimento.</dd></div>
         <div><dt className="conversation-temperature" data-temperature="Frio">Frio</dt><dd>Contato inicial ou com poucas informações.</dd></div>
         <div><dt className="conversation-temperature" data-temperature="Morno">Morno</dt><dd>Tem interesse, mas ainda está avaliando opções.</dd></div>
         <div><dt className="conversation-temperature" data-temperature="Quente">Quente</dt><dd>Perfil completo e pronto para avançar.</dd></div>
@@ -216,8 +217,8 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
       <aside className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
         <header className="conversation-lead-header"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><p>Ficha comercial</p><span className="conversation-name-line"><h3>{selected.name}</h3><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-data-source">{sourceLabel}{lead?.source ? ` · ${lead.source}` : ''}</span></div></header>
         <div className="conversation-classifications" aria-label="Classificação do cliente"><span className="conversation-stage conversation-badge" aria-label={`Etapa: ${stage}`}>{stage}</span></div>
-        <section className="conversation-priority-card" key={`${selected.id}-${lead?.score || selected.score}`} aria-label="Prioridade comercial">
-          <div><span>Prioridade comercial</span><strong>{lead.score}<small>/100</small></strong></div><i aria-hidden="true"><b style={{ width: `${lead.score}%` }}/></i><p>Base de leads sincronizada para este atendimento.</p>
+        <section className="conversation-priority-card" key={`${selected.id}-${lead?.score || selected.score}`} aria-label={lead.scoreDefined ? 'Prioridade comercial' : 'Prioridade comercial indefinida'}>
+          <div><span>Prioridade comercial</span><strong>{lead.scoreDefined ? <>{lead.score}<small>/100</small></> : 'Indefinido'}</strong></div><i aria-hidden="true"><b style={{ width: `${lead.scoreDefined ? lead.score : 0}%` }}/></i><p>{lead.scoreDefined ? 'Base de leads sincronizada para este atendimento.' : 'Aguardando as respostas de qualificação.'}</p>
         </section>
         <section className="conversation-lead-highlights" aria-label="Critérios de busca do lead">{leadHighlights.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</section>
         <section className="conversation-lead-details"><h4>Contexto do atendimento</h4><dl>{leadOperationalData.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>

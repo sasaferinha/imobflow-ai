@@ -34,7 +34,7 @@ function leadForMatching(row: Row): LeadProfile | null {
     details: details || (structuredRooms == null ? null : `${structuredRooms} quartos`),
     assignedTo: typeof row.assigned_to === 'string' ? row.assigned_to : null,
     lifecycleStatus: row.lifecycle_status as LeadProfile['lifecycleStatus'],
-    summary: '', score: 0, temperature: '', source: String(row.source || ''), lastContactAt: null,
+    summary: '', score: 0, scoreDefined: true, temperature: '', source: String(row.source || ''), lastContactAt: null,
     inactivityDays: null, recoveryPotential: 'Baixo', scoreReasons: [], recoverySelected: false,
     createdAt: String(row.created_at || ''),
   };

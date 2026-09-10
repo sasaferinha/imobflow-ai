@@ -13,6 +13,8 @@ export type LeadProfile = {
   details: string | null;
   summary: string;
   score: number;
+  /** False while an inbound WhatsApp contact has not supplied the qualification answers. */
+  scoreDefined: boolean;
   temperature: string;
   source: string;
   assignedTo: string | null;
@@ -44,6 +46,10 @@ export type LeadInput = {
 function isKnown(value: string) {
   const normalized = value.trim().toLowerCase();
   return Boolean(normalized && normalized !== 'não informado' && normalized !== 'nao informado' && normalized !== '-');
+}
+
+export function hasCommercialQualification(input: Pick<LeadInput, 'goal' | 'propertyType' | 'region' | 'budget'>): boolean {
+  return isKnown(input.goal) && isKnown(input.propertyType) && isKnown(input.region) && isKnown(input.budget);
 }
 
 export function explainProfile(input: LeadInput): string {

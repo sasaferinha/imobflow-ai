@@ -14,6 +14,7 @@ export type AutomationCandidate = { leadId: string; version: string; summary: st
 export function evaluateAutomation(flow: FlowId, lead: LeadProfile, properties: PropertyRecord[], now = new Date()): AutomationCandidate | null {
   if (!isFlowId(flow)) return null;
   if (flow === 'new-property') return newPropertyCandidates(lead, properties, now)[0] || null;
+  if (lead.scoreDefined === false) return null;
   const analysis = analyzeLead(lead, now);
   if (lead.lifecycleStatus === 'Convertido' || lead.lifecycleStatus === 'Perdido') return null;
   if (flow === 'priority') {
