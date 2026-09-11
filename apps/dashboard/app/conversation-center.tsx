@@ -10,7 +10,6 @@ import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
 import { ConversationMessageBubble } from './conversation-message';
 import { ConversationSettings } from './conversation-settings';
 import {ConversationTemplates} from './conversation-templates';
-import {ConversationHealth} from './conversation-health';
 
 const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
   id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
@@ -50,7 +49,7 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
     return result.data;
   }
   return <>
-    {!preview&&<><ConversationSettings/><ConversationHealth/></>}
+    {!preview&&<ConversationSettings/>}
     <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
       <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>Clientes cadastrados</button>
       <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>Ver demonstração</button>
