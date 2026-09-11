@@ -103,15 +103,6 @@ export function ConversationSettings() {
           ))}
         </div>
         <label>
-          Datas sem atendimento (AAAA-MM-DD, uma por linha)
-          <textarea
-            value={settings.holidays.join("\n")}
-            onChange={(e) =>
-              setSettings({ ...settings, holidays: e.target.value.split("\n") })
-            }
-          />
-        </label>
-        <label>
           Mensagem de ausência
           <textarea
             maxLength={1000}
