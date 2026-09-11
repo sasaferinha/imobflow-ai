@@ -9,7 +9,7 @@
 - Envio manual real de texto, com necessidade de assumir atendimento. Imóveis compartilham texto/link; imagens de catálogo não são apresentadas como anexos entregues.
 - Assumir/devolver com identidade do corretor e exclusão mútua no banco. Envios já em andamento precisam terminar antes da troca; pendências antigas são canceladas.
 - Recebimento transacional evita criação duplicada de lead/conversa pelo mesmo webhook.
-- Fotos privadas com validação de origem, MIME, assinatura do arquivo e limite de 5 MB durante o download; retenção de sete dias. A rota autenticada valida empresa e expiração em cada leitura, sem URL pública. Limpeza pelo agendador.
+- Fotos privadas com validação de origem, MIME, assinatura do arquivo e limite de 5 MB durante o download; retenção de sete dias. A rota autenticada valida empresa e expiração em cada leitura e usa uma URL assinada de 60 segundos internamente, sem expor o token ao navegador. Limpeza pelo agendador.
 - Cadastro e envio manual de modelos com parâmetros de texto no corpo. O administrador informa nome/idioma reais e confirma aprovação realizada na Meta. Não cadastra nem aprova modelos na Meta.
 - Painel apresenta falhas, autor, controle humano/automático, retentativas elegíveis, configurações e indicadores separados. Correções visuais em 390px e 1440px com dados fictícios.
 

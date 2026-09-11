@@ -98,13 +98,21 @@ export async function readStoredWhatsAppImage(path: string) {
   const rows=await db<Array<{expires_at:string}>>(`conversation_media?company_id=eq.${companyId}&object_path=eq.${encodeURIComponent(path)}&select=expires_at&limit=1`);
   if(!rows[0]||!Number.isFinite(Date.parse(rows[0].expires_at))||Date.parse(rows[0].expires_at)<=Date.now())throw Error('Foto expirada.');
   const config = configuration();
-  const response = await fetch(`${config.baseUrl}/storage/v1/object/${path}`, {
-    headers: { apikey: config.secretKey, Authorization: `Bearer ${config.secretKey}` }, cache: 'no-store',
+  const signing = await fetch(`${config.baseUrl}/storage/v1/object/sign/${path}`, {
+    method:'POST',headers: { apikey: config.secretKey, Authorization: `Bearer ${config.secretKey}`,'Content-Type':'application/json' },
+    body:JSON.stringify({expiresIn:60}),cache:'no-store',redirect:'error',signal:AbortSignal.timeout(8000),
   });
+  if(!signing.ok)throw Error('Foto indisponível.');
+  const signed=await signing.json() as {signedURL?:unknown};
+  if(typeof signed.signedURL!=='string'||!signed.signedURL.startsWith(`/object/sign/${path}?`))throw Error('Endereço de mídia inválido.');
+  // The short-lived URL stays on the server; every browser read still checks
+  // the tenant session and the retention deadline through the private proxy.
+  const response = await fetch(`${config.baseUrl}/storage/v1${signed.signedURL}`, {cache:'no-store',redirect:'error',signal:AbortSignal.timeout(8000)});
   if (!response.ok) throw new Error('Foto não encontrada.');
   const type = contentType(response.headers.get('content-type'));
   if (!ACCEPTED_TYPES.has(type)) throw new Error('Foto armazenada em formato inválido.');
-  return { bytes: await response.arrayBuffer(), contentType: type };
+  const bytes=await boundedImage(response);
+  return { bytes: bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength) as ArrayBuffer, contentType: type };
 }
 export async function removeExpiredConversationMedia(companyId:string,deadline=Date.now()+10000){
  const config=configuration();

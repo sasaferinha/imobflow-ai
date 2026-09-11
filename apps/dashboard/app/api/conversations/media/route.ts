@@ -12,7 +12,7 @@ async function handleGET(request: NextRequest) {
   const index = Number(request.nextUrl.searchParams.get('index'));
   try {
     const image = await readConversationImage(messageId, index);
-    return new NextResponse(image.bytes, { headers: { 'Content-Type': image.contentType, 'Cache-Control': 'private, max-age=300' } });
+    return new NextResponse(image.bytes, { headers: { 'Content-Type': image.contentType, 'Cache-Control': 'private, no-store' } });
   } catch {
     return new NextResponse('Foto não encontrada', { status: 404, headers: { 'Cache-Control': 'no-store' } });
   }

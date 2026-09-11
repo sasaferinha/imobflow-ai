@@ -160,6 +160,15 @@ function load(file, overrides = {}, extra = {}) {
   );
   assert.match(delivery.deliveryError(130497), /país/);
   const media = load("lib/whatsapp-media.ts", { "./supabase": {} });
+  let signedReadCalls=0;
+  const signedReader=load('lib/whatsapp-media.ts',{'./supabase':{supabaseServiceRequest:async()=>[{expires_at:new Date(Date.now()+60000).toISOString()}]}},{process:{env:{SUPABASE_URL:'https://storage.test',SUPABASE_SECRET_KEY:'fake'}},fetch:async(url,options)=>{
+    signedReadCalls++;
+    if(signedReadCalls===1){assert.equal(JSON.parse(options.body).expiresIn,60);return {ok:true,json:async()=>({signedURL:'/object/sign/whatsapp-media/a/test.jpg?token=fake'})};}
+    assert.equal(url,'https://storage.test/storage/v1/object/sign/whatsapp-media/a/test.jpg?token=fake');assert.equal(options.headers,undefined);
+    return new Response(Uint8Array.from([255,216,255,1]),{headers:{'Content-Type':'image/jpeg'}});
+  }});
+  assert.equal((await signedReader.readStoredWhatsAppImage('whatsapp-media/a/test.jpg')).bytes.byteLength,4);
+  assert.equal(signedReadCalls,2);
   for (const url of [
     "http://lookaside.fbsbx.com/a",
     "https://localhost/a",
