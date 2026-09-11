@@ -4,6 +4,7 @@ import './admin-layout.css';
 import './landing-responsive.css';
 import './native-theme.css';
 import './conversation-pilot.css';
+import './leads-essential.css';
 
 const siteOrigin = process.env.SITE_URL ?? 'http://localhost:3000';
 
