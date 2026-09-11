@@ -66,10 +66,10 @@ function load(relative) {
 (async () => {
   const api = load('lib/automations.ts');
   const first = await api.runAutomations('manual', 'new-property');
-  assert.equal(first.processed, 2); assert.equal(first.failed, 0); assert.equal(records.size, 2);
+  assert.equal(first.processed, 0); assert.equal(first.failed, 0); assert.equal(records.size, 0);
   const second = await api.runAutomations('event', 'new-property');
-  assert.equal(second.processed, 0); assert.equal(propertyReads, 2);
-  console.log('PASS new flow loads actual property source, saves each opportunity and does not duplicate');
+  assert.equal(second.processed, 0); assert.equal(propertyReads, 0);
+  console.log('PASS legacy Neon matching is disabled; Supabase opportunities own the core flow');
   const draft = await api.prepareMatchMessage('draft');
   assert.equal(draft.phone, '5511999999999'); assert.match(draft.message, /Olá, João!/);
   const beforeReview = writes;

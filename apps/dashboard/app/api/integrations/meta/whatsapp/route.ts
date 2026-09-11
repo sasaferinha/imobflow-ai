@@ -6,7 +6,7 @@ import {
   verifyMetaWebhookToken,
 } from '@/lib/meta-whatsapp';
 import { saveIncomingWhatsAppMessage } from '@/lib/meta-whatsapp-store';
-import { requestAttendanceSuggestion } from '@/lib/n8n-attendance';
+import { respondToIncomingMessage } from '@/lib/attendance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,8 +44,8 @@ export async function POST(request: NextRequest) {
     for (const message of messages) {
       const saved = await saveIncomingWhatsAppMessage(message);
       if (saved.saved) after(async () => {
-        try { await requestAttendanceSuggestion(saved); }
-        catch { console.error('n8n_attendance_delivery_failed'); }
+        try { await respondToIncomingMessage(saved); }
+        catch { console.error('attendance_delivery_failed'); }
       });
     }
     return NextResponse.json({ received: true }, { headers: { 'Cache-Control': 'no-store' } });

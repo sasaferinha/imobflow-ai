@@ -76,7 +76,9 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
     const leads = await listLeads(10001);
     if (leads.length > 10000) throw new Error('Lote acima do limite seguro.');
     const settings = await sql`SELECT id FROM site_automation_settings WHERE company_id=${companyId} AND active=TRUE`;
-    const active = automationFlows.filter((flow) => (!selected || flow.id === selected) && settings.some((setting) => setting.id === flow.id));
+    // New-property matching now lives in Supabase opportunities; retain old
+    // results for history, but never run a second matching engine.
+    const active = automationFlows.filter((flow) => flow.id !== 'new-property' && (!selected || flow.id === selected) && settings.some((setting) => setting.id === flow.id));
     const properties = active.some((flow) => flow.id === 'new-property') ? await listProperties(true) : [];
     // The CRM source of truth is Supabase. Close reminders that no longer match
     // the current lead state without consulting the retired site_leads table.

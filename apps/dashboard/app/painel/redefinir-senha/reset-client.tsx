@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import '../access.css';
 
@@ -8,14 +8,14 @@ export default function PasswordResetClient() {
   const [message,setMessage] = useState('');
   const [loading,setLoading] = useState(false);
   const [done,setDone] = useState(false);
-  const initialized = useRef(false);
   useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
     const value = new URLSearchParams(window.location.hash.slice(1)).get('token') || '';
-    if (/^[a-f0-9]{64}$/.test(value)) setToken(value);
-    else setMessage('Link inválido. Solicite um novo link de recuperação.');
+    const timer = window.setTimeout(() => {
+      if (/^[a-f0-9]{64}$/.test(value)) setToken(value);
+      else setMessage('Link inválido. Solicite um novo link de recuperação.');
+    },0);
     window.history.replaceState(null,'',window.location.pathname);
+    return () => window.clearTimeout(timer);
   },[]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

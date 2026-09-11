@@ -71,7 +71,7 @@ export async function saveIncomingWhatsAppMessage(input: IncomingWhatsAppMessage
     if (message.includes('duplicate key')) return { saved: false as const };
     throw error;
   }
-  await supabaseServiceRequest(`conversations?id=eq.${conversationId}`, {
+  await supabaseServiceRequest(`conversations?id=eq.${conversationId}&company_id=eq.${input.companyId}`, {
     method: 'PATCH', body: { last_message_at: input.occurredAt || new Date().toISOString() },
   });
   await supabaseServiceRequest(`leads?id=eq.${leadId}&company_id=eq.${input.companyId}`, {

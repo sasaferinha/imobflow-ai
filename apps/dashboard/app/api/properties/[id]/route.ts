@@ -6,7 +6,8 @@ import type { PropertyInput } from '@/lib/operations';
 import { persistPropertyImages } from '@/lib/property-images';
 import { hasSameOrigin } from '@/lib/request-security';
 
-import { runAutomationsAfterEvent } from '@/lib/automations';
+import { onPropertyChanged } from '@/lib/opportunities';
+import { supabaseCompanyId } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -38,7 +39,8 @@ async function handlePATCH(request: NextRequest, context: { params: Promise<{ id
     if (!input.code || !input.title || !input.description || !input.district || !input.city || !input.price || !input.propertyType || input.bedrooms == null || input.parkingSpaces == null || input.area == null) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     input.images = await persistPropertyImages(input.images);
     const data = await updateProperty((await context.params).id, input);
-    if (data) after(runAutomationsAfterEvent);
+    const companyId = supabaseCompanyId();
+    if (data) after(() => onPropertyChanged(companyId, data.id));
     return data ? NextResponse.json({ data }) : NextResponse.json({ error: 'Imóvel não encontrado.' }, { status: 404 });
   } catch (error) {
     console.error('property_update_failed', error);

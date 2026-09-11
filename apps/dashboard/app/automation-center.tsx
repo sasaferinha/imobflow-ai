@@ -18,7 +18,7 @@ export default function AutomationCenter({ notify }: { notify: (message: string)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
-  const [selected, setSelected] = useState<FlowId>('new-property');
+  const [selected, setSelected] = useState<FlowId>('followup');
   const [draft, setDraft] = useState<{ id: string; message: string; phone: string | null } | null>(null);
   const [draftError, setDraftError] = useState('');
   async function reviewMessage(id: string) {
@@ -68,7 +68,8 @@ export default function AutomationCenter({ notify }: { notify: (message: string)
     {!snapshot && !error && <p role="status">Carregando automações do servidor…</p>}
     {snapshot && !snapshot.configured && <p className="automation-warning">Conecte o banco PostgreSQL pela variável DATABASE_URL na Vercel. Nenhuma automação está executando sem o banco.</p>}
     {snapshot?.configured && <p className="automation-notice">Execuções em cadastros e atualizações de leads e imóveis, além das importações de leads. {snapshot.schedulerConfigured ? 'Credencial do agendador configurada; habilite e confira a agenda na Vercel.' : 'Varredura diária pendente: configure CRON_SECRET e habilite a agenda na Vercel.'} O envio de mensagens exige sua confirmação no WhatsApp.</p>}
-    <div className="automation-layout"><section className="automation-grid">{automationFlows.map((flow) => {
+    <p>Os matches de imóveis estão na área Oportunidades, com revisão e envio manual pelo corretor.</p>
+    <div className="automation-layout"><section className="automation-grid">{automationFlows.filter(flow => flow.id !== 'new-property').map((flow) => {
       const saved = snapshot?.flows.find((item) => item.id === flow.id);
       return <article className="automation-card panel" key={flow.id}>
         <span className="automation-state">{!snapshot?.configured ? 'Não conectada' : saved?.active ? 'Ativa' : 'Pausada'}</span>

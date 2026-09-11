@@ -62,7 +62,7 @@ export async function createConversationMessage(input: {
     method: 'POST', prefer: 'return=representation',
     body: { company_id: companyId, conversation_id: conversationId, direction: 'outgoing', sender_type: 'human', content: input.content, media_urls: verifiedImages },
   });
-  await supabaseRequest(`conversations?id=eq.${conversationId}`, { method: 'PATCH', body: { last_message_at: new Date().toISOString() } });
+  await supabaseRequest(`conversations?id=eq.${conversationId}&company_id=eq.${companyId}`, { method: 'PATCH', body: { last_message_at: new Date().toISOString(), assigned_to: account.name } });
   await supabaseRequest(`leads?id=eq.${encodeURIComponent(input.leadId)}&company_id=eq.${companyId}`, {
     method: 'PATCH', body: { assigned_to: account.name },
   });

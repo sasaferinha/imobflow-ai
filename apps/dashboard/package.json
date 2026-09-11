@@ -11,9 +11,9 @@
     "build:production": "pnpm run test && node scripts/test-dashboard-sync.cjs && next build",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test": "node scripts/test-security.cjs && node scripts/test-account-access.cjs && node scripts/test-demo-conversations.cjs && node scripts/test-match-workflow.cjs && node scripts/test-automations.cjs && node scripts/test-property-deals.cjs && node scripts/test-immediate-property-match.cjs && node scripts/test-n8n-property-dispatch.cjs && node scripts/test-meta-whatsapp.cjs",
+    "test": "node scripts/test-security.cjs && node scripts/test-account-access.cjs && node scripts/test-demo-conversations.cjs && node scripts/test-match-workflow.cjs && node scripts/test-automations.cjs && node scripts/test-property-deals.cjs && node scripts/test-meta-whatsapp.cjs && node scripts/test-core-opportunities.cjs && node scripts/test-direct-attendance.cjs",
     "test:account-sql": "node scripts/test-account-sql.cjs",
-    "test:n8n": "node scripts/test-immediate-property-match.cjs && node scripts/test-n8n-property-dispatch.cjs"
+    "test:core": "node scripts/test-core-opportunities.cjs && node scripts/test-direct-attendance.cjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
@@ -24,6 +24,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@electric-sql/pglite": "0.3.14",
     "@openai/sites-vite-plugin": "^0.1.0 || ^0.2.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",

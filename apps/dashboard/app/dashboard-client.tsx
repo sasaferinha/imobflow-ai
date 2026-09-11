@@ -12,10 +12,12 @@ import TeamModal from './team-modal';
 import PasswordModal from './password-modal';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import ReleaseNotice from './release-notice';
+import OpportunityCenter, { actOnOpportunity } from './opportunity-center';
+import type { Opportunity } from '@/lib/opportunities';
 
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
 
-type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations';
+type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations' | 'opportunities';
 type Property = PropertyRecord;
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
 type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
@@ -33,6 +35,7 @@ const navItems: Array<{ id: View; icon: string; label: string; badge?: string }>
   { id: 'overview', icon: '⌂', label: 'Visão geral' },
   { id: 'conversations', icon: '◌', label: 'Conversas' },
   { id: 'leads', icon: '◎', label: 'Leads' },
+  { id: 'opportunities', icon: '◇', label: 'Oportunidades' },
   { id: 'properties', icon: '▦', label: 'Imóveis' },
   { id: 'agenda', icon: '□', label: 'Agenda' },
   { id: 'automations', icon: '↗', label: 'Automações' },
@@ -40,6 +43,7 @@ const navItems: Array<{ id: View; icon: string; label: string; badge?: string }>
 
 function NavigationIcon({ view }: { view: View }) {
   const paths: Record<View, ReactNode> = {
+    opportunities: <><path d="m12 3 9 9-9 9-9-9Z" /><path d="m8 12 3 3 5-6" /></>,
     overview: <><path d="m3 10 9-7 9 7v10H3Z" /><path d="M9 20v-7h6v7" /></>,
     conversations: <path d="M4 4h16v12H9l-5 4V4Z" />,
     leads: <><circle cx="9" cy="8" r="3" /><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v2" /></>,
@@ -51,6 +55,7 @@ function NavigationIcon({ view }: { view: View }) {
 }
 
 const headers: Record<View, { eyebrow: string; title: string; copy: string }> = {
+  opportunities: { eyebrow: 'Recuperação de clientes', title: 'Oportunidades', copy: 'Imóveis compatíveis com o perfil dos seus leads. Você decide quando entrar em contato.' },
   overview: { eyebrow: 'Visão executiva', title: 'Bom dia, Marina', copy: 'Acompanhe os principais indicadores da operação comercial.' },
   conversations: { eyebrow: 'Central de atendimento', title: 'Conversas', copy: 'Gerencie contatos, mensagens e responsáveis por cada atendimento.' },
   leads: { eyebrow: 'Gestão comercial', title: 'Leads', copy: 'Priorize oportunidades com base no perfil e no interesse de cada cliente.' },
@@ -214,10 +219,19 @@ export default function DashboardClient({ account }: { account?: { name: string;
   const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | 'team' | 'password' | null>(null);
   const [profile, setProfile] = useState({ name: account?.name || 'Corretor', company: account?.company || 'Imobiliária' });
   const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: false });
-  const [notifications, setNotifications] = useState<Array<{ id:number; text:string; unread:boolean }>>([]);
+  const [notifications, setNotifications] = useState<Opportunity[]>([]);
+  const [focusedOpportunity, setFocusedOpportunity] = useState<string>();
   const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>([]);
   const [selectedLead, setSelectedLead] = useState<DashboardLead | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
+
+  useEffect(() => subscribeDashboardSync({ entities: ['opportunities'], interval: 30000,
+    load: async signal => {
+      const response = await fetch('/api/opportunities', { signal, cache: 'no-store' });
+      if (!response.ok) throw new Error('notifications_unavailable');
+      const result = await response.json() as { data?: Opportunity[] };
+      return (result.data || []).filter(item => item.notificationId);
+    }, apply: setNotifications }), []);
 
 
   useEffect(() => subscribeDashboardSync({
@@ -556,7 +570,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
             <button type="button" className="icon-button theme-toggle" aria-label={settings.dark ? 'Ativar modo claro' : 'Ativar modo escuro'} title={settings.dark ? 'Modo claro' : 'Modo escuro'} aria-pressed={settings.dark} onClick={toggleDarkMode}>{settings.dark ? '☀' : '☾'}</button>
             <div className="notification-wrap">
               <button type="button" className="icon-button" aria-label={`Notificações: ${unreadCount} não lidas`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>♢{settings.alerts && unreadCount > 0 && <i />}</button>
-              {notificationsOpen && <div className="notification-menu popover"><div><strong>Notificações</strong><button type="button" onClick={() => setNotifications((items) => items.map((item) => ({ ...item, unread: false })))}>Marcar como lidas</button></div>{notifications.map((item) => <button type="button" className={item.unread ? 'unread' : ''} key={item.id} onClick={() => { setNotifications((items) => items.map((current) => current.id === item.id ? { ...current, unread: false } : current)); notify(item.text); }}><i />{item.text}</button>)}</div>}
+              {notificationsOpen && <div className="notification-menu popover"><div><strong>Notificações de oportunidades</strong></div>{!notifications.length && <p>Nenhum match forte disponível.</p>}{notifications.map((item) => <button type="button" className={item.unread ? 'unread' : ''} key={item.id} onClick={() => { setFocusedOpportunity(item.id); setView('opportunities'); setNotificationsOpen(false); void actOnOpportunity(item.id, 'read').catch(() => notify('Não foi possível marcar a notificação como lida.')); }}><i />Novo match de {item.score}% para {item.leadName}.</button>)}</div>}
             </div>
             <button type="button" className="primary-button" onClick={openNewProperty}>＋ Novo imóvel</button>
           </div>
@@ -568,6 +582,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} brokerName={profile.name} />}
         {view === 'automations' && <AutomationCenter notify={notify} />}
+        {view === 'opportunities' && <OpportunityCenter focusedId={focusedOpportunity} onLead={id => { const lead = capturedLeads.find(item => item.id === id); if (lead) { setSelectedLead(lead); setLeadFilters([]); setLeadSearch(''); setView('leads'); } else notify('Atualize a lista de leads para consultar este cadastro.'); }} onProperty={id => { const property = properties.find(item => item.id === id); if (property) setSelectedProperty(property); else notify('Atualize a lista de imóveis para consultar este cadastro.'); }} />}
       </section>
 
       {propertyModalOpen && (

@@ -4,7 +4,8 @@ import { isAdminRequest } from '@/lib/admin-auth';
 import { createProperty, listProperties } from '@/lib/database';
 import type { PropertyInput } from '@/lib/operations';
 
-import { runAutomationsAfterEvent } from '@/lib/automations';
+import { onPropertyChanged } from '@/lib/opportunities';
+import { supabaseCompanyId } from '@/lib/supabase';
 import { persistPropertyImages } from '@/lib/property-images';
 import { hasSameOrigin } from '@/lib/request-security';
 
@@ -53,7 +54,8 @@ async function handlePOST(request: NextRequest) {
     if (!input.code || !input.title || !input.description || !input.district || !input.city || !input.price || !input.propertyType || input.bedrooms == null || input.parkingSpaces == null || input.area == null) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
     input.images = await persistPropertyImages(input.images);
     const data = await createProperty(input);
-    after(runAutomationsAfterEvent);
+    const companyId = supabaseCompanyId();
+    after(() => onPropertyChanged(companyId, data.id));
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     console.error('property_create_failed', error);
