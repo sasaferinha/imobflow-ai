@@ -25,6 +25,15 @@ async function run(){
   assert.equal(await accounts.verifyPassword('12345678',hash),true);
   assert.equal(await accounts.verifyPassword('87654321',hash),false);
   assert.equal(await accounts.verifyPassword('anything','bad-hash'),false);
+  const broker={id:'broker-a',company_id:'tenant-a',name:'Test',role:'owner',password_hash:hash,active:true,auth_version:1};
+  database=async route=>route.startsWith('broker_accounts?')?[broker]:[{company_id:'tenant-a',name:'Company A'}];
+  assert.equal((await accounts.authenticate(' USER@example.invalid ','12345678','owner')).companyId,'tenant-a');
+  assert.equal(await accounts.authenticate('user@example.invalid','wrong','owner'),null);
+  assert.equal(await accounts.authenticate('user@example.invalid','12345678','broker'),null);
+  database=async()=>[broker,{...broker,company_id:'tenant-b'}];
+  assert.equal(await accounts.authenticate('user@example.invalid','12345678','owner'),null);
+  database=async()=>[];
+  assert.equal(await accounts.authenticate('missing@example.invalid','12345678','owner'),null);
   calls=[];database=async(route,options)=>{calls.push({route,options});return false;};
   await assert.rejects(()=>accounts.issueSession(actor,hash,7),/account_changed/);
   assert.equal(calls[0].route,'rpc/issue_account_session');
@@ -48,7 +57,7 @@ async function run(){
   assert.equal((await password.POST(req({},'POST',false))).status,403);
   assert.equal((await password.POST(req({action:'request',company:'A',email:'missing@test.invalid'}))).status,503);
   mailConfigured=true;
-  const validRequest={action:'request',company:'Empresa',email:'missing@test.invalid'};
+  const validRequest={action:'request',role:'owner',email:'missing@test.invalid'};
   const requested=await password.POST(req(validRequest));
   assert.equal(requested.status,200); assert.equal(requested.body.url,undefined); assert.equal(background.length,1);
   calls=[];database=async(route,options)=>{calls.push({route,options});return true;};
@@ -94,7 +103,7 @@ async function run(){
   assert.equal((await performance.PATCH(req({month:'2026-09'}))).status,200);assert.equal(wroteGoals,true);
 
   const login=load('app/api/account/[action]/route.ts',{...deps,'@/lib/accounts':{...auth,authenticate:async()=>({...actor,passwordVersion:'hash'}),issueSession:async()=> 'session'},'@/lib/admin-auth':{COOKIE_NAME:'legacy'}});
-  const loginData={company:'Empresa',email:'user@example.invalid',password:'12345678'};
+  const loginData={email:'user@example.invalid',password:'12345678'};
   assert.equal((await login.POST(req(loginData),{params:Promise.resolve({action:'login'})})).status,401);
   assert.equal((await login.POST(req(loginData),{params:Promise.resolve({action:'login-admin'})})).status,200);
   actor.role='broker';

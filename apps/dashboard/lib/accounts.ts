@@ -23,13 +23,15 @@ export async function verifyPassword(password: string, hash: string) {
   return timingSafeEqual(await derive(password, salt), Buffer.from(encoded, 'hex'));
 }
 type BrokerRow = { id: string; company_id: string; name: string; role: 'owner' | 'broker'; password_hash: string; active: boolean; auth_version: number };
-export async function authenticate(company: string, email: string, password: string): Promise<(Account & { passwordVersion: string; authVersion: number }) | null> {
-  const companies = await supabaseRequest<Array<{ company_id: string; name: string }>>(`account_companies?name_key=eq.${encodeURIComponent(normalizeName(company))}&select=company_id,name&limit=1`);
-  const brokers = companies[0] ? await supabaseRequest<BrokerRow[]>(`broker_accounts?company_id=eq.${companies[0].company_id}&email_key=eq.${encodeURIComponent(normalizeEmail(email))}&select=*&limit=1`) : [];
-  const broker = brokers[0];
+export async function authenticate(email: string, password: string, role: 'owner' | 'broker'): Promise<(Account & { passwordVersion: string; authVersion: number }) | null> {
+  const brokers = await supabaseRequest<BrokerRow[]>(`broker_accounts?email_key=eq.${encodeURIComponent(normalizeEmail(email))}&role=eq.${role}&active=eq.true&select=*&limit=2`);
+  // Never guess a tenant when the same email has multiple accounts of this role.
+  const broker = brokers.length === 1 ? brokers[0] : undefined;
   // Equivalent expensive work for missing users avoids a cheap username oracle.
   const valid = await verifyPassword(password, broker?.password_hash || `scrypt-v1$${'0'.repeat(32)}$${'0'.repeat(128)}`);
-  if (!broker?.active || !valid) return null;
+  if (!broker?.active || broker.role !== role || !valid) return null;
+  const companies = await supabaseRequest<Array<{ company_id: string; name: string }>>(`account_companies?company_id=eq.${broker.company_id}&select=company_id,name&limit=1`);
+  if (!companies[0]) return null;
   return { companyId: broker.company_id, company: companies[0].name, brokerId: broker.id, name: broker.name, role: broker.role, passwordVersion: broker.password_hash, authVersion: broker.auth_version };
 }
 export async function readAccount(token?: string): Promise<Account | null> {

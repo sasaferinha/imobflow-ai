@@ -21,14 +21,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const name = typeof body.name === 'string' ? body.name.normalize('NFKC').trim().replace(/\s+/g, ' ') : '';
     const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
     const password = typeof body.password === 'string' ? body.password : '';
-    if (company.length < 2 || company.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password || password.length > 128 || (action === 'enroll' && (name.length < 2 || name.length > 120))) return NextResponse.json({ error: 'Preencha empresa, e-mail e senha corretamente.' }, { status: 400 });
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password || password.length > 128 || (action === 'enroll' && (company.length < 2 || company.length > 120 || name.length < 2 || name.length > 120))) return NextResponse.json({ error: 'Preencha os campos obrigatórios corretamente.' }, { status: 400 });
     let account: Account | null;
     let passwordVersion: string;
     let authVersion = 0;
     if (action === 'login' || action === 'login-admin') {
-      const authenticated = await authenticate(company, email, password);
+      const authenticated = await authenticate(email, password, action === 'login-admin' ? 'owner' : 'broker');
       account = authenticated;
-      if (!account || account.role !== (action === 'login-admin' ? 'owner' : 'broker')) return NextResponse.json({ error: 'Empresa, e-mail, senha ou tipo de acesso incorretos. Confira se escolheu Administrador ou Corretor.' }, { status: 401 });
+      if (!account || account.role !== (action === 'login-admin' ? 'owner' : 'broker')) return NextResponse.json({ error: 'E-mail, senha ou tipo de acesso incorretos. Confira se escolheu Administrador ou Corretor.' }, { status: 401 });
       passwordVersion = authenticated!.passwordVersion;
       authVersion = authenticated!.authVersion;
     } else {

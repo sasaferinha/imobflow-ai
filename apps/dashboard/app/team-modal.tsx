@@ -1,5 +1,7 @@
 'use client';
 
+import PasswordInput from './password-input';
+
 import { useEffect, useState, type FormEvent } from 'react';
 import styles from './team-modal.module.css';
 
@@ -125,7 +127,7 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
             <strong>Defina seu e-mail de administrador</strong>
             <small>Ele será seu login nas próximas entradas no painel.</small>
             <label>E-mail de acesso<input name="email" type="email" required maxLength={254} autoComplete="email" placeholder="seuemail@imobiliaria.com.br" /></label>
-            <label>Senha atual<input name="currentPassword" type="password" required maxLength={128} autoComplete="current-password"/></label>
+            <label>Senha atual<PasswordInput name="currentPassword" required maxLength={128} autoComplete="current-password"/></label>
             <button type="submit">Salvar e-mail</button>
           </form>
         )}
@@ -142,13 +144,13 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
           </ul>
         )}
 
-        {recovery && <form className={styles.adminEmail} onSubmit={generateRecovery}><strong>Recuperar acesso de {recovery.name}</strong>{resetUrl?<><p>Envie este link somente para o corretor. Expira em 30 minutos e funciona uma única vez.</p><label>Link de recuperação<input readOnly value={resetUrl} onFocus={event=>event.currentTarget.select()}/></label><button type="button" onClick={async()=>{try{await navigator.clipboard.writeText(resetUrl);notify('Link copiado.');}catch{setError('Selecione o link e copie manualmente.');}}}>Copiar link</button></>:<><label>Sua senha de administrador<input name="currentPassword" type="password" required maxLength={128} autoComplete="current-password"/></label><button disabled={!!changing} type="submit">{changing?'Gerando…':'Gerar link'}</button></>}<button type="button" disabled={!!changing} onClick={()=>{setRecovery(null);setResetUrl('');}}>Fechar recuperação</button></form>}
+        {recovery && <form className={styles.adminEmail} onSubmit={generateRecovery}><strong>Recuperar acesso de {recovery.name}</strong>{resetUrl?<><p>Envie este link somente para o corretor. Expira em 30 minutos e funciona uma única vez.</p><label>Link de recuperação<input readOnly value={resetUrl} onFocus={event=>event.currentTarget.select()}/></label><button type="button" onClick={async()=>{try{await navigator.clipboard.writeText(resetUrl);notify('Link copiado.');}catch{setError('Selecione o link e copie manualmente.');}}}>Copiar link</button></>:<><label>Sua senha de administrador<PasswordInput name="currentPassword" required maxLength={128} autoComplete="current-password"/></label><button disabled={!!changing} type="submit">{changing?'Gerando…':'Gerar link'}</button></>}<button type="button" disabled={!!changing} onClick={()=>{setRecovery(null);setResetUrl('');}}>Fechar recuperação</button></form>}
         {error && <p className="access-error" role="alert">{error}</p>}
         <form className={styles.form} onSubmit={create}>
           <h3>Novo corretor</h3>
           <label>Nome completo<input name="name" required minLength={2} maxLength={120} autoComplete="off" placeholder="Ex.: Ana Martins" /></label>
           <label>E-mail de acesso<input name="email" type="email" required maxLength={254} autoComplete="email" placeholder="ana@imobiliaria.com.br" /></label>
-          <label>Senha inicial<input name="password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" /></label>
+          <label>Senha inicial<PasswordInput name="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" /></label>
           <div className="modal-actions">
             <button type="button" onClick={close}>Fechar</button>
             <button className="primary-button" type="submit" disabled={saving || loading || !!changing || brokers.length >= limit}>{saving ? 'Cadastrando…' : brokers.length >= limit ? 'Limite do Basic atingido' : 'Cadastrar corretor'}</button>

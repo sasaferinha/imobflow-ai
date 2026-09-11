@@ -1,5 +1,5 @@
 import { after, NextRequest, NextResponse } from 'next/server';
-import { ACCOUNT_COOKIE, cookieOptions, hashPassword, normalizeEmail, normalizeName, readAccount, tokenHash, verifyPassword } from '@/lib/accounts';
+import { ACCOUNT_COOKIE, cookieOptions, hashPassword, normalizeEmail, readAccount, tokenHash, verifyPassword } from '@/lib/accounts';
 import { hasSameOrigin, consumeRateLimit } from '@/lib/request-security';
 import { supabaseRequest } from '@/lib/supabase';
 import { passwordEmailConfigured, sendPasswordEmail, type RecoveryAccount } from '@/lib/password-recovery';
@@ -16,18 +16,16 @@ export async function POST(request: NextRequest) {
     if (!body || Array.isArray(body)) return json({ error: 'Dados inválidos.' },400);
     if (body.action === 'request') {
       if (!passwordEmailConfigured()) return json({ error: 'Recuperação por e-mail ainda não configurada. Se você é corretor, peça ao administrador um link de recuperação. Administradores devem contatar o responsável pelo ImobFlow.' },503);
-      const company = typeof body.company==='string' ? normalizeName(body.company) : '';
+      const role = body.role;
       const email = typeof body.email==='string' ? normalizeEmail(body.email) : '';
-      if (company.length<2 || company.length>120 || email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'Informe a empresa e seu e-mail de acesso.' },400);
+      if ((role !== 'owner' && role !== 'broker') || email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'Informe seu e-mail e selecione o tipo de acesso.' },400);
       // Same response/timing for existing/missing accounts. Email work occurs later.
       after(async () => {
         try {
-          const allowed = await supabaseRequest<boolean>('rpc/consume_rate_limit',{method:'POST',body:{p_bucket:'password-email',p_identifier_hash:tokenHash(company+'\0'+email),p_window_seconds:3600,p_limit:3}});
+          const allowed = await supabaseRequest<boolean>('rpc/consume_rate_limit',{method:'POST',body:{p_bucket:'password-email',p_identifier_hash:tokenHash(role+'\0'+email),p_window_seconds:3600,p_limit:3}});
           if (!allowed) return;
-          const [organization] = await supabaseRequest<Array<{company_id:string}>>(`account_companies?name_key=eq.${encodeURIComponent(company)}&select=company_id&limit=1`);
-          if (!organization) return;
-          const [account] = await supabaseRequest<RecoveryAccount[]>(`broker_accounts?company_id=eq.${organization.company_id}&email_key=eq.${encodeURIComponent(email)}&active=eq.true&select=id,company_id,email,password_hash,active,role,auth_version&limit=1`);
-          if (account) await sendPasswordEmail(account);
+          const accounts = await supabaseRequest<RecoveryAccount[]>(`broker_accounts?email_key=eq.${encodeURIComponent(email)}&role=eq.${role}&active=eq.true&select=id,company_id,email,password_hash,active,role,auth_version&limit=2`);
+          if (accounts.length === 1) await sendPasswordEmail(accounts[0]);
         } catch { console.error('password_recovery_email_failed'); }
       });
       return json({ message: 'Se houver uma conta ativa com esses dados, você receberá um link de recuperação por e-mail.' });
