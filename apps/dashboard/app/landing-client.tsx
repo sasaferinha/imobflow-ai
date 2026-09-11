@@ -87,10 +87,18 @@ export default function LandingClient({ companySlug, companyName }: { companySlu
           <h2>O imóvel ideal pode estar a uma conversa de distância.</h2>
           <p>{companyName ? `Sua solicitação será salva para a equipe de ${companyName} continuar o atendimento.` : 'Peça à sua imobiliária o link de atendimento para enviar seus dados à equipe correta.'}</p>
           <ul><li><span>✓</span> Leva menos de 2 minutos</li><li><span>✓</span> Sem compromisso</li><li><span>✓</span> Atendimento personalizado</li></ul>
-          <div className="form-quote"><span>“</span><p>A melhor busca começa quando a gente entende o que realmente importa para você.</p></div>
         </div>
 
-        {!companySlug ? <div className="lead-form"><h3>Atendimento da sua imobiliária</h3><p>Para proteger seus dados, utilize o link específico enviado pela empresa.</p><a href="/painel">Acessar meu painel</a></div> : <form className="lead-form" onSubmit={openWhatsApp}>
+        {!companySlug ? <aside className="agency-access" aria-labelledby="agency-access-title">
+          <span className="agency-access-icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h3a1 1 0 0 1 1 1v11M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3"/></svg></span>
+          <p className="agency-access-eyebrow">Um espaço para cada jornada</p>
+          <h3 id="agency-access-title">Sua próxima conversa<br/>começa aqui.</h3>
+          <p className="agency-access-description">Procurando um imóvel? Peça à sua imobiliária o link de atendimento. Assim, suas preferências chegam à equipe certa.</p>
+          <div className="agency-access-team">
+            <div><strong>Faz parte da imobiliária?</strong><p>Seu atendimento, organizado em um só lugar.</p></div>
+            <a href="/painel">Acessar meu painel <span aria-hidden="true">↗</span></a>
+          </div>
+        </aside> : <form className="lead-form" onSubmit={openWhatsApp}>
           <div className="form-title"><span>✦</span><div><strong>{companyName}</strong><small>Vamos encontrar seu imóvel</small></div><b>2 min</b></div>
           <label>Como podemos chamar você?<input name="name" placeholder="Digite seu nome" required /></label>
           <div className="landing-form-grid">
@@ -112,7 +120,7 @@ export default function LandingClient({ companySlug, companyName }: { companySlu
       </section>
 
       <section className="how-section" id="como-funciona">
-        <div className="section-intro"><p className="landing-kicker">Simples do início ao fim</p><h2>Encontre o imóvel certo<br/>sem perder tempo.</h2></div>
+        <div className="section-intro"><p className="landing-kicker">Como funciona</p><h2>Do primeiro oi<br/>ao próximo endereço.</h2><p className="how-description">Uma busca mais simples, com suas preferências no centro da conversa.</p></div>
         <div className="steps-grid">{steps.map((step) => <article key={step.number}><span>{step.number}</span><h3>{step.title}</h3><p>{step.copy}</p></article>)}</div>
       </section>
 
