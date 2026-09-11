@@ -43,6 +43,43 @@ async function run(){
   }
   console.log('PASS recovery link survives StrictMode effect replay, rejects invalid fragments, clears URL');
 
+  let mailFetch=async()=>({ok:true,status:200}),issued=0,providerCalls=0;
+  const mailEnv={RESEND_API_KEY:'test-secret-not-for-logs',PASSWORD_EMAIL_FROM:'ImobFlow <no-reply@example.invalid>',APP_BASE_URL:'https://example.invalid'};
+  const mail=load('lib/password-recovery.ts',{
+    './accounts':{newToken:()=> 'b'.repeat(64),tokenHash:auth.tokenHash},
+    './supabase':{supabaseRequest:async()=>{issued++;return true;}},
+  },{process:{env:mailEnv},AbortSignal,fetch:async(...args)=>{providerCalls++;return mailFetch(...args);}});
+  const mailAccount={id:'test-account',email:'private@example.invalid',password_hash:'private-hash',auth_version:1};
+  mailEnv.APP_BASE_URL='http://invalid.example';
+  await assert.rejects(()=>mail.sendPasswordEmail(mailAccount));
+  assert.equal(issued,0,'bad origin must not issue or invalidate reset links');
+  assert.equal(providerCalls,0);
+  mailEnv.APP_BASE_URL='https://example.invalid';
+  for(const [status,category] of [[401,'credentials'],[403,'rejected'],[429,'rate_limit'],[503,'provider_unavailable']]) {
+    mailFetch=async()=>({ok:false,status,json:async()=>assert.fail('do not read provider error body')});
+    const before=providerCalls;
+    await assert.rejects(()=>mail.sendPasswordEmail(mailAccount),error=>{
+      assert.equal(JSON.stringify(mail.passwordRecoveryFailure(error)),JSON.stringify({category,status}));return true;
+    });
+    assert.equal(providerCalls,before+1,'do not blindly retry reset emails');
+  }
+  for(const [name,category] of [['TimeoutError','timeout'],['AbortError','timeout'],['TypeError','connection']]) {
+    mailFetch=async()=>{throw {name,message:'private@example.invalid test-secret-not-for-logs'};};
+    await assert.rejects(()=>mail.sendPasswordEmail(mailAccount),error=>{
+      assert.equal(JSON.stringify(mail.passwordRecoveryFailure(error)),JSON.stringify({category}));return true;
+    });
+  }
+  assert.equal(JSON.stringify(mail.passwordRecoveryFailure(new Error('private@example.invalid'))),'{"category":"internal"}');
+  mailFetch=async(url,options)=>{
+    assert.equal(url,'https://api.resend.com/emails');
+    const payload=JSON.parse(options.body);
+    assert.match(payload.text,/https:\/\/example.invalid\/painel\/redefinir-senha#token=b{64}/);
+    assert.equal(options.redirect,'error');
+    return {ok:true,status:200};
+  };
+  await mail.sendPasswordEmail(mailAccount);
+  console.log('PASS private email diagnostics, timeout/network failures, no blind retries and origin validation before token issuance');
+
   const accounts=load('lib/accounts.ts',{'next/server':next,'./tenant-context':{},'./supabase':{supabaseRequest:(...args)=>database(...args)}});
   const hash=await accounts.hashPassword('12345678');
   assert.match(hash,/^scrypt-v1\$[a-f0-9]{32}\$[a-f0-9]{128}$/);
@@ -76,7 +113,7 @@ async function run(){
   console.log('PASS stale email update denied with version/password CAS');
 
   let mailConfigured=false;
-  const recovery={passwordEmailConfigured:()=>mailConfigured,sendPasswordEmail:async()=>{},issuePasswordLink:async()=> 'https://imobflow.test/painel/redefinir-senha#token=test'};
+  const recovery={passwordEmailConfigured:()=>mailConfigured,passwordRecoveryFailure:mail.passwordRecoveryFailure,sendPasswordEmail:async()=>{},issuePasswordLink:async()=> 'https://imobflow.test/painel/redefinir-senha#token=test'};
   const password=load('app/api/account/password/route.ts',{...deps,'@/lib/password-recovery':recovery});
   assert.equal((await password.POST(req({},'POST',false))).status,403);
   assert.equal((await password.POST(req({action:'request',company:'A',email:'missing@test.invalid'}))).status,503);

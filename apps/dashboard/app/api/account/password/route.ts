@@ -2,7 +2,7 @@ import { after, NextRequest, NextResponse } from 'next/server';
 import { ACCOUNT_COOKIE, cookieOptions, hashPassword, normalizeEmail, readAccount, tokenHash, verifyPassword } from '@/lib/accounts';
 import { hasSameOrigin, consumeRateLimit } from '@/lib/request-security';
 import { supabaseRequest } from '@/lib/supabase';
-import { passwordEmailConfigured, sendPasswordEmail, type RecoveryAccount } from '@/lib/password-recovery';
+import { passwordEmailConfigured, passwordRecoveryFailure, sendPasswordEmail, type RecoveryAccount } from '@/lib/password-recovery';
 
 export const runtime = 'nodejs';
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
           if (!allowed) return;
           const accounts = await supabaseRequest<RecoveryAccount[]>(`broker_accounts?email_key=eq.${encodeURIComponent(email)}&role=eq.${role}&active=eq.true&select=id,company_id,email,password_hash,active,role,auth_version&limit=2`);
           if (accounts.length === 1) await sendPasswordEmail(accounts[0]);
-        } catch { console.error('password_recovery_email_failed'); }
+        } catch (error) { console.error('password_recovery_email_failed', passwordRecoveryFailure(error)); }
       });
       return json({ message: 'Se houver uma conta ativa com esses dados, você receberá um link de recuperação por e-mail.' });
     }
