@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
-import AutomationCenter from './automation-center';
 import ConversationCenter from './conversation-center';
 import { createLiveConversationState, demoConversationReducer } from '@/lib/demo-conversations';
 import type { ConversationMessage } from '@/lib/conversations';
@@ -17,7 +16,7 @@ import type { Opportunity } from '@/lib/opportunities';
 
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
 
-type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'automations' | 'opportunities';
+type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'opportunities';
 type Property = PropertyRecord;
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
 type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
@@ -38,7 +37,6 @@ const navItems: Array<{ id: View; icon: string; label: string; badge?: string }>
   { id: 'opportunities', icon: '◇', label: 'Oportunidades' },
   { id: 'properties', icon: '▦', label: 'Imóveis' },
   { id: 'agenda', icon: '□', label: 'Agenda' },
-  { id: 'automations', icon: '↗', label: 'Automações' },
 ];
 
 function NavigationIcon({ view }: { view: View }) {
@@ -49,7 +47,6 @@ function NavigationIcon({ view }: { view: View }) {
     leads: <><circle cx="9" cy="8" r="3" /><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v2" /></>,
     properties: <><path d="M4 21V3h12v18M16 9h4v12M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3" /></>,
     agenda: <><rect x="3" y="5" width="18" height="16" /><path d="M7 3v4M17 3v4M3 11h18M7 15h3M14 15h3" /></>,
-    automations: <><path d="m13 2-8 12h6l-1 8 9-13h-7Z" /></>,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[view]}</svg>;
 }
@@ -61,7 +58,6 @@ const headers: Record<View, { eyebrow: string; title: string; copy: string }> = 
   leads: { eyebrow: 'Gestão comercial', title: 'Leads', copy: 'Priorize oportunidades com base no perfil e no interesse de cada cliente.' },
   properties: { eyebrow: 'Portfólio imobiliário', title: 'Imóveis', copy: 'Consulte, filtre e mantenha o portfólio de imóveis atualizado.' },
   agenda: { eyebrow: 'Compromissos comerciais', title: 'Agenda', copy: 'Organize visitas, responsáveis e confirmações em um só lugar.' },
-  automations: { eyebrow: 'Processos operacionais', title: 'Automações', copy: 'Monitore e controle os fluxos recorrentes da operação.' },
 };
 
 function decorateLead(lead: LeadProfile, index: number): DashboardLead {
@@ -587,7 +583,6 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} />{selectedLead ? <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /> : <section className="panel empty-live-data"><h2>Nenhum lead cadastrado</h2><p>Importe a carteira da imobiliária ou receba um novo contato pelo formulário do site.</p><button type="button" className="primary-button" onClick={() => setLeadImportOpen(true)}>Importar clientes</button></section>}</>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} brokerName={profile.name} />}
-        {view === 'automations' && <AutomationCenter notify={notify} />}
         {view === 'opportunities' && <OpportunityCenter focusedId={focusedOpportunity} onLead={id => { const lead = capturedLeads.find(item => item.id === id); if (lead) { setSelectedLead(lead); setLeadFilters([]); setLeadSearch(''); setView('leads'); } else notify('Atualize a lista de leads para consultar este cadastro.'); }} onProperty={id => { const property = properties.find(item => item.id === id); if (property) setSelectedProperty(property); else notify('Atualize a lista de imóveis para consultar este cadastro.'); }} />}
       </section>
 
