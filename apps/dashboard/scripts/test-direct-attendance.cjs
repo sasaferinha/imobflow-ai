@@ -43,6 +43,33 @@ function load(relative, overrides={}) {
      './ai/openai-provider':{configuredAIProvider:()=>null},'./ai/qualification':load('lib/ai/qualification.ts')});
    await noClaim.respondToIncomingMessage({companyId:'00000000-0000-4000-8000-000000000001',leadId:'00000000-0000-4000-8000-000000000002',conversationId:'00000000-0000-4000-8000-000000000003',incomingExternalMessageId:'wamid.in',message:'oi',hasImage:false,recipientPhone:'5535999999999',phoneNumberId:'123456789',accessToken:'secret',apiVersion:'v26.0',occurredAt:new Date().toISOString()});
    assert.equal(sent.length,0);console.log('PASS duplicate inbound event cannot send a second chatbot reply');
+   // A prior away reply must not consume a later, distinct human-handoff request.
+   let paused=0,queued=0; const claimedKeys=new Set();
+   const handoff=load('lib/attendance.ts',{
+     './supabase':{supabaseServiceRequest:async(path,options={})=>{
+       if(path==='rpc/claim_attendance_reply') {
+         const key=options.body.p_key;
+         if(key.startsWith('after-hours:') || claimedKeys.has(key))return false;
+         claimedKeys.add(key);return true;
+       }
+       if(path==='rpc/enqueue_conversation_message'){queued++;return 'handoff-message';}
+       if(path.startsWith('conversations?') && options.method==='PATCH') {
+         assert.equal(options.body.bot_paused,true);
+         assert.match(path,/company_id=eq.company-a&id=eq.conversation-a/);paused++;return null;
+       }
+       assert.fail('Unexpected handoff operation '+path);
+     }},
+     './conversation-settings':{readBusinessHours:async()=>({...load('lib/business-hours.ts').defaultBusinessHours,timeZone:'UTC',holidays:[new Date().toISOString().slice(0,10)]})},
+     './message-outbox':{sendQueuedMessage:async()=>{}},
+   });
+   const handoffInput={companyId:'company-a',leadId:'lead-a',conversationId:'conversation-a',incomingExternalMessageId:'wamid.handoff',message:'Quero falar com um corretor',hasImage:false,recipientPhone:'5535999999999',phoneNumberId:'123456789',accessToken:'secret',apiVersion:'v26.0',occurredAt:new Date().toISOString()};
+   await handoff.respondToIncomingMessage(handoffInput);
+   assert.equal(paused,1,'human request must pause bot even after an away reply');
+   assert.equal(queued,1);
+   await handoff.respondToIncomingMessage(handoffInput);
+   assert.equal(paused,1,'replayed event must not pause a subsequently resumed bot');
+   assert.equal(queued,1,'handoff must not duplicate its reply');
+   console.log('PASS after-hours handoff is independent of away-message deduplication and remains idempotent');
    const {manualWhatsAppDraft}=load('lib/opportunities.ts',{'./tenant-context':{},'./supabase':{},'./property-matching':load('lib/property-matching.ts')});
    const draft=manualWhatsAppDraft({phone:'(35) 99999-9999',name:'João Silva',title:'Residencial X',district:'Centro',city:'Lavras',price:570000,bedrooms:3,purpose:'Venda'});
    assert.match(draft.url,/wa\.me\/5535999999999/);assert.match(decodeURIComponent(draft.url),/R\$ 570\.000/);assert.match(draft.message,/João/);

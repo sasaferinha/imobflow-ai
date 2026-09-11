@@ -90,6 +90,23 @@ function load(file, overrides = {}, extra = {}) {
     }),
   );
   const basic = load("lib/ai/basic-qualification.ts");
+  for (const message of [
+    "Casa para uma pessoa", "Sou corretor e procuro um apartamento",
+    "Não quero falar com um corretor", "Não preciso de atendente",
+    "Meu corretor indicou essa região", "Apartamento com espaço para uma pessoa trabalhar",
+  ]) assert.equal(basic.requestsHuman(message), false, message);
+  for (const message of [
+    "Quero falar com um corretor", "Gostaria de atendimento humano",
+    "Pode me passar para uma pessoa?", "Preciso de uma atendente",
+    "Quero conversar com alguém", "Corretor, por favor", "Humano",
+    "Não quero robô. Quero falar com uma pessoa",
+    "Não quero robô, quero uma pessoa", "Atendimento humano",
+    "Chame uma corretora", "Quero ser atendido por uma pessoa",
+  ]) assert.equal(basic.requestsHuman(message), true, message);
+  for (const badClock of [["08:00"], 800, null, {}, true]) {
+    assert.throws(() => hours.validateBusinessHours({...hours.defaultBusinessHours, opens: badClock}));
+    assert.throws(() => hours.validateBusinessHours({...hours.defaultBusinessHours, closes: badClock}));
+  }
   const qualification = load("lib/ai/qualification.ts");
   let profile = {};
   for (const answer of [

@@ -1,7 +1,7 @@
 'use client';
 
 import PasswordInput from '../../password-input';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import '../access.css';
 
@@ -10,8 +10,11 @@ export default function PasswordResetClient() {
   const [message,setMessage] = useState('');
   const [loading,setLoading] = useState(false);
   const [done,setDone] = useState(false);
+  const initialToken = useRef<string | null>(null);
   useEffect(() => {
-    const value = new URLSearchParams(window.location.hash.slice(1)).get('token') || '';
+    // Preserve the first read when StrictMode replays this effect after URL cleanup.
+    initialToken.current ??= new URLSearchParams(window.location.hash.slice(1)).get('token') || '';
+    const value = initialToken.current;
     const timer = window.setTimeout(() => {
       if (/^[a-f0-9]{64}$/.test(value)) setToken(value);
       else setMessage('Link inválido. Solicite um novo link de recuperação.');

@@ -6,7 +6,7 @@ const ts = require('typescript');
 const crypto = require('node:crypto');
 function load(file,deps={},globals={}) {
   const source=fs.readFileSync(path.join(__dirname,'..',file),'utf8');
-  const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+  const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   const mod={exports:{}};
   vm.runInNewContext(output,{module:mod,exports:mod.exports,require:n=>n in deps?deps[n]:require(n),Buffer,URL,URLSearchParams,Date,console,process:{env:{}},...globals});
   return mod.exports;
@@ -19,6 +19,30 @@ const auth={protectedRoute:fn=>fn,readAccount:async()=>actor,verifyPassword:asyn
 const deps={'next/server':next,'@/lib/accounts':auth,'@/lib/request-security':security,'@/lib/supabase':{supabaseRequest:(...args)=>database(...args)},'@/lib/tenant-context':{currentAccount:()=>actor}};
 const req=(body,method='POST',safe=true)=>({method,safe,text:async()=>JSON.stringify(body),json:async()=>body,cookies:{get:()=>({value:'cookie'})},nextUrl:{searchParams:new URLSearchParams()}});
 async function run(){
+  // Model StrictMode's setup -> cleanup -> setup cycle before timers run.
+  for (const fragment of ['a'.repeat(64), 'invalid', '']) {
+    const state=[], timers=new Map(); let effect, nextTimer=0;
+    const location={hash:fragment?`#token=${fragment}`:'',pathname:'/painel/redefinir-senha'};
+    const React={
+      useState:initial=>{const index=state.length;state.push(initial);return [initial,value=>{state[index]=value;}];},
+      useRef:initial=>({current:initial}),
+      useEffect:callback=>{effect=callback;},
+    };
+    const client=load('app/painel/redefinir-senha/reset-client.tsx',{
+      react:React,'react/jsx-runtime':{jsx:()=>null,jsxs:()=>null},
+      'next/link':()=>null,'../../password-input':()=>null,'../access.css':{},
+    },{window:{location,history:{replaceState:()=>{location.hash='';}},setTimeout:callback=>{timers.set(++nextTimer,callback);return nextTimer;},clearTimeout:id=>timers.delete(id)}});
+    client.default();
+    effect()();
+    const cleanup=effect();
+    for(const callback of timers.values()) callback();
+    cleanup();
+    assert.equal(location.hash,'','reset token must be removed from browser URL');
+    assert.equal(state[0],fragment.length===64?fragment:'','valid token must survive effect replay');
+    assert.equal(Boolean(state[1]),fragment.length!==64);
+  }
+  console.log('PASS recovery link survives StrictMode effect replay, rejects invalid fragments, clears URL');
+
   const accounts=load('lib/accounts.ts',{'next/server':next,'./tenant-context':{},'./supabase':{supabaseRequest:(...args)=>database(...args)}});
   const hash=await accounts.hashPassword('12345678');
   assert.match(hash,/^scrypt-v1\$[a-f0-9]{32}\$[a-f0-9]{128}$/);
@@ -57,6 +81,11 @@ async function run(){
   assert.equal((await password.POST(req({},'POST',false))).status,403);
   assert.equal((await password.POST(req({action:'request',company:'A',email:'missing@test.invalid'}))).status,503);
   mailConfigured=true;
+  for (const raw of ['{', 'null', '[]', 'true', '123', '"string"']) {
+    const response=await password.POST({...req({}),text:async()=>raw});
+    assert.equal(response.status,400,'invalid JSON payload is a client error, not an outage');
+  }
+  assert.equal(background.length,0,'invalid payloads must not schedule email work');
   const validRequest={action:'request',role:'owner',email:'missing@test.invalid'};
   const requested=await password.POST(req(validRequest));
   assert.equal(requested.status,200); assert.equal(requested.body.url,undefined); assert.equal(background.length,1);

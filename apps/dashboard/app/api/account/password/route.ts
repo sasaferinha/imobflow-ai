@@ -12,8 +12,11 @@ export async function POST(request: NextRequest) {
     if (!await consumeRateLimit(request,'password-access',8,900)) return json({ error: 'Muitas tentativas. Aguarde 15 minutos.' },429);
     const raw = await request.text();
     if (Buffer.byteLength(raw)>4096) return json({ error: 'Dados acima do limite.' },413);
-    const body = JSON.parse(raw) as Record<string, unknown>;
-    if (!body || Array.isArray(body)) return json({ error: 'Dados inválidos.' },400);
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); }
+    catch { return json({ error: 'Dados inválidos.' },400); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'Dados inválidos.' },400);
+    const body = parsed as Record<string, unknown>;
     if (body.action === 'request') {
       if (!passwordEmailConfigured()) return json({ error: 'Recuperação por e-mail ainda não configurada. Se você é corretor, peça ao administrador um link de recuperação. Administradores devem contatar o responsável pelo ImobFlow.' },503);
       const role = body.role;

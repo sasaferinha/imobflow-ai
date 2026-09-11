@@ -54,7 +54,10 @@ export async function respondToIncomingMessage(input: AttendanceInput) {
     || !/^v\d{1,3}\.\d{1,2}$/.test(input.apiVersion) || !Number.isFinite(elapsed) || elapsed < -300_000 || elapsed >= 86400000) return;
   const settings = await readBusinessHours(input.companyId);
   const now = attendanceTime(new Date(), settings);
-  const key = now.afterHours ? `after-hours:${input.conversationId}:${now.closedPeriod}` : `reply:${input.incomingExternalMessageId}`;
+  const humanRequested = requestsHuman(input.message);
+  // Handoff is tied to its incoming event, not to the already-sent away notice.
+  const key = humanRequested ? `handoff:${input.incomingExternalMessageId}`
+    : now.afterHours ? `after-hours:${input.conversationId}:${now.closedPeriod}` : `reply:${input.incomingExternalMessageId}`;
   const reserved = await supabaseServiceRequest<boolean>('rpc/claim_attendance_reply', { method: 'POST', body: {
     p_company_id: input.companyId, p_conversation_id: input.conversationId, p_external_id: input.incomingExternalMessageId, p_key: key,
   } });
@@ -69,6 +72,6 @@ export async function respondToIncomingMessage(input: AttendanceInput) {
     } });
     console.error('attendance_delivery_uncertain');
   } finally {
-    if(requestsHuman(input.message))await supabaseServiceRequest(`conversations?company_id=eq.${input.companyId}&id=eq.${input.conversationId}`,{method:'PATCH',body:{bot_paused:true}});
+    if(humanRequested)await supabaseServiceRequest(`conversations?company_id=eq.${input.companyId}&id=eq.${input.conversationId}`,{method:'PATCH',body:{bot_paused:true}});
   }
 }

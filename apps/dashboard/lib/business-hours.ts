@@ -27,7 +27,8 @@ export function validateBusinessHours(value: unknown): BusinessHours {
     throw new Error("Fuso inválido.");
   }
   const clock = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-  if (!clock.test(v.opens) || !clock.test(v.closes) || v.opens >= v.closes)
+  if (typeof v.opens !== "string" || typeof v.closes !== "string" ||
+    !clock.test(v.opens) || !clock.test(v.closes) || v.opens >= v.closes)
     throw new Error("O fechamento deve ser depois da abertura no mesmo dia.");
   if (
     !Array.isArray(v.weekdays) ||

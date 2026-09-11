@@ -6,7 +6,19 @@ const normalize = (s: string) =>
     .toLowerCase()
     .trim();
 export function requestsHuman(message: string) {
-  return /\b(corretor|atendente|humano|pessoa)\b/.test(normalize(message));
+  // A mention ("casa para uma pessoa", "meu corretor") is not a handoff request.
+  const target = '(?:corretora?|atendente|humano|pessoa|alguem)';
+  const article = '(?:(?:um|uma|o|a)\\s+)?';
+  return normalize(message).replace(/,?\s*por favor\b/g, '').split(/[,.!?;]|\bmas\b/).some((part) => {
+    const text = part.trim();
+    if (/\bnao\s+(?:quero|preciso|gostaria|desejo|prefiro)\b/.test(text)) return false;
+    return new RegExp(`^${article}(?:atendimento humano|${target})$`).test(text)
+      || new RegExp(`\\b(?:falar|conversar)\\s+com\\s+${article}${target}\\b`).test(text)
+      || new RegExp(`\\b(?:passar|passe|transferir|transfira|encaminhar|encaminhe)\\s+para\\s+${article}${target}\\b`).test(text)
+      || new RegExp(`\\b(?:chamar|chame)\\s+${article}${target}\\b`).test(text)
+      || new RegExp(`\\bser atendid[oa]\\s+por\\s+${article}${target}\\b`).test(text)
+      || new RegExp(`\\b(?:quero|preciso|gostaria|desejo|prefiro)\\s+(?:de\\s+)?${article}(?:atendimento humano|${target})\\b`).test(text);
+  });
 }
 export function basicPreferences(
   message: string,
