@@ -7,6 +7,7 @@ import {
 } from '@/lib/meta-whatsapp';
 import { saveIncomingWhatsAppMessage } from '@/lib/meta-whatsapp-store';
 import { respondToIncomingMessage } from '@/lib/attendance';
+import {parseDeliveryEvents,saveDeliveryEvents} from '@/lib/message-delivery';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_WEBHOOK_BYTES) return NextResponse.json({ error: 'Payload muito grande.' }, { status: 413 });
   const rawBody = await request.text();
-  if (rawBody.length > MAX_WEBHOOK_BYTES) return NextResponse.json({ error: 'Payload muito grande.' }, { status: 413 });
+  if (Buffer.byteLength(rawBody,'utf8') > MAX_WEBHOOK_BYTES) return NextResponse.json({ error: 'Payload muito grande.' }, { status: 413 });
   if (!verifyMetaWebhookSignature(rawBody, request.headers.get('x-hub-signature-256'))) {
     console.warn('meta_whatsapp_webhook_signature_invalid');
     return NextResponse.json({ error: 'Assinatura inválida.' }, { status: 401 });
@@ -40,7 +41,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 });
   }
   try {
-    const messages = parseIncomingWhatsAppMessages(payload, configuredMetaWhatsAppConnections());
+    const connections = configuredMetaWhatsAppConnections();
+    await saveDeliveryEvents(parseDeliveryEvents(payload, connections));
+    const messages = parseIncomingWhatsAppMessages(payload, connections);
     for (const message of messages) {
       const saved = await saveIncomingWhatsAppMessage(message);
       if (saved.saved) after(async () => {
@@ -49,8 +52,8 @@ export async function POST(request: NextRequest) {
       });
     }
     return NextResponse.json({ received: true }, { headers: { 'Cache-Control': 'no-store' } });
-  } catch (error) {
-    console.error('meta_whatsapp_webhook_processing_failed', error instanceof Error ? error.message : 'unknown');
+  } catch {
+    console.error('meta_whatsapp_webhook_processing_failed');
     return NextResponse.json({ error: 'Não foi possível processar o webhook.' }, { status: 500 });
   }
 }

@@ -4,6 +4,8 @@ import { runAutomations } from '@/lib/automations';
 import { supabaseRequest } from '@/lib/supabase';
 import { withAccount } from '@/lib/tenant-context';
 import { sweepOpportunities } from '@/lib/opportunities';
+import {sweepMessageOutbox} from '@/lib/message-outbox';
+import {removeExpiredConversationMedia} from '@/lib/whatsapp-media';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -21,6 +23,8 @@ export async function GET(request: NextRequest) {
     const deadline = Date.now() + 45_000;
     for (const company of companies) {
       try {
+        await sweepMessageOutbox(company.company_id,deadline);
+        if(Date.now()+10000<deadline)await removeExpiredConversationMedia(company.company_id,deadline);
         let complete = false;
         let generated = 0;
         let processed = 0;
@@ -36,6 +40,7 @@ export async function GET(request: NextRequest) {
           ? await withAccount({ companyId: company.company_id, company: company.name, brokerId: 'system', name: 'Agendador', role: 'owner' }, () => runAutomations('cron'))
           : { failed: 0 };
         executions.push({ companyId: company.company_id, complete, generated, processed, busy, failed: legacy.failed > 0 });
+        await supabaseRequest('conversation_settings?on_conflict=company_id',{method:'POST',prefer:'resolution=merge-duplicates',body:{company_id:company.company_id,last_scheduler_at:new Date().toISOString()}});
       } catch { executions.push({ companyId: company.company_id, complete: false, generated: 0, failed: true }); }
       if (Date.now() >= deadline) break;
     }

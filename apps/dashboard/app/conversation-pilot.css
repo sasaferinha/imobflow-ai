@@ -1,0 +1,158 @@
+.conversation-settings {
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.conversation-settings summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.conversation-settings fieldset {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  padding: 16px 0;
+}
+.conversation-settings label {
+  display: inline-flex;
+  gap: 8px;
+  flex-direction: column;
+  margin-right: 12px;
+}
+.conversation-settings input,
+.conversation-settings textarea {
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #17233b;
+  background: white;
+}
+.conversation-settings textarea {
+  min-height: 70px;
+}
+.bubble[data-delivery="failed"] {
+  border: 1px solid #b42318;
+}
+.bubble p {
+  overflow-wrap: anywhere;
+}
+.message-property-images img {
+  max-width: 100%;
+  height: auto;
+}
+.full-chat,
+.inbox-list,
+.lead-profile {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .inbox-layout {
+    display: flex !important;
+    flex-direction: column;
+  }
+  .inbox-list {
+    max-height: 240px;
+    overflow: auto;
+  }
+  .full-chat {
+    min-height: 520px;
+  }
+  .full-chat-head {
+    flex-wrap: wrap;
+  }
+  .full-composer input {
+    min-width: 0;
+  }
+  .lead-profile {
+    max-height: none !important;
+  }
+}
+.full-chat .bubble p {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.full-chat .bubble small {
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.full-chat .full-chat-head strong,
+.full-chat .conversation-owner-line {
+  font-size: 0.875rem;
+}
+.conversation-settings input,
+.conversation-settings textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+.conversation-settings fieldset {
+  min-width: 0;
+}
+.conversation-settings dd {
+  margin: 4px 0 12px;
+}
+.full-chat .bubble[data-delivery="failed"] {
+  border-color: #b42318;
+  background: #fff4f2;
+}
+.full-chat .bubble[data-delivery="failed"] p[role="status"] {
+  color: #912018;
+  font-size: 0.875rem;
+}
+@media (max-width: 760px) {
+  .inbox-layout > .inbox-list {
+    display: block !important;
+    flex: none;
+    width: 100%;
+  }
+  .inbox-layout > .lead-profile {
+    display: block !important;
+  }
+  .conversation-temperature-guide dl {
+    display: none;
+  }
+  .full-chat-head .conversation-claim-button {
+    font-size: 0.875rem;
+  }
+  .inbox-layout > .full-chat {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+.full-chat .bubble[data-delivery="failed"],
+.full-chat .bubble[data-delivery="failed"] p,
+.full-chat .bubble[data-delivery="failed"] small {
+  color: #912018 !important;
+}
+.inbox-list .contact-row strong,
+.inbox-list .contact-row small {
+  font-size: 0.875rem !important;
+  line-height: 1.4;
+}
+.inbox-list .inbox-search input {
+  font-size: 1rem;
+}
+.lead-profile .conversation-name-line {
+  flex-wrap: wrap;
+}
+.lead-profile .conversation-name-line h3 {
+  min-width: 0;
+  overflow-wrap: normal;
+}
+@media (min-width: 1200px) {
+  .inbox-layout {
+    grid-template-columns: 250px minmax(0, 1fr) 290px !important;
+  }
+}
+@media (max-width: 760px) {
+  .full-chat-head > div {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
+  .full-chat-head .conversation-claim-button {
+    flex: 0 0 auto;
+    max-width: 100%;
+    margin-left: 0;
+  }
+  .full-chat-head {
+    gap: 12px;
+  }
+}

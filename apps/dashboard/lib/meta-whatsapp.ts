@@ -122,6 +122,7 @@ export function parseIncomingWhatsAppMessages(payload: unknown, connections: Met
         const text = readableText(row) || media?.caption || (media ? '📷 Foto recebida' : '');
         if (!phone || !externalMessageId || !text) continue;
         const unixSeconds = typeof row.timestamp === 'string' && /^\d+$/.test(row.timestamp) ? Number(row.timestamp) : NaN;
+        if(Number.isFinite(unixSeconds)&&(unixSeconds<0||unixSeconds*1000>Date.now()+300000))continue;
         output.push({
           companyId: connection.companyId,
           phoneNumberId: connection.phoneNumberId,

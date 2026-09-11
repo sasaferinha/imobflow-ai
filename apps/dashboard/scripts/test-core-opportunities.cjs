@@ -31,6 +31,8 @@ async function run() {
     await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260911033633_core_opportunities.sql'),'utf8'));
     await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260911033640_direct_attendance.sql'),'utf8'));
     await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260911033755_harden_core_opportunity_functions.sql'),'utf8'));
+    await db.exec('ALTER TABLE messages ADD COLUMN media_urls jsonb');
+    await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260911053238_pilot_conversations.sql'),'utf8'));
     await db.exec(`INSERT INTO conversations(id,company_id,lead_id,channel,external_conversation_id,status,assigned_to,last_message_at) VALUES('${id(501)}','${id(1)}','${id(101)}','WhatsApp','whatsapp:5535999999999','Aberta',null,now());
       INSERT INTO messages(company_id,conversation_id,direction,sender_type,content,external_message_id) VALUES('${id(1)}','${id(501)}','incoming','client','Quero apartamento','wamid.in');`);
     const firstClaim=await db.query(`SELECT claim_attendance_reply('${id(1)}','${id(501)}','wamid.in','reply:wamid.in') claimed`);
@@ -60,6 +62,38 @@ async function run() {
     await assert.rejects(()=>db.query(`SELECT opportunity_action('${id(2)}','${id(21)}',(SELECT id FROM opportunities),'draft')`));
     const first=await db.query(`SELECT sweep_opportunities('${id(1)}',7,25) data`); const second=await db.query(`SELECT sweep_opportunities('${id(1)}',7,25) data`);
     assert.equal(first.rows[0].data.complete,true); assert.equal(second.rows[0].data.generated,0,'daily cron idempotency');
+    await db.exec(`ALTER TABLE leads ADD COLUMN source text;
+      UPDATE attendance_replies SET state='uncertain'; UPDATE conversations SET bot_paused=false,assigned_to=null WHERE id='${id(501)}';`);
+    const owners=await Promise.all([11,12].map(b=>db.query(`SELECT change_conversation_owner('${id(1)}','${id(101)}','${id(b)}',false) ok`)));
+    assert.equal(owners.filter(r=>r.rows[0].ok).length,1,'only one broker acquires conversation');
+    assert.equal((await db.query(`SELECT change_conversation_owner('${id(1)}','${id(101)}','${id(21)}',false) ok`)).rows[0].ok,false,'foreign broker denied');
+    const owner=(await db.query(`SELECT assigned_broker_id FROM conversations WHERE id='${id(501)}'`)).rows[0].assigned_broker_id;
+    const queued=await db.query(`SELECT enqueue_conversation_message('${id(1)}','${id(501)}','manual-test','Olá','${owner}') id`);
+    const queuedAgain=await db.query(`SELECT enqueue_conversation_message('${id(1)}','${id(501)}','manual-test','Olá','${owner}') id`);
+    assert.equal(queued.rows[0].id,queuedAgain.rows[0].id,'same request creates one message');
+    const workers=await Promise.all([1,2].map(()=>db.query(`SELECT claim_outbox_message('${id(1)}','${queued.rows[0].id}') ok`)));
+    assert.equal(workers.filter(r=>r.rows[0].ok).length,1,'only one worker sends');
+    assert.equal((await db.query(`SELECT change_conversation_owner('${id(1)}','${id(101)}','${owner}',true) ok`)).rows[0].ok,false,'in-flight send prevents concurrent handoff');
+    await db.exec(`UPDATE message_outbox SET state='sent' WHERE id='${queued.rows[0].id}';`);
+    assert.equal((await db.query(`SELECT change_conversation_owner('${id(1)}','${id(101)}','${owner}',true) ok`)).rows[0].ok,true);
+    assert.equal((await db.query(`SELECT bot_paused FROM conversations WHERE id='${id(501)}'`)).rows[0].bot_paused,false,'release resumes bot');
+    await db.query(`SELECT change_conversation_owner('${id(1)}','${id(101)}','${owner}',false)`);
+    await db.exec(`UPDATE messages SET created_at=now()-interval '25 hours' WHERE direction='incoming';`);
+    await assert.rejects(()=>db.query(`SELECT enqueue_conversation_message('${id(1)}','${id(501)}','expired','Olá','${owner}')`),/template_required/);
+    await db.exec(`INSERT INTO conversation_settings(company_id,templates) VALUES('${id(1)}','[{"name":"test_approved","language":"pt_BR","purpose":"Teste fictício","parameters":[],"approved":true}]');`);
+    const template=await db.query(`SELECT enqueue_conversation_message('${id(1)}','${id(501)}','template','Modelo de teste','${owner}','test_approved') id`);
+    assert.equal((await db.query(`SELECT claim_outbox_message('${id(1)}','${template.rows[0].id}') ok`)).rows[0].ok,true,'approved template works outside window');
+    const inbound=()=>db.query(`SELECT receive_conversation_message('${id(1)}','5535888888888','123456','inbound-duplicate','Oi','Teste',now()) result`);
+    const arrivals=await Promise.all([inbound(),inbound()]);
+    assert.equal(arrivals.filter(r=>r.rows[0].result.saved).length,1,'duplicate webhook saved once');
+    assert.equal((await db.query(`SELECT count(*)::int n FROM leads WHERE phone='+5535888888888'`)).rows[0].n,1,'no duplicate lead');
+    await db.exec(`INSERT INTO message_delivery_events(company_id,external_message_id,status,occurred_at,error_code) VALUES('${id(1)}','status-id','failed',now(),130497),('${id(2)}','status-id','delivered',now(),null);`);
+    assert.equal((await db.query(`SELECT count(*)::int n FROM message_delivery_events WHERE company_id='${id(1)}'`)).rows[0].n,1);
+    await db.exec('SET ROLE anon');
+    await assert.rejects(()=>db.query('SELECT * FROM message_outbox'),/permission denied/);
+    await assert.rejects(()=>db.query(`SELECT change_conversation_owner('${id(1)}','${id(101)}','${owner}',false)`),/permission denied/);
+    await db.exec('RESET ROLE');
+    console.log('PASS pilot SQL: ownership contention, send lease, tenant isolation, deduplication, bot resume, 24h templates and privileges');
     console.log('PASS opportunities: tenant, filters, score, notification, duplicate, closed lead, event, access, bot pause and cron contracts');
   } finally { await db.close(); }
 }

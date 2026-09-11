@@ -7,6 +7,10 @@ import type { PropertyRecord } from '@/lib/operations';
 import { demoContacts, demoConversationReducer, demoTemperature, type DemoContact, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
+import { ConversationMessageBubble } from './conversation-message';
+import { ConversationSettings } from './conversation-settings';
+import {ConversationTemplates} from './conversation-templates';
+import {ConversationHealth} from './conversation-health';
 
 const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
   id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
@@ -46,6 +50,7 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
     return result.data;
   }
   return <>
+    {!preview&&<><ConversationSettings/><ConversationHealth/></>}
     <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
       <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>Clientes cadastrados</button>
       <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>Ver demonstração</button>
@@ -75,12 +80,13 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, leads = [], properties = [], demonstration = false, ready = true }: {
+function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, currentBrokerId, leads = [], properties = [], demonstration = false, ready = true }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
   notify: (message: string) => void; openAgenda: () => void;
   persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string }>;
   refreshProperties: () => Promise<void>;
   claimLead: (lead: LeadProfile) => Promise<void>;
+  currentBrokerId?:string;
   currentBrokerName: string;
   leads?: LeadProfile[]; properties?: PropertyRecord[];
   demonstration?: boolean;
@@ -99,7 +105,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
       goal: lead.goal, propertyType: lead.propertyType, region: lead.region, budget: lead.budget,
       rooms: lead.details || 'Preferências registradas', payment: 'Consultar dados do lead', score: lead.score,
       stage: lead.lifecycleStatus, unread: 0, messages: [], sourceLead: lead,
-      suggestion: `Olá, ${lead.name.split(' ')[0]}! Vi seu interesse em ${lead.goal.toLowerCase()}. Posso ajudar com opções na região ${lead.region}?`,
+      suggestion: `Olá, ${lead.name.split(' ')[0]}! Como posso ajudar na sua busca por um imóvel?`,
     }));
   }, [leads]);
   const contactIds = useMemo(() => contacts.map((contact) => ({ id: contact.id, unread: contact.unread })), [contacts]);
@@ -111,6 +117,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const thread = selected ? state.threads[selected.id] || emptyThread : emptyThread;
   const lead = selected?.sourceLead;
   useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight; }, [selected?.id, thread.messages.length]);
+  if(!ready&&!selected)return <section className="panel empty-live-data" role="status"><h2>Sincronizando conversas</h2><p>Aguarde a confirmação do carregamento. Em caso de falha, os controles permanecerão desabilitados.</p></section>;
   if (!selected || !lead) return <div className="conversation-demo"><section className="conversation-temperature-guide" aria-label="Como interpretar a temperatura dos leads"><div><strong>Temperatura do lead</strong><span>Use o nível de interesse para priorizar os atendimentos.</span></div><dl><div><dt className="conversation-temperature" data-temperature="Frio">Frio</dt><dd>Contato inicial ou com poucas informações.</dd></div><div><dt className="conversation-temperature" data-temperature="Morno">Morno</dt><dd>Tem interesse, mas ainda está avaliando opções.</dd></div><div><dt className="conversation-temperature" data-temperature="Quente">Quente</dt><dd>Perfil completo e pronto para avançar.</dd></div></dl></section><section className="panel empty-live-data"><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
   const leadId = lead.id;
   const filtered = contacts.filter((contact) => {
@@ -120,13 +127,14 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const stage = lead?.lifecycleStatus || selected.stage;
   const temperature = contactTemperature(selected);
   const assignedBroker = (demonstration ? thread.assignedTo : lead.assignedTo)?.trim() || null;
-  const isCurrentBroker = Boolean(assignedBroker && normalize(assignedBroker) === normalize(currentBrokerName));
+  const ownership=thread.messages.find(message=>message.attendanceMode);
+  const isCurrentBroker = demonstration?Boolean(assignedBroker && normalize(assignedBroker) === normalize(currentBrokerName)):Boolean(currentBrokerId&&ownership?.assignedBrokerId===currentBrokerId);
   const sourceLabel = demonstration ? 'Perfil fictício para demonstração' : 'Dados do banco de leads';
   const leadHighlights = lead
     ? [['Objetivo', lead.goal], ['Tipo de imóvel', lead.propertyType], ['Região desejada', lead.region], ['Investimento', lead.budget]]
     : [['Objetivo', selected.goal], ['Tipo de imóvel', selected.propertyType], ['Região desejada', selected.region], ['Investimento', selected.budget]];
   const leadOperationalData = lead
-    ? [['Preferências', lead.details || 'Não informado'], ['Corretor responsável', assignedBroker || 'Sem corretor responsável'], ['Último contato', formatDate(lead.lastContactAt)], ['Telefone', lead.phone], ...(lead.email ? [['E-mail', lead.email]] : [])]
+    ? [['Preferências', lead.details || 'Não informado'], ['Corretor responsável', assignedBroker || 'Sem corretor responsável'], ['Último contato', formatDate(lead.lastContactAt)], ['Telefone', lead.phone ? `•••• ${lead.phone.slice(-4)}` : 'Não informado'], ...(lead.email ? [['E-mail', lead.email]] : [])]
     : [['Quartos', selected.rooms], ['Pagamento', selected.payment], ['Estilo de atendimento', selected.style]];
 
   async function send(event: FormEvent) {
@@ -150,7 +158,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     const text = `Separei uma opção que combina com o seu perfil:\n\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
     try {
       const saved = await persistMessage({ leadId, content: text, images: property.images, propertyId: property.id });
-      dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: property.images, propertyTitle: property.title });
+      dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: demonstration?property.images:[], propertyTitle: property.title });
       setPropertyPickerOpen(false);
       notify(demonstration ? `${property.title} adicionado apenas à demonstração.` : `${property.title} salvo na conversa com ${selected.name}.`);
     } catch (error) {
@@ -182,7 +190,17 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
       savingRef.current = false; setSaving(false);
     }
   }
+  async function releaseConversation(){
+    if(demonstration)return;
+    setSaving(true);
+    try{const response=await fetch('/api/conversations/owner',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({leadId,release:true})});const result=await response.json() as {error?:string};if(!response.ok)throw Error(result.error);announceDashboardChange('leads');notify('Atendimento automático retomado para as próximas mensagens.');}
+    catch(e){notify(e instanceof Error?e.message:'Não foi possível devolver o atendimento.');}finally{setSaving(false);}
+  }
   return <div className="conversation-demo">
+    {!ready&&<p role="status">A sincronização está indisponível. Aguarde a atualização antes de enviar.</p>}
+    {!demonstration && <ConversationTemplates key={leadId} leadId={leadId}/>}
+    {!demonstration&&<p role="status">{ownership?.attendanceMode==='human'?`Atendimento com ${assignedBroker||'corretor'}`:ownership?.attendanceMode==='paused'?'Robô pausado · aguardando corretor':ownership?.attendanceMode==='automatic'?'Atendimento automático':'Aguardando mensagem do cliente'}</p>}
+    {!demonstration&&isCurrentBroker&&<button type="button" disabled={saving} onClick={()=>void releaseConversation()}>Devolver ao atendimento automático</button>}
     <section className="conversation-temperature-guide" aria-label="Como interpretar a temperatura dos leads">
       <div><strong>Temperatura do lead</strong><span>Use o nível de interesse para priorizar os atendimentos.</span></div>
       <dl>
@@ -210,7 +228,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
       </aside>
       <section className="full-chat panel" aria-label={`Conversa com ${selected.name}`}>
         <div className="full-chat-head"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><span className="conversation-name-line"><strong>{selected.name}</strong><span className="conversation-temperature" data-temperature={temperature}>{temperature}</span></span><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}` : 'Sem corretor responsável'}</span></div>{!isCurrentBroker && <button type="button" className="conversation-claim-button" disabled={!ready || saving} onClick={() => void claimConversation()}>Assumir atendimento</button>}{isCurrentBroker && <span className="conversation-assigned-state">Você está atendendo</span>}</div>
-        <div className="full-chat-body" ref={bodyRef}><span className="chat-date">Conversa vinculada ao lead</span>{thread.messages.length ? thread.messages.map((message) => <div className={`bubble ${message.side} ${message.propertyTitle ? 'property-message' : ''}`} key={message.id}>{message.images?.length ? <div className="message-property-images">{message.images.slice(0,3).map((image,index) => <img key={index} src={image} alt={`${message.propertyTitle}, foto ${index + 1}`} />)}</div> : null}<span className="visually-hidden">{message.side === 'incoming' ? selected.name : 'Atendimento'}: </span>{message.propertyTitle && <strong>{message.propertyTitle}</strong>}<p>{message.text}</p><small>{message.time} · Painel</small></div>) : <p className="conversation-empty-thread">Ainda não há mensagens deste lead no painel. A ficha ao lado foi carregada da base para orientar o corretor.</p>}</div>
+        <div className="full-chat-body" ref={bodyRef}><span className="chat-date">Conversa vinculada ao lead</span>{thread.messages.length ? thread.messages.map(message => <ConversationMessageBubble key={message.id} message={message} demo={demonstration}/>) : <p className="conversation-empty-thread">Ainda não há mensagens deste lead no painel.</p>}</div>
         <div className="conversation-suggestion"><span>Resposta sugerida · Dados do lead</span><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div>
         <form className="full-composer" onSubmit={send}><button type="button" aria-label="Anexos" disabled title="Anexos diretos serão habilitados com o canal de mensagens">＋</button><button type="button" className="conversation-property-button" disabled={loadingProperties} onClick={() => void openPropertyPicker()}>{loadingProperties ? 'Atualizando…' : '▦ Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => dispatch({ type: 'draft', id: selected.id, text: event.target.value })} aria-label={`Mensagem para ${selected.name}`} placeholder="Escreva uma resposta…" maxLength={4000}/><button className="send-button" type="submit" disabled={!thread.draft.trim() || !ready || saving} aria-label="Adicionar mensagem">➜</button></form>
       </section>

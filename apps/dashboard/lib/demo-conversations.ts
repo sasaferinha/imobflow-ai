@@ -1,4 +1,4 @@
-export type DemoMessage = { id: string; side: 'incoming' | 'outgoing'; text: string; time: string; images?: string[]; propertyTitle?: string };
+export type DemoMessage = { id: string; side: 'incoming' | 'outgoing'; text: string; time: string; images?: string[]; propertyTitle?: string; deliveryStatus?: 'pending'|'sent'|'delivered'|'read'|'failed'; deliveryError?:string; sender?:string;canRetry?:boolean;attempts?:number;nextAttemptAt?:string;attendanceMode?:'automatic'|'human'|'paused';assignedBrokerId?:string|null };
 export type DemoContact = {
   id: string; name: string; initials: string; tone: number; category: string; style: string;
   goal: string; propertyType: string; region: string; budget: string; rooms: string;

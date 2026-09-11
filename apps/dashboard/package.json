@@ -8,12 +8,13 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "build:production": "pnpm run test && node scripts/test-dashboard-sync.cjs && next build",
+    "build:production": "pnpm run test && node scripts/test-pilot-conversations.cjs && node scripts/test-dashboard-sync.cjs && next build",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "node scripts/test-security.cjs && node scripts/test-account-access.cjs && node scripts/test-demo-conversations.cjs && node scripts/test-match-workflow.cjs && node scripts/test-automations.cjs && node scripts/test-property-deals.cjs && node scripts/test-meta-whatsapp.cjs && node scripts/test-core-opportunities.cjs && node scripts/test-direct-attendance.cjs",
     "test:account-sql": "node scripts/test-account-sql.cjs",
-    "test:core": "node scripts/test-core-opportunities.cjs && node scripts/test-direct-attendance.cjs"
+    "test:core": "node scripts/test-core-opportunities.cjs && node scripts/test-direct-attendance.cjs",
+    "test:pilot": "node scripts/test-pilot-conversations.cjs && node scripts/test-core-opportunities.cjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

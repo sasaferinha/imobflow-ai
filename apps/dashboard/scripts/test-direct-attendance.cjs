@@ -13,6 +13,8 @@ function load(relative, overrides={}) {
  const supabaseServiceRequest=async(path,options={})=>{
    calls.push({path,options});
    if(path==='rpc/claim_attendance_reply') return true;
+   if(path==='rpc/enqueue_conversation_message') {sent.push({text:{body:options.body.p_content}});return 'queued';}
+   if(path==='rpc/merge_attendance_profile')return true;
    if(path.startsWith('leads?')) return [{interest_profile:{},goal:'Não informado',property_type:'Não informado',region:'Não informado',budget_max:null,updated_at:'2026-09-10T12:00:00Z'}];
    if(path.startsWith('messages?')) return [];
    if(path==='rpc/finish_attendance_reply') return null;
@@ -23,17 +25,21 @@ function load(relative, overrides={}) {
  try {
    const api=load('lib/attendance.ts',{
      './supabase':{supabaseServiceRequest},
+     './conversation-settings':{readBusinessHours:async()=>load('lib/business-hours.ts').defaultBusinessHours},
+     './message-outbox':{sendQueuedMessage:async()=>{}},
      './ai/openai-provider':{configuredAIProvider:()=>null},
      './ai/qualification':load('lib/ai/qualification.ts'),
    });
    await api.respondToIncomingMessage({companyId:'00000000-0000-4000-8000-000000000001',leadId:'00000000-0000-4000-8000-000000000002',conversationId:'00000000-0000-4000-8000-000000000003',incomingExternalMessageId:'wamid.in',message:'Quero apartamento',hasImage:false,recipientPhone:'5535999999999',phoneNumberId:'123456789',accessToken:'secret',apiVersion:'v26.0',occurredAt:new Date().toISOString()});
    assert.equal(api.attendanceTime(new Date('2026-09-10T20:59:00Z')).afterHours,false);
    assert.equal(api.attendanceTime(new Date('2026-09-10T21:00:00Z')).afterHours,true);
-   assert.equal(sent.length,1);assert.match(sent[0].text.body,/(Recebemos sua mensagem|atendimento encerrou)/);
-   assert.equal(calls.filter(c=>c.path==='rpc/finish_attendance_reply').length,1);
-   console.log('PASS chatbot acknowledges safely without n8n or OpenAI and persists only accepted provider receipt');
+   assert.equal(sent.length,1);assert.match(sent[0].text.body,/(comprar ou alugar|fora do horário)/);
+   assert.equal(calls.filter(c=>c.path==='rpc/enqueue_conversation_message').length,1);
+   console.log('PASS chatbot queues a deterministic reply without n8n or OpenAI');
    sent=[]; calls=[]; const noClaim=load('lib/attendance.ts',{
      './supabase':{supabaseServiceRequest:async path=>path==='rpc/claim_attendance_reply'?false:assert.fail('duplicate continued')},
+     './conversation-settings':{readBusinessHours:async()=>load('lib/business-hours.ts').defaultBusinessHours},
+     './message-outbox':{sendQueuedMessage:async()=>assert.fail('duplicate sent')},
      './ai/openai-provider':{configuredAIProvider:()=>null},'./ai/qualification':load('lib/ai/qualification.ts')});
    await noClaim.respondToIncomingMessage({companyId:'00000000-0000-4000-8000-000000000001',leadId:'00000000-0000-4000-8000-000000000002',conversationId:'00000000-0000-4000-8000-000000000003',incomingExternalMessageId:'wamid.in',message:'oi',hasImage:false,recipientPhone:'5535999999999',phoneNumberId:'123456789',accessToken:'secret',apiVersion:'v26.0',occurredAt:new Date().toISOString()});
    assert.equal(sent.length,0);console.log('PASS duplicate inbound event cannot send a second chatbot reply');
