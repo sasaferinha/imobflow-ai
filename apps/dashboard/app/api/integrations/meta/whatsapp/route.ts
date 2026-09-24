@@ -6,7 +6,7 @@ import {
   verifyMetaWebhookToken,
 } from '@/lib/meta-whatsapp';
 import { saveIncomingWhatsAppMessage } from '@/lib/meta-whatsapp-store';
-import { requestAttendanceSuggestion } from '@/lib/n8n-attendance';
+import { attendanceFailureDiagnostic, requestAttendanceSuggestion } from '@/lib/n8n-attendance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,16 +41,29 @@ export async function POST(request: NextRequest) {
   }
   try {
     const messages = parseIncomingWhatsAppMessages(payload, configuredMetaWhatsAppConnections());
+    console.info('meta_whatsapp_webhook_matched', { matchedCount: messages.length });
+    let savedCount = 0;
     for (const message of messages) {
       const saved = await saveIncomingWhatsAppMessage(message);
-      if (saved.saved) after(async () => {
-        try { await requestAttendanceSuggestion(saved); }
-        catch { console.error('n8n_attendance_delivery_failed'); }
-      });
+      if (saved.saved) {
+        savedCount += 1;
+        after(async () => {
+          try {
+            const result = await requestAttendanceSuggestion(saved);
+            console.info('n8n_attendance_result', {
+              requested: result.requested, sent: 'sent' in result && result.sent === true,
+              afterHours: 'afterHours' in result && result.afterHours === true, reason: result.reason,
+            });
+          } catch (error) {
+            console.error('n8n_attendance_delivery_failed', attendanceFailureDiagnostic(error));
+          }
+        });
+      }
     }
+    console.info('meta_whatsapp_webhook_saved', { matchedCount: messages.length, savedCount, duplicateCount: messages.length - savedCount });
     return NextResponse.json({ received: true }, { headers: { 'Cache-Control': 'no-store' } });
-  } catch (error) {
-    console.error('meta_whatsapp_webhook_processing_failed', error instanceof Error ? error.message : 'unknown');
+  } catch {
+    console.error('meta_whatsapp_webhook_processing_failed');
     return NextResponse.json({ error: 'Não foi possível processar o webhook.' }, { status: 500 });
   }
 }

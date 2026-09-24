@@ -1,4 +1,4 @@
-export type DemoMessage = { id: string; side: 'incoming' | 'outgoing'; text: string; time: string; images?: string[]; propertyTitle?: string };
+export type DemoMessage = { id: string; side: 'incoming' | 'outgoing'; text: string; time: string; images?: string[]; propertyTitle?: string; deletable?: boolean };
 export type DemoContact = {
   id: string; name: string; initials: string; tone: number; category: string; style: string;
   goal: string; propertyType: string; region: string; budget: string; rooms: string;
@@ -125,8 +125,9 @@ export type DemoConversationState = {
 export type DemoConversationAction =
   | { type: 'select'; id: string }
   | { type: 'draft'; id: string; text: string }
-  | { type: 'send'; id: string; messageId: string; time: string; text?: string }
-  | { type: 'share-property'; id: string; messageId: string; time: string; text: string; images: string[]; propertyTitle: string }
+  | { type: 'send'; id: string; messageId: string; time: string; text?: string; deletable?: boolean }
+  | { type: 'share-property'; id: string; messageId: string; time: string; text: string; images: string[]; propertyTitle: string; deletable?: boolean }
+  | { type: 'delete-message'; id: string; messageId: string }
   | { type: 'assign'; id: string; assignedTo: string }
   | { type: 'sync'; contacts: Array<{ id: string; unread?: number }> }
   | { type: 'hydrate'; contacts: Array<{ id: string; messages: DemoMessage[]; assignedTo?: string | null; assignedBrokerId?: string | null; revision?: number }> };
@@ -170,9 +171,10 @@ export function demoConversationReducer(state: DemoConversationState, action: De
   const updated = action.type === 'select' ? { ...thread, unread: 0 }
     : action.type === 'draft' ? { ...thread, draft: action.text }
     : action.type === 'assign' ? { ...thread, humanMode: true, assignedTo: action.assignedTo }
-    : action.type === 'share-property' ? { ...thread, messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: action.text, time: action.time, images: action.images, propertyTitle: action.propertyTitle }] }
+    : action.type === 'delete-message' ? { ...thread, messages: thread.messages.filter(message => message.id !== action.messageId) }
+    : action.type === 'share-property' ? { ...thread, messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: action.text, time: action.time, images: action.images, propertyTitle: action.propertyTitle, deletable: action.deletable }] }
     : { ...thread, draft: thread.draft.trim() === (action.text ?? thread.draft).trim() ? '' : thread.draft,
-      messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: (action.text ?? thread.draft).trim(), time: action.time }] };
+      messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: (action.text ?? thread.draft).trim(), time: action.time, deletable: action.deletable }] };
   return { selectedId: action.type === 'select' ? action.id : state.selectedId, threads: { ...state.threads, [action.id]: updated } };
 }
 

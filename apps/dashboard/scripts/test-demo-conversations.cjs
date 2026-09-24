@@ -88,3 +88,24 @@ shared = reduce(shared, { type:'send', id:'mariana', messageId:'broker-message',
 assert.equal(shared.threads.mariana.messages.length, received.length);
 assert.equal(shared.threads.mariana.draft, 'Rascunho do administrador');
 console.log('PASS shared assignment, stale revision rejection, draft preservation and message deduplication');
+
+const liveContactId = `lead-${liveLead.id}`;
+liveState = reduce(liveState, { type: 'send', id: liveContactId, messageId: 'panel-message', text: 'Mensagem manual', time: '15:01', deletable: true });
+assert.equal(liveState.threads[liveContactId].messages.at(-1).deletable, true);
+liveState = reduce(liveState, { type: 'share-property', id: liveContactId, messageId: 'property-message', text: 'Imóvel indicado', time: '15:02', images: [], propertyTitle: 'Casa', deletable: true });
+assert.equal(liveState.threads[liveContactId].messages.at(-1).deletable, true);
+liveState = reduce(liveState, { type: 'send', id: liveContactId, messageId: 'external-message', text: 'Resposta do WhatsApp', time: '15:03', deletable: false });
+const renderMessages = currentState => renderToStaticMarkup(createElement(Component, {
+  state: currentState, dispatch() {}, notify() {}, openAgenda() {}, persistMessage: async () => ({}), deleteMessage: async () => {},
+  refreshProperties: async () => {}, currentBrokerName: 'Corretor', leads: [liveLead], properties: [],
+}));
+assert.equal((renderMessages(liveState).match(/aria-label="Apagar mensagem"/g) || []).length, 2);
+liveState = reduce(liveState, { type: 'draft', id: liveContactId, text: 'Rascunho mantido' });
+liveState = reduce(liveState, { type: 'delete-message', id: liveContactId, messageId: 'panel-message' });
+assert.equal(liveState.threads[liveContactId].messages.some(message => message.id === 'panel-message'), false);
+assert.equal(liveState.threads[liveContactId].messages.length, 2);
+assert.equal(liveState.threads[liveContactId].draft, 'Rascunho mantido');
+assert.equal((renderMessages(liveState).match(/aria-label="Apagar mensagem"/g) || []).length, 1);
+assert.equal(state.threads.beatriz, beatrizThread);
+assert.ok(demoContacts.every(contact => contact.messages.every(message => !message.deletable)));
+console.log('PASS immediate deletion controls for manual messages and property shares, protected external messages, isolated deletion and draft preservation');

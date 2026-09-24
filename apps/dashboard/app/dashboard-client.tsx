@@ -334,7 +334,16 @@ export default function DashboardClient({ account }: { account?: { name: string;
     const result = await response.json() as { data?: ConversationMessage; error?: string };
     if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar a mensagem.');
     announceDashboardChange('conversations');
-    return { id: result.data.id, time: result.data.time };
+    return { id: result.data.id, time: result.data.time, deletable: result.data.deletable };
+  }
+
+  async function deleteConversationMessage(messageId: string) {
+    const response = await fetch('/api/conversations', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId }),
+    });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) throw new Error(result.error || 'Não foi possível apagar a mensagem.');
+    announceDashboardChange('conversations');
   }
 
   async function refreshProperties() {
@@ -482,7 +491,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
       const saved = await persistConversationMessage({ leadId: lead.id, content, images: sharingProperty.images, propertyId: sharingProperty.id });
       conversationDispatch({
         type: 'share-property', id: conversationId, messageId: saved.id, time: saved.time,
-        text: content, images: sharingProperty.images, propertyTitle: sharingProperty.title,
+        text: content, images: sharingProperty.images, propertyTitle: sharingProperty.title, deletable: saved.deletable,
       });
       conversationDispatch({ type: 'select', id: conversationId });
       setSharingProperty(null);
@@ -563,7 +572,7 @@ export default function DashboardClient({ account }: { account?: { name: string;
         </header>
 
         {view === 'overview' && <Overview notify={notify} canEditGoals={account?.role === 'owner'} />}
-        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} claimLead={claimLead} currentBrokerName={profile.name} leads={capturedLeads} properties={properties} />}
+        {view === 'conversations' && <ConversationCenter state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} deleteMessage={deleteConversationMessage} refreshProperties={refreshProperties} claimLead={claimLead} currentBrokerName={profile.name} leads={capturedLeads} properties={properties} />}
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} />{selectedLead ? <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /> : <section className="panel empty-live-data"><h2>Nenhum lead cadastrado</h2><p>Importe a carteira da imobiliária ou receba um novo contato pelo formulário do site.</p><button type="button" className="primary-button" onClick={() => setLeadImportOpen(true)}>Importar clientes</button></section>}</>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} brokerName={profile.name} />}

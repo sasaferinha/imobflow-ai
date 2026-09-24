@@ -1,7 +1,7 @@
 import { protectedRoute } from '@/lib/accounts';
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
-import { createConversationMessage, listConversationMessages } from '@/lib/conversations';
+import { createConversationMessage, deleteConversationMessage, listConversationMessages } from '@/lib/conversations';
 import { hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
@@ -38,5 +38,25 @@ async function handlePOST(request: NextRequest) {
   }
 }
 
+async function handleDELETE(request: NextRequest) {
+  if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
+  try {
+    const body: unknown = await request.json().catch(() => null);
+    const messageId = body && typeof body === 'object' && 'messageId' in body && typeof body.messageId === 'string' ? body.messageId : '';
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(messageId)) return NextResponse.json({ error: 'Mensagem inválida.' }, { status: 400 });
+    await deleteConversationMessage(messageId);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('conversation_delete_failed', error);
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('não encontrada') || message.includes('Somente mensagens')) {
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+    return NextResponse.json({ error: 'Não foi possível apagar a mensagem.' }, { status: 500 });
+  }
+}
+
 export const GET = protectedRoute(handleGET);
 export const POST = protectedRoute(handlePOST);
+export const DELETE = protectedRoute(handleDELETE);

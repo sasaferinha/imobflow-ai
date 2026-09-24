@@ -9,6 +9,7 @@ export type ConversationMessage = {
   text: string;
   time: string;
   images: string[];
+  deletable?: boolean;
 };
 
 export async function listConversationMessages(): Promise<ConversationMessage[]> {
@@ -75,6 +76,16 @@ export async function createConversationMessage(input: {
   return mapMessage(message, input.leadId);
 }
 
+export async function deleteConversationMessage(messageId: string): Promise<void> {
+  const companyId = supabaseCompanyId();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(messageId)) throw new Error('Mensagem inválida.');
+  const deleted = await supabaseRequest<Array<{ id: string }>>(
+    `messages?id=eq.${encodeURIComponent(messageId)}&company_id=eq.${companyId}&direction=in.(outgoing,Sa%C3%ADda)&sender_type=in.(human,Corretor)&external_message_id=is.null&select=id`,
+    { method: 'DELETE', prefer: 'return=representation' },
+  );
+  if (!deleted.length) throw new Error('Mensagem não encontrada ou indisponível para exclusão. Somente mensagens do painel podem ser apagadas.');
+}
+
 export async function readConversationImage(messageId: string, index: number) {
   const companyId = supabaseCompanyId();
   if (!/^[0-9a-f-]{36}$/i.test(messageId) || !Number.isInteger(index) || index < 0 || index > 4) throw new Error('Foto inválida.');
@@ -93,6 +104,9 @@ function mapMessage(row: Record<string, unknown>, leadId: string): ConversationM
     side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing',
     text: String(row.content || ''),
     time: createdAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+    deletable: (row.direction === 'outgoing' || row.direction === 'Saída')
+      && ['human', 'Corretor'].includes(String(row.sender_type || ''))
+      && row.external_message_id == null,
     images: Array.isArray(row.media_urls) ? row.media_urls.filter((item): item is string => typeof item === 'string').map((item, index) =>
       isWhatsAppMediaPath(item, String(row.company_id || '')) ? `/api/conversations/media?messageId=${encodeURIComponent(String(row.id))}&index=${index}` : item,
     ) : [],
