@@ -9,6 +9,8 @@
 | Este PC | checkout antigo em `d6e650d`, com trabalho local anterior nao integrado; foi mantido intacto |
 | Outro PC | indisponivel; qualquer alteracao que nunca chegou ao GitHub/Vercel continua desconhecida |
 
+A recuperacao revisada foi enviada a `codex/recover-deployment-20260924` e esta na [PR #1](https://github.com/sasaferinha/imobflow-ai/pull/1). O patch antigo deste PC foi salvo separadamente em `codex/backup-local-20260924` **apenas como backup**, sem integracao ao produto. `main` e a producao permanecem na versao anterior ate a verificacao operacional e o merge da PR. O preview da PR passou no build da Vercel e respondeu 200 em `/painel` e no health do banco; endpoints de dados sem sessao responderam 401. Isso nao substitui testes autenticados com clientes reais.
+
 A API oficial da Vercel permitiu recuperar **337 arquivos de origem** (4.733.237 bytes). Cada arquivo foi conferido pelo SHA1 informado no deployment e salvo em `work/sync-backup-20260924/deployment-source/`, pasta local ignorada pelo Git. O codigo foi integrado em uma worktree isolada, sem copiar `.env`, credenciais, caches ou dependencias. A comparacao de bytes encontrou 104 arquivos novos, 143 diferentes e 90 identicos frente ao checkout de `main`; parte das diferencas era apenas final de linha. As migrations recuperadas foram preservadas e testadas localmente, nao aplicadas ao banco remoto nesta etapa.
 
 ## Validacao tecnica da fonte recuperada
