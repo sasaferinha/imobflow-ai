@@ -47,11 +47,15 @@ async function run() {
     const stale=await db.query(`SELECT merge_attendance_profile('${id(1)}','${id(101)}','${leadVersion.toISOString()}','{"budgetMax":1}'::jsonb) saved`);
     assert.equal(merged.rows[0].saved,true); assert.equal(stale.rows[0].saved,false,'stale AI extraction cannot overwrite a newer profile');
     await db.exec(`UPDATE leads SET interest_profile='{"city":"Lavras","parkingSpaces":2}'::jsonb WHERE id IN ('${id(101)}','${id(102)}','${id(103)}','${id(201)}')`);
+    await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260913050000_opportunities_active_leads.sql'),'utf8'));
+    await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260913060000_essential_opportunity_match.sql'),'utf8'));
+    await db.exec(`UPDATE leads SET bedrooms=30,parking_spaces=4,interest_profile=interest_profile||'{"bedrooms":30,"parkingSpaces":4}'::jsonb WHERE id='${id(101)}'`);
+    await db.exec(`UPDATE leads SET last_contact_at=now(), lifecycle_status='Em atendimento' WHERE id='${id(101)}'`);
     const scored = await db.query(`SELECT * FROM score_property_match((SELECT l FROM leads l WHERE id='${id(101)}'),(SELECT p FROM properties p WHERE id='${id(301)}'))`);
-    assert.equal(scored.rows[0].score,94,'strong score');
+    assert.equal(scored.rows[0].score,100,'four criteria match despite different bedrooms and parking');
     for (const property of [301,302,303,401]) await db.query(`SELECT generate_property_opportunities('${id(1)}','${id(property)}',7)`);
     let rows=(await db.query('SELECT lead_id,property_id,match_score FROM opportunities')).rows;
-    assert.deepEqual(rows,[{lead_id:id(101),property_id:id(301),match_score:94}],'tenant/purpose/budget/closed states and strong match');
+    assert.deepEqual(rows,[{lead_id:id(101),property_id:id(301),match_score:100}],'tenant/purpose/budget/closed states and essential match');
     assert.equal((await db.query('SELECT count(*)::int total FROM opportunity_notifications')).rows[0].total,1,'strong matches notify once');
     await db.query(`SELECT generate_property_opportunities('${id(1)}','${id(301)}',7)`);
     assert.equal((await db.query('SELECT count(*)::int total FROM opportunities')).rows[0].total,1,'deduplication');
@@ -93,6 +97,14 @@ async function run() {
     await assert.rejects(()=>db.query('SELECT * FROM message_outbox'),/permission denied/);
     await assert.rejects(()=>db.query(`SELECT change_conversation_owner('${id(1)}','${id(101)}','${owner}',false)`),/permission denied/);
     await db.exec('RESET ROLE');
+    await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260913070000_lead_opportunity_events.sql'),'utf8'));
+    await db.exec(`UPDATE properties SET status='Disponível' WHERE id='${id(301)}';
+      INSERT INTO leads(id,company_id,name,goal,property_type,region,budget_max,interest_profile,lifecycle_status,last_contact_at)
+      VALUES('${id(901)}','${id(1)}','Teste novo lead','Comprar','Apartamento','Centro',600000,'{"city":"Lavras"}','Novo',now());`);
+    assert.equal((await db.query(`SELECT count(*)::int n FROM opportunities WHERE lead_id='${id(901)}'`)).rows[0].n,1,'new active lead immediately matches an existing listing');
+    await db.exec(`UPDATE leads SET budget_max=1 WHERE id='${id(901)}'`);
+    assert.equal((await db.query(`SELECT status FROM opportunities WHERE lead_id='${id(901)}'`)).rows[0].status,'expired','edited budget invalidates the opportunity');
+    console.log('PASS immediate new-lead matching and changed-profile expiry');
     console.log('PASS pilot SQL: ownership contention, send lease, tenant isolation, deduplication, bot resume, 24h templates and privileges');
     console.log('PASS opportunities: tenant, filters, score, notification, duplicate, closed lead, event, access, bot pause and cron contracts');
   } finally { await db.close(); }

@@ -14,7 +14,7 @@ function load(file) {
   const module = { exports: {} };
   vm.runInNewContext(output, {
     module, exports: module.exports,
-    require: name => name.startsWith('@/lib/') ? load(name.replace('@/', '') + '.ts') : name.startsWith('./') ? load(path.posix.join(path.posix.dirname(file),name+'.tsx')) : require(name),
+    require: name => name.startsWith('@/lib/') ? load(name.replace('@/', '') + '.ts') : name.startsWith('./') ? load(path.posix.join(path.posix.dirname(file),name+(file.endsWith('.tsx')?'.tsx':'.ts'))) : require(name),
   });
   modules.set(file, module.exports);
   return module.exports;
@@ -72,9 +72,47 @@ let liveState = reduce(createLiveConversationState(), { type:'sync', contacts:[{
 const liveHtml = renderToStaticMarkup(createElement(Component, { state: liveState, dispatch() {}, notify() {}, openAgenda() {}, persistMessage: async () => ({}), refreshProperties: async () => {}, leads:[liveLead], properties:[] }));
 assert.ok(liveHtml.includes('Cliente Real'));
 assert.ok(liveHtml.includes('Dados do banco de leads'));
+for (const html of [emptyHtml, liveHtml]) {
+  assert.ok(!html.includes('conversation-temperature-guide'), 'the removed temperature explainer never returns');
+}
+assert.match(liveHtml, /aria-expanded="true" aria-controls="conversation-client-profile"/, 'essential profile starts visible with an accessible toggle');
+assert.doesNotMatch(liveHtml, /id="conversation-client-profile" hidden/, 'score and preferences must not require opening the profile');
+assert.match(liveHtml, /<details class="conversation-lead-details conversation-extra-details"/, 'secondary details stay collapsed');
+const essentialProfile = liveHtml.split('id="conversation-client-profile"')[1].split('<details')[0];
+for (const value of ['Score do lead', 'Indefinido', 'Objetivo', 'Comprar', 'Tipo de imóvel', 'Casa', 'Região / bairro', 'Centro', 'Investimento', 'Até R$ 500.000']) assert.ok(essentialProfile.includes(value), `${value} visible in essential profile`);
+assert.ok(!essentialProfile.includes('conversation-classifications'), 'do not restore additional badges in the default profile');
+assert.match(liveHtml, /<details class="conversation-quick-reply"/, 'suggested replies start collapsed');
+assert.ok(!liveHtml.includes('aria-label="Anexos"'), 'do not display a nonfunctional attachment control');
+assert.ok(liveHtml.includes('Status não confirmado'), 'unknown attendance must remain visible');
 assert.ok(liveHtml.includes('Usar resposta'));
 assert.ok(!liveHtml.includes('Mariana Costa'));
 console.log('PASS production conversation view renders only persisted leads and a truthful empty state');
+const ownedLead = { ...liveLead, scoreDefined: true, details: '2 quartos, aceita financiamento', assignedTo: 'Corretor antigo' };
+const ownedThread = { ...liveState.threads[`lead-${liveLead.id}`], attendance: { attendanceMode: 'human', assignedTo: 'Marina Alves', assignedBrokerId: 'broker-marina' } };
+function renderOwner(thread, lead = ownedLead) {
+  return renderToStaticMarkup(createElement(Component, { state: { ...liveState, threads: { [`lead-${liveLead.id}`]: thread } }, dispatch() {}, notify() {}, openAgenda() {}, persistMessage: async () => ({}), refreshProperties: async () => {}, leads: [lead], properties: [], currentBrokerId: 'broker-marina', currentBrokerName: 'Marina Alves' }));
+}
+const ownedHtml = renderOwner(ownedThread);
+assert.match(ownedHtml, /72\/100/);
+assert.match(ownedHtml, /2 quartos, aceita financiamento/);
+assert.match(ownedHtml, /Corretor responsável: Marina Alves \(você\)/);
+assert.match(ownedHtml, /Corretor: Marina Alves/);
+assert.doesNotMatch(ownedHtml, /Corretor antigo/);
+const releasedHtml = renderOwner({ ...ownedThread, attendance: { attendanceMode: 'automatic', assignedTo: null, assignedBrokerId: null } });
+assert.match(releasedHtml, /Sem corretor responsável/);
+assert.doesNotMatch(releasedHtml, /Corretor responsável: Marina Alves|Corretor: Marina Alves|Corretor antigo/);
+console.log('PASS visible score, property preferences and named broker; confirmed release clears stale owner');
+const registrationText = 'Lead criado automaticamente a partir de uma mensagem recebida no WhatsApp.';
+for (const details of [registrationText, registrationText.toUpperCase().replace(/ /g, '  ')]) {
+  const html = renderOwner(ownedThread, { ...ownedLead, details });
+  const profile = html.split('id="conversation-client-profile"')[1];
+  assert.ok(!profile.split('<details')[0].includes(details), 'registration metadata does not masquerade as a preference');
+  assert.ok(profile.split('<details')[1].includes(details), 'original registration metadata remains available in additional details');
+}
+const mixedText = `${registrationText} Precisa de 3 quartos.`;
+assert.ok(renderOwner(ownedThread, { ...ownedLead, details: mixedText }).split('id="conversation-client-profile"')[1].split('<details')[0].includes(mixedText), 'never hide real preferences mixed with registration text');
+assert.match(ownedHtml, /<dl class="conversation-lead-highlights"/);
+console.log('PASS semantic customer details, understated score and preserved registration metadata');
 
 let shared = reduce(state, { type: 'draft', id: 'mariana', text: 'Rascunho do administrador' });
 const received = [...shared.threads.mariana.messages, { id:'broker-message', side:'outgoing', text:'Mensagem do corretor', time:'15:00' }];

@@ -63,6 +63,12 @@ const state = demo.demoConversationReducer(demo.createLiveConversationState(), {
   contacts: [
     {
       id: "lead-" + lead.id,
+      attendance: {
+        leadId: lead.id,
+        attendanceMode: 'human',
+        assignedTo: 'Ana Teste',
+        assignedBrokerId: '00000000-0000-4000-8000-000000000101',
+      },
       messages: [
         {
           id: "in",
@@ -94,7 +100,8 @@ const markup = renderToStaticMarkup(
     claimLead: async () => {},
     persistMessage: async () => {},
     refreshProperties: async () => {},
-    currentBrokerName: "Corretor",
+    currentBrokerName: "Ana Teste",
+    currentBrokerId: '00000000-0000-4000-8000-000000000101',
     leads: [lead],
     properties: [],
   }),

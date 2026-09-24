@@ -1,4 +1,5 @@
 import type { MetaWhatsAppConnection } from "./meta-whatsapp";
+import { normalizePhone } from "./meta-whatsapp";
 import { supabaseServiceRequest } from "./supabase";
 export type DeliveryStatus =
   | "pending"
@@ -14,7 +15,13 @@ export function deliveryError(code: number | null) {
   if (code === 190)
     return "A conexão do WhatsApp precisa ser renovada pelo administrador.";
   if (code === 131047)
-    return "A janela de atendimento encerrou. É necessário um modelo aprovado.";
+    return "A janela de 24 horas expirou. Para iniciar nova conversa, use um modelo aprovado pela Meta.";
+  if (code === 131026)
+    return "A Meta não conseguiu entregar ao número. Confira se o destinatário usa WhatsApp e pode receber mensagens.";
+  if (code === 131030)
+    return "Este destinatário ainda não está liberado para teste/envio nesta conta da Meta.";
+  if (code === 131031)
+    return "A conta WhatsApp está com restrição na Meta. Revise o Gerenciador do WhatsApp.";
   return "O WhatsApp não confirmou a entrega. Consulte o responsável pela integração.";
 }
 type StatusEvent = {
@@ -38,9 +45,9 @@ export function parseDeliveryEvents(
     for (const change of entry.changes) {
       if (change?.field !== "messages") continue;
       const value = change.value;
+      const phoneNumberId = normalizePhone(String(value?.metadata?.phone_number_id || ""));
       const connection = connections.find(
-        (c) =>
-          c.enabled && c.phoneNumberId === value?.metadata?.phone_number_id,
+        (c) => c.enabled && c.phoneNumberId === phoneNumberId,
       );
       if (!connection || !Array.isArray(value?.statuses)) continue;
       for (const event of value.statuses) {
@@ -54,7 +61,7 @@ export function parseDeliveryEvents(
           continue;
         const timestamp =
           typeof event.timestamp === "string" &&
-          /^\d{1,12}$/.test(event.timestamp)
+          /^\d{1,13}$/.test(event.timestamp)
             ? Number(event.timestamp) * 1000
             : NaN;
         if (!Number.isFinite(timestamp) || timestamp > Date.now() + 300000)

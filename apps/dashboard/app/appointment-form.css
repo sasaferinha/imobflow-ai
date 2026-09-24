@@ -1,0 +1,58 @@
+.app-shell.app-shell .appointment-form { gap: 18px; padding-top: 22px; margin-top: 22px; font-family: var(--native-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); }
+.app-shell.app-shell .appointment-form header { display: grid; gap: 6px; }
+.app-shell.app-shell .appointment-form h3 { margin: 0; font: 600 17px/1.4 var(--native-font, sans-serif); letter-spacing: -.025em; color: var(--ink); }
+.app-shell.app-shell .appointment-form header time { font-size: 13px; color: var(--muted); }
+.app-shell.app-shell .appointment-form label, .app-shell.app-shell .visit-time-field legend { font-size: 13px; line-height: 1.4; font-weight: 500; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.app-shell.app-shell .appointment-form label { gap: 8px; min-width: 0; }
+.app-shell.app-shell .appointment-form select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: 400 14px/1.4 var(--native-font, sans-serif); color-scheme: light; }
+.app-shell.app-shell .visit-time-field { min-width: 0; padding: 0; margin: 0; border: 0; }
+.app-shell.app-shell .visit-time-field legend { padding: 0; margin-bottom: 8px; }
+.app-shell.app-shell .visit-time-picker { display: grid; grid-template-columns: 18px minmax(0,1fr) 8px minmax(0,1fr); gap: 8px; align-items: center; min-height: 48px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--muted); }
+.app-shell.app-shell .visit-time-picker select { border: 0; border-radius: 5px; padding: 10px 2px; background: transparent; font-size: 16px; font-variant-numeric: tabular-nums; }
+.app-shell.app-shell .visit-time-picker:focus-within { border-color: #0066df; box-shadow: 0 0 0 3px rgb(0 102 223 / 10%); }
+.app-shell.app-shell .appointment-form :is(select, button):focus-visible { outline: 2px solid #0066df; outline-offset: 2px; }
+.app-shell.app-shell .appointment-form .visit-time-picker select:focus-visible { outline: none; background: var(--secondary); }
+.app-shell.app-shell .appointment-form .visit-form-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 2px; }
+.app-shell.app-shell .appointment-form button { min-height: 42px; height: auto; padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 500; background: var(--paper); color: var(--ink); }
+.app-shell.app-shell .appointment-form button[type='submit'] { border: 1px solid #0066df; background: #0066df; color: white; }
+.app-shell.app-shell.dark-mode .appointment-form select { color-scheme: dark; }
+.visit-record-field { display: grid; gap: 8px; min-width: 0; }
+.visit-record-field > span, .visit-record-selected-detail { font-size: 13px; color: var(--muted); }
+.app-shell.app-shell .appointment-form .visit-record-trigger { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; border: 1px solid var(--line); min-height: 46px; font-size: 14px; }
+.visit-record-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visit-record-trigger svg { flex-shrink: 0; }
+.visit-record-selected-detail { overflow-wrap: anywhere; }
+.visit-record-dialog { position: fixed; inset: 0; margin: auto; width: min(760px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); color: var(--ink); box-shadow: 0 24px 80px rgb(0 0 0 / 18%); font-family: var(--native-font, sans-serif); }
+.visit-record-dialog::backdrop { background: rgb(15 23 42 / 40%); backdrop-filter: blur(4px); }
+.visit-record-dialog-inner { display: flex; flex-direction: column; gap: 18px; padding: 28px; max-height: min(820px, calc(100dvh - 40px)); box-sizing: border-box; }
+.visit-record-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.visit-record-heading > div { flex: 1; }
+.visit-record-heading h2 { margin: 0; font-size: 24px; line-height: 1.25; font-weight: 600; letter-spacing: -.035em; }
+.visit-record-heading p { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.app-shell.app-shell .appointment-form .visit-record-heading button { border: 0; font-size: 24px; padding: 0; width: 36px; min-height: 36px; flex-shrink: 0; }
+.visit-record-search, .visit-record-filters label { display: grid; gap: 8px; }
+.visit-record-search input { width: 100%; min-width: 0; height: 46px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 16px; box-sizing: border-box; }
+.visit-record-search input:focus-visible { outline: 2px solid #0066df; outline-offset: 2px; }
+.visit-record-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.visit-record-count { font-size: 12px; color: var(--muted); }
+.visit-record-results { overflow-y: auto; min-height: 100px; overscroll-behavior: contain; border-top: 1px solid var(--line); }
+.app-shell.app-shell .appointment-form .visit-record-result { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; padding: 16px 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; text-align: left; }
+.visit-record-result > span:first-child { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.visit-record-result strong { font-size: 15px; font-weight: 600; }
+.visit-record-result small { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.visit-record-result-status { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.app-shell.app-shell .appointment-form .visit-record-result:hover, .app-shell.app-shell .appointment-form .visit-record-result[aria-pressed='true'] { background: var(--secondary); }
+.app-shell.app-shell .appointment-form .visit-record-result:disabled { opacity: .5; cursor: not-allowed; }
+.visit-record-empty { padding: 24px 12px; text-align: center; font-size: 14px; }
+.visit-record-empty p { color: var(--muted); font-size: 13px; }
+.visit-record-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.visit-record-footer > div { display: flex; gap: 8px; }
+.app-shell.app-shell .appointment-form .visit-record-footer button { border: 1px solid var(--line); min-width: 80px; white-space: nowrap; }
+.visit-record-footer button:disabled { opacity: .4; cursor: default; }
+@media (max-width: 600px) {
+  .visit-record-dialog-inner { padding: 20px; gap: 14px; }
+  .visit-record-heading h2 { font-size: 21px; }
+  .visit-record-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .visit-record-filters label:last-child { grid-column: 1 / -1; }
+  .app-shell.app-shell .appointment-form .visit-record-result { flex-wrap: wrap; gap: 8px; }
+}

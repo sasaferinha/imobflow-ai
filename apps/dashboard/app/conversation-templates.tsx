@@ -1,4 +1,5 @@
 "use client";
+import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 import { useState } from "react";
 import { announceDashboardChange } from "@/lib/dashboard-sync";
 type Template = {

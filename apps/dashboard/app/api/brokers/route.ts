@@ -22,7 +22,7 @@ async function getBrokers() {
       supabaseRequest<Array<{ seat_limit: number }>>(`account_companies?company_id=eq.${encodeURIComponent(account.companyId)}&select=seat_limit&limit=1`),
       supabaseRequest<Array<{ slug: string }>>(`companies?id=eq.${encodeURIComponent(account.companyId)}&select=slug&limit=1`),
     ]);
-    return NextResponse.json({ data: brokers, brokerLimit: company[0]?.seat_limit || 3, publicContactPath: publicRows[0] ? `/imobiliaria/${encodeURIComponent(publicRows[0].slug)}` : null });
+    return NextResponse.json({ data: brokers, brokerLimit: company[0]?.seat_limit || 5, publicContactPath: publicRows[0] ? `/imobiliaria/${encodeURIComponent(publicRows[0].slug)}` : null });
   } catch { return NextResponse.json({ error: 'Não foi possível carregar a equipe.' }, { status: 503 }); }
 }
 
@@ -44,7 +44,7 @@ async function createBroker(request: NextRequest) {
     } });
     if (!rows[0]) throw new Error('empty_broker');
     return NextResponse.json({ data: rows[0] }, { status: 201 });
-  } catch { return NextResponse.json({ error: 'Não foi possível cadastrar. O corretor pode já existir ou o plano Basic atingiu o limite de três corretores.' }, { status: 409 }); }
+  } catch { return NextResponse.json({ error: 'Não foi possível cadastrar. Confira se o corretor já existe ou se o limite de corretores do plano foi atingido.' }, { status: 409 }); }
 }
 
 async function updateOwnEmail(request: NextRequest) {

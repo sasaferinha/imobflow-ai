@@ -1,4 +1,6 @@
-export type DemoMessage = { id: string; side: 'incoming' | 'outgoing'; text: string; time: string; images?: string[]; propertyTitle?: string; deliveryStatus?: 'pending'|'sent'|'delivered'|'read'|'failed'; deliveryError?:string; sender?:string;canRetry?:boolean;attempts?:number;nextAttemptAt?:string;attendanceMode?:'automatic'|'human'|'paused';assignedBrokerId?:string|null };
+import type { ConversationAttendanceSummary } from './conversations';
+
+export type DemoMessage = { id: string; side: 'incoming' | 'outgoing'; text: string; time: string; images?: string[]; audios?: string[]; propertyTitle?: string; deliveryStatus?: 'pending'|'sent'|'delivered'|'read'|'failed'; deliveryError?:string; sender?:string;canRetry?:boolean;attempts?:number;nextAttemptAt?:string;attendanceMode?:ConversationAttendanceSummary['attendanceMode'];assignedBrokerId?:string|null };
 export type DemoContact = {
   id: string; name: string; initials: string; tone: number; category: string; style: string;
   goal: string; propertyType: string; region: string; budget: string; rooms: string;
@@ -120,7 +122,7 @@ export const demoContacts: DemoContact[] = [
 
 export type DemoConversationState = {
   selectedId: string;
-  threads: Record<string, { messages: DemoMessage[]; draft: string; unread: number; humanMode: boolean; assignedTo?: string; assignedBrokerId?: string | null; revision?: number }>;
+  threads: Record<string, { messages: DemoMessage[]; draft: string; unread: number; humanMode: boolean; assignedTo?: string; assignedBrokerId?: string | null; revision?: number; attendance?: ConversationAttendanceSummary | null }>;
 };
 export type DemoConversationAction =
   | { type: 'select'; id: string }
@@ -129,7 +131,7 @@ export type DemoConversationAction =
   | { type: 'share-property'; id: string; messageId: string; time: string; text: string; images: string[]; propertyTitle: string }
   | { type: 'assign'; id: string; assignedTo: string }
   | { type: 'sync'; contacts: Array<{ id: string; unread?: number }> }
-  | { type: 'hydrate'; contacts: Array<{ id: string; messages: DemoMessage[]; assignedTo?: string | null; assignedBrokerId?: string | null; revision?: number }> };
+  | { type: 'hydrate'; merge?: boolean; contacts: Array<{ id: string; messages: DemoMessage[]; assignedTo?: string | null; assignedBrokerId?: string | null; revision?: number; attendance?: ConversationAttendanceSummary | null }> };
 export function createDemoConversationState(): DemoConversationState {
   return { selectedId: demoContacts[0].id, threads: Object.fromEntries(demoContacts.map(contact => [contact.id, { messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false }])) };
 }
@@ -143,7 +145,13 @@ export function demoConversationReducer(state: DemoConversationState, action: De
     for (const contact of action.contacts) {
       const current = threads[contact.id] || { messages: [], draft: '', unread: 0, humanMode: false };
       if (contact.revision !== undefined && (current.revision || 0) > contact.revision) continue;
-      threads[contact.id] = { ...current, messages: contact.messages,
+      const messages = action.merge ? [...new Map([...current.messages, ...contact.messages].map(message => [message.id, message])).values()].sort((a, b) => {
+        const left = (a as DemoMessage & { createdAt?: string }).createdAt;
+        const right = (b as DemoMessage & { createdAt?: string }).createdAt;
+        return left && right ? left.localeCompare(right) || a.id.localeCompare(b.id) : left ? -1 : right ? 1 : 0;
+      }) : contact.messages;
+      threads[contact.id] = { ...current, messages,
+        ...(contact.attendance === undefined ? {} : { attendance: contact.attendance }),
         ...(contact.revision === undefined ? {} : { revision: contact.revision, assignedTo: contact.assignedTo || undefined,
           assignedBrokerId: contact.assignedBrokerId, humanMode: Boolean(contact.assignedTo) }) };
     }

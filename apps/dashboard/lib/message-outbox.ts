@@ -1,13 +1,26 @@
-import { supabaseServiceRequest as db } from "./supabase";
-import { configuredMetaWhatsAppConnections } from "./meta-whatsapp";
+import { supabaseServiceRequest } from "./supabase";
+import { loadMetaWhatsAppConnectionForCompany } from "./meta-whatsapp-connections";
+
+const MAX_SEND_ATTEMPTS = 3;
+const BASE_RETRY_MS = 30_000;
+
+const db = <T>(path: string, options: Parameters<typeof supabaseServiceRequest>[1] = {}) =>
+  supabaseServiceRequest<T>(path, { ...options, timeoutMs: 4000 });
+
+function scheduleRetry(attempts: number) {
+  const boundedAttempts = Math.max(0, Math.min(attempts, MAX_SEND_ATTEMPTS));
+  return new Date(Date.now() + BASE_RETRY_MS * 2 ** boundedAttempts).toISOString();
+}
+
 export function retryableDelivery(status: number, code: number | null) {
   return (
     ![130497, 190, 131047, 131026, 131031].includes(code || 0) &&
     (status === 429 || (status >= 500 && status <= 599))
   );
 }
-export async function sendQueuedMessage(companyId: string, id: string) {
-  const claimed = await db<boolean>("rpc/claim_outbox_message", {
+
+export async function sendQueuedMessage(companyId: string, id: string, deadline = Date.now() + 45000) {
+  const claimed = await db<boolean>("rpc/claim_outbox_message_v2", {
     method: "POST",
     body: { p_company_id: companyId, p_id: id },
   });
@@ -17,6 +30,9 @@ export async function sendQueuedMessage(companyId: string, id: string) {
   let errorCode: number | null = null;
   let providerId: string | null = null;
   let retryAt: string | null = null;
+  let attempts = 0;
+  let providerAttempted = false;
+
   try {
     const [outbox] = await db<
       Array<{
@@ -31,9 +47,12 @@ export async function sendQueuedMessage(companyId: string, id: string) {
     >(
       `message_outbox?${filter}&select=conversation_id,attempts,template_payload&limit=1`,
     );
+    attempts = outbox.attempts;
+
     const [message] = await db<Array<{ content: string }>>(
       `messages?${filter}&select=content&limit=1`,
     );
+
     const [conversation] = await db<
       Array<{
         external_conversation_id: string;
@@ -42,20 +61,16 @@ export async function sendQueuedMessage(companyId: string, id: string) {
     >(
       `conversations?company_id=eq.${companyId}&id=eq.${outbox.conversation_id}&select=external_conversation_id,phone_number_id&limit=1`,
     );
-    const connections = configuredMetaWhatsAppConnections().filter(
-      (c) => c.enabled && c.companyId === companyId,
-    );
+
+    const connections = await loadMetaWhatsAppConnectionForCompany(companyId);
+    const activeConnections = connections.filter((connection) => connection.enabled);
     const connection = conversation.phone_number_id
-      ? connections.find(
-          (c) => c.phoneNumberId === conversation.phone_number_id,
-        )
-      : connections.length === 1
-        ? connections[0]
+      ? activeConnections.find((c) => c.phoneNumberId === conversation.phone_number_id)
+      : activeConnections.length === 1
+        ? activeConnections[0]
         : undefined;
-    const phone = conversation.external_conversation_id.replace(
-      /^whatsapp:/,
-      "",
-    );
+
+    const phone = conversation.external_conversation_id.replace(/^whatsapp:/, "");
     if (!connection?.accessToken || !/^\d{5,20}$/.test(phone)) {
       state = "failed";
       errorCode = 190;
@@ -83,8 +98,17 @@ export async function sendQueuedMessage(companyId: string, id: string) {
             },
           }
         : { type: "text", text: { body: message.content, preview_url: false } };
+
+      // Leave time for the provider timeout and both receipt persistence tries.
+      if (Date.now() + 24000 > deadline) throw new Error("Orçamento de envio esgotado.");
+      const marked = await db<boolean>("rpc/mark_outbox_provider_attempt", {
+        method: "POST",
+        body: { p_company_id: companyId, p_id: id, p_attempt: attempts },
+      });
+      if (!marked) return;
+      providerAttempted = true;
       const response = await fetch(
-        `https://graph.facebook.com/${connection.apiVersion}/${connection.phoneNumberId}/messages`,
+      `https://graph.facebook.com/${connection.apiVersion}/${connection.phoneNumberId}/messages`,
         {
           method: "POST",
           redirect: "error",
@@ -101,10 +125,16 @@ export async function sendQueuedMessage(companyId: string, id: string) {
           }),
         },
       );
+
       const receipt = (await response.json().catch(() => ({}))) as {
         messages?: Array<{ id?: string }>;
-        error?: { code?: number };
+        error?: { code?: number; error_subcode?: number; fbtrace_id?: string };
       };
+
+      const responseErrorCode = Number.isSafeInteger(receipt.error?.code)
+        ? receipt.error!.code!
+        : null;
+
       if (
         response.ok &&
         typeof receipt.messages?.[0]?.id === "string" &&
@@ -114,59 +144,79 @@ export async function sendQueuedMessage(companyId: string, id: string) {
         providerId = receipt.messages[0].id;
         state = "sent";
       } else if (!response.ok) {
-        errorCode = Number.isSafeInteger(receipt.error?.code)
-          ? receipt.error!.code!
-          : null;
+        errorCode = responseErrorCode;
+        console.error("whatsapp_send_failed", {
+          status: response.status,
+          code: errorCode,
+          subcode: Number.isSafeInteger(receipt.error?.error_subcode)
+            ? receipt.error!.error_subcode
+            : null,
+          trace: typeof receipt.error?.fbtrace_id === "string"
+            ? receipt.error.fbtrace_id.slice(0, 80)
+            : null,
+        });
         state =
-          retryableDelivery(response.status, errorCode) && outbox.attempts < 3
+          retryableDelivery(response.status, errorCode) &&
+          (response.status === 429 || errorCode !== null) &&
+          attempts < MAX_SEND_ATTEMPTS
             ? "pending"
-            : "failed";
-        if (state === "pending")
-          retryAt = new Date(
-            Date.now() + 30000 * 2 ** (outbox.attempts - 1),
-          ).toISOString();
+            : response.status >= 500 && errorCode === null ? "uncertain" : "failed";
+        if (state === "pending") retryAt = scheduleRetry(attempts);
+      } else if (responseErrorCode) {
+        errorCode = responseErrorCode;
+        console.error("whatsapp_send_failed", { status: response.status, code: errorCode, subcode: null, trace: null });
+        state = "failed";
+      } else {
+        console.error("whatsapp_send_no_receipt", { status: response.status });
+        // A success without a receipt may already have delivered. Never send twice.
+        state = "uncertain";
       }
     }
   } catch {
-    /* Ambiguous network outcome is never resent automatically. */
+    state = providerAttempted ? "uncertain" : attempts < MAX_SEND_ATTEMPTS ? "pending" : "failed";
+    if (state === "pending") retryAt = scheduleRetry(attempts);
   }
-  await db(`messages?${filter}`, {
-    method: "PATCH",
-    body: {
-      delivery_status:
-        state === "sent" ? "sent" : state === "pending" ? "pending" : "failed",
-      delivery_error_code: errorCode,
-      ...(providerId ? { external_message_id: providerId } : {}),
-    },
-  });
-  await db(`message_outbox?${filter}`, {
-    method: "PATCH",
-    body: {
-      state,
-      updated_at: new Date().toISOString(),
-      ...(retryAt ? { next_attempt_at: retryAt } : {}),
-    },
-  });
+
+  // Persist the receipt and queue state in one transaction. Retrying this RPC
+  // is idempotent; retrying the provider POST after a timeout is not.
+  for (let persistenceAttempt = 0; persistenceAttempt < 2; persistenceAttempt++) {
+    try {
+      await db("rpc/finish_outbox_attempt", {
+        method: "POST",
+        body: { p_company_id: companyId, p_id: id, p_attempt: attempts,
+          p_state: state, p_error: errorCode, p_provider_id: providerId, p_retry_at: retryAt },
+      });
+      return;
+    } catch {
+      if (persistenceAttempt === 1) throw new Error("Não foi possível registrar o resultado do envio.");
+    }
+  }
 }
+
 export async function sweepMessageOutbox(companyId: string, deadline: number) {
-  const stale = await db<Array<{ id: string }>>(
-    `message_outbox?company_id=eq.${companyId}&state=eq.sending&updated_at=lt.${new Date(Date.now() - 120000).toISOString()}&select=id&limit=100`,
-  );
-  for (const row of stale) {
-    await db(
-      `message_outbox?company_id=eq.${companyId}&id=eq.${row.id}&state=eq.sending`,
-      { method: "PATCH", body: { state: "uncertain" } },
-    );
-    await db(
-      `messages?company_id=eq.${companyId}&id=eq.${row.id}&delivery_status=eq.pending`,
-      { method: "PATCH", body: { delivery_status: "failed" } },
-    );
-  }
+  await db("rpc/recover_stale_outbox", { method: "POST", body: { p_company_id: companyId } });
+
   const rows = await db<Array<{ id: string }>>(
     `message_outbox?company_id=eq.${companyId}&state=eq.pending&next_attempt_at=lte.${new Date().toISOString()}&order=next_attempt_at.asc&select=id&limit=20`,
   );
   for (const row of rows) {
-    if (Date.now() + 13000 > deadline) break;
-    await sendQueuedMessage(companyId, row.id);
+    if (Date.now() + 44000 > deadline) break;
+    await sendQueuedMessage(companyId, row.id, deadline);
   }
+}
+
+/** Scheduled server worker only. Tenant identity always comes from trusted queue rows. */
+export async function recoverMessageOutbox(deadline: number) {
+  const recovered = await db<number>("rpc/recover_stale_outbox", { method: "POST", body: { p_company_id: null } });
+  const rows = await db<Array<{ id: string; company_id: string }>>(
+    `message_outbox?state=eq.pending&next_attempt_at=lte.${new Date().toISOString()}&order=next_attempt_at.asc,id.asc&select=id,company_id&limit=20`,
+  );
+  let processed = 0;
+  let failed = 0;
+  for (const row of rows) {
+    if (Date.now() + 44000 > deadline) break;
+    try { await sendQueuedMessage(row.company_id, row.id, deadline); processed++; }
+    catch { failed++; }
+  }
+  return { recovered, processed, failed, remaining: rows.length - processed - failed };
 }

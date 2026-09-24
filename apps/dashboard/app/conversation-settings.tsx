@@ -1,4 +1,5 @@
 "use client";
+import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 import { useState } from "react";
 import { defaultBusinessHours, type BusinessHours } from "@/lib/business-hours";
 export function ConversationSettings() {
@@ -52,6 +53,7 @@ export function ConversationSettings() {
       }}
     >
       <summary>Horário de atendimento</summary>
+      <p>O bot faz o cadastro 24 horas por dia. Estes horários são da equipe de corretores. Fora deles, o aviso de indisponibilidade aparece ao concluir o cadastro ou ao solicitar atendimento humano.</p>
       <fieldset disabled={!ready || busy}>
         <legend>Configuração da empresa</legend>
         <label>

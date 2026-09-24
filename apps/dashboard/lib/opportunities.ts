@@ -20,6 +20,17 @@ function actor() {
 export function listOpportunities(offset = 0) {
   return supabaseServiceRequest<Opportunity[]>('rpc/list_opportunities', { method: 'POST', body: { ...actor(), p_offset: offset } });
 }
+export type ReactivationLead = {
+  id: string; name: string; goal: string | null; propertyType: string | null;
+  region: string | null; budgetMax: number | null; assignedTo: string | null;
+  lastContactAt: string | null; createdAt: string; inactivityDays: number;
+};
+export async function listReactivationLeads(offset = 0) {
+  const rows = await supabaseServiceRequest<ReactivationLead[]>('rpc/list_reactivation_leads', {
+    method: 'POST', body: { ...actor(), p_offset: offset },
+  });
+  return { data: rows.slice(0, 50), hasMore: rows.length > 50 };
+}
 export type OpportunityDraft = { phone: string; name: string; title: string; district: string; city: string; price: number; bedrooms: number; purpose: string };
 export function manualWhatsAppDraft(draft: OpportunityDraft) {
   const phone = whatsappNumber(draft.phone);

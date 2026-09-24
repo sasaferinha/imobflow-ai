@@ -1,4 +1,6 @@
-import { type InterestProfile } from "./qualification";
+import { financingAnswer, qualificationQuestion, qualificationSummary, OPTIONAL_PREFERENCES_QUESTION, type InterestProfile } from "./qualification";
+import { naturalPreferences } from './natural-qualification';
+import { confirmsSummary } from './conversation-understanding';
 const normalize = (s: string) =>
   s
     .normalize("NFD")
@@ -21,6 +23,43 @@ export function requestsHuman(message: string) {
   });
 }
 export function basicPreferences(
+  message: string,
+  current: InterestProfile,
+): InterestProfile {
+  const answer = normalize(message).replace(/[.!]+$/, '');
+  const question = qualificationQuestion(current);
+  if (question === qualificationSummary(current)) {
+    if (confirmsSummary(message)) return { summaryConfirmed: true, correctionRequested: false };
+    if (/^(nao|errado|incorreto|nao esta (?:certo|correto)|(?:esta |isso esta )?errado)$/.test(answer)) return { correctionRequested: true };
+  }
+  if (question === OPTIONAL_PREFERENCES_QUESTION && /^(nao|nenhuma?|nada|nao sei|ainda nao sei|tanto faz|sem preferencia|nao tenho preferencia|pode seguir|podemos seguir)$/.test(answer)) return { preferencesRecorded: true };
+  // An undecided answer is valid at the financing step, not a hypothetical search.
+  if (financingAnswer(message, current) === 'Indeciso') return { financingIntent: 'Indeciso' };
+  if (message.length > 4000 || /\b(ignore|ignora|instrucoes|instrucao|sistema|talvez|exemplo|suponha)\b/.test(normalize(message))) return {};
+  const natural = naturalPreferences(message, current);
+  // The narrow legacy parser supplies bare prices and lists at their own step.
+  // Do not let its free-text location fallback turn unrelated prose into a city.
+  const strict = strictPreferences(message, current);
+  delete strict.city;
+  if (!/[,;]/.test(message)) delete strict.regions;
+  const patch = { ...strict, ...natural };
+  if (question === OPTIONAL_PREFERENCES_QUESTION && message.trim() && !message.includes('?') && !/\b(como|qual|ignore|instrucoes)\b/.test(answer)) {
+    patch.preferencesRecorded = true;
+    patch.preferenceNotes = message.trim().slice(0, 500);
+  }
+  const choice = normalize(message);
+  // Multiple transaction alternatives are not a confirmed choice.
+  if(/\bou\b/.test(choice) && /\b(alugar|aluguel|locacao|locar)\b/.test(choice) && /\b(financiar|financiamento)\b/.test(choice)) delete patch.purpose;
+  const financingIntent=financingAnswer(message,{...current,...patch});
+  if(financingIntent === 'Sim' && !current.purpose && !patch.purpose) patch.purpose='Venda';
+  if(financingIntent)patch.financingIntent=financingIntent;
+  if (Object.keys(patch).length && (current.summaryConfirmed || current.correctionRequested)) {
+    patch.summaryConfirmed = false;
+    patch.correctionRequested = false;
+  }
+  return patch;
+}
+function strictPreferences(
   message: string,
   current: InterestProfile,
 ): InterestProfile {
@@ -56,7 +95,7 @@ export function basicPreferences(
     text.length >= 2 &&
     text.length <= 120 &&
     /^[\p{L}\p{M} .,'/-]+$/u.test(text) &&
-    !/\b(nao|sei|talvez|qualquer|ignora|ignore|quero|prefiro|obrigad|ola|oi|ok|sim|bom dia|boa tarde|boa noite)\b/.test(
+    !/\b(nao|sei|talvez|qualquer|ignora|ignore|quero|prefiro|financiar|financiamento|financiada|financiado|obrigad|ola|oi|ok|sim|bom dia|boa tarde|boa noite)\b/.test(
       n,
     );
   if (

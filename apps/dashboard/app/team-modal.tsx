@@ -1,9 +1,11 @@
 'use client';
+import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 
 import PasswordInput from './password-input';
 
 import { useEffect, useState, type FormEvent } from 'react';
 import styles from './team-modal.module.css';
+import { planNameForLimit } from '@/lib/plans';
 
 type Broker = {
   id: string;
@@ -16,7 +18,7 @@ type Broker = {
 
 export default function TeamModal({ close, notify }: { close: () => void; notify: (message: string) => void }) {
   const [team, setTeam] = useState<Broker[]>([]);
-  const [limit, setLimit] = useState(3);
+  const [limit, setLimit] = useState(5);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -33,7 +35,7 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
         if (!response.ok) throw new Error(result.error || 'Não foi possível carregar a equipe.');
         if (active) {
           setTeam(result.data || []);
-          setLimit(result.brokerLimit || 3);
+          setLimit(result.brokerLimit || 5);
           setPublicContactPath(result.publicContactPath || '');
         }
       })
@@ -119,7 +121,7 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
           <button type="button" aria-label="Fechar" onClick={close}>×</button>
         </div>
 
-        <p className={styles.plan}><strong>Plano Basic</strong><span>{brokers.length} de {limit} corretores ativos</span></p>
+        <p className={styles.plan}><strong>Plano {planNameForLimit(limit)}</strong><span>{brokers.length} de {limit} corretores ativos</span></p>
         {publicContactPath && <p className={styles.empty}><a href={publicContactPath} target="_blank" rel="noopener noreferrer">Abrir formulário público da empresa ↗</a><br/>Compartilhe esse endereço para receber clientes somente nesta imobiliária.</p>}
 
         {administrator && !administrator.email && (
@@ -153,7 +155,7 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
           <label>Senha inicial<PasswordInput name="password" required minLength={8} maxLength={128} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" /></label>
           <div className="modal-actions">
             <button type="button" onClick={close}>Fechar</button>
-            <button className="primary-button" type="submit" disabled={saving || loading || !!changing || brokers.length >= limit}>{saving ? 'Cadastrando…' : brokers.length >= limit ? 'Limite do Basic atingido' : 'Cadastrar corretor'}</button>
+            <button className="primary-button" type="submit" disabled={saving || loading || !!changing || brokers.length >= limit}>{saving ? 'Cadastrando…' : brokers.length >= limit ? 'Limite do plano atingido' : 'Cadastrar corretor'}</button>
           </div>
         </form>
       </article>

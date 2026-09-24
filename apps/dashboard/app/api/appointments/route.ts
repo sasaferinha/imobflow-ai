@@ -26,8 +26,12 @@ async function handlePOST(request: NextRequest) {
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const body = await request.json() as Record<string, unknown>;
+    for (const key of ['leadId','propertyId']) {
+      if (body[key] !== undefined && (typeof body[key] !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body[key] as string))) return NextResponse.json({ error: 'Seleção inválida. Escolha o cliente e o imóvel novamente.' }, { status: 400 });
+    }
     const input: AppointmentInput = {
       date: clean(body.date, 10), time: clean(body.time, 5), name: clean(body.name), property: clean(body.property),
+      ...(body.leadId ? { leadId: String(body.leadId) } : {}), ...(body.propertyId ? { propertyId: String(body.propertyId) } : {}),
       broker: clean(body.broker) || 'Marina Oliveira', status: body.status === 'Confirmada' ? 'Confirmada' : 'Aguardando', color: clean(body.color, 30) || 'amber',
     };
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !/^\d{2}:\d{2}$/.test(input.time) || !input.name || !input.property) {

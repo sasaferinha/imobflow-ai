@@ -1,5 +1,7 @@
 # Webhook do WhatsApp Cloud API
 
+> Histórico: este roteiro descreve a primeira configuração de teste e não deve ser seguido para reconectar números em produção. O fluxo atual usa conexões persistidas por empresa, envio pelo painel e recuperação de mensagens. Consulte [Operação do WhatsApp — 24/09/2026](operacao-whatsapp-2026-09-24.md) antes de alterar Meta, Vercel ou Supabase.
+
 O endpoint do ImobFlow para receber eventos da Meta é:
 
 `https://imobflow-ai-rosy.vercel.app/api/integrations/meta/whatsapp`

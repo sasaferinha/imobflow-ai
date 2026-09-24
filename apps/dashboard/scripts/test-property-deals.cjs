@@ -20,6 +20,10 @@ async function sql(parts, ...values) {
 }
 async function supabaseRequest(path, options = {}) {
   calls.push('SUPABASE ' + (options.method || 'GET') + ' ' + path);
+  if (path.startsWith('broker_accounts?')) {
+    assert.ok(path.includes('company_id=eq.company&role=eq.broker&active=eq.true'));
+    return [{ name: 'Novo corretor' }];
+  }
   if (options.method === 'POST') { lastPropertyPayload = options.body; return [savedProperty]; }
   if (options.method === 'PATCH') return [savedProperty];
   if (path.startsWith('appointments?')) return [{ id: 'a1', scheduled_at: '2026-09-09T01:30:00Z', created_at: date }];
@@ -43,6 +47,8 @@ vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, pr
   assert.equal(report.averageTicket, 100000);
   assert.equal(report.brokers[0].sold, 100000);
   assert.equal(report.brokers[0].salesCount, 1);
+  assert.equal(report.brokers.find(item => item.broker === 'Novo corretor').goal, 0);
+  assert.equal(report.brokers.find(item => item.broker === 'Novo corretor').salesCount, 0);
   assert.equal(report.sales.length, 2);
   assert.equal(report.sales[0].dealType, 'Venda');
   assert.equal(report.sales[1].dealType, 'Aluguel');
@@ -67,5 +73,6 @@ vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, pr
   assert.equal(appointments[0].date, '2026-09-08');
   assert.equal(appointments[0].time, '22:30');
   assert.equal((await api.updateProperty('p2', propertyInput)).propertyType, 'Apartamento');
+  await require('./test-property-api.cjs')();
   console.log('PASS: rental/sale separation, legacy records, broker totals, history query filters, rental mapping, sold status, no demo seeding for automations.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -2,7 +2,7 @@
 
 ## Estado da entrega
 
-Migrações de recuperação/gestão de equipe e Basic com três corretores aplicadas ao Supabase de produção e verificadas com testes transacionais revertidos. Baseline Neon aplicada por conexão autenticada, fora das requisições do site. Publicação da interface em andamento; verificação final de versão pendente.
+Migrações de recuperação/gestão de equipe e Basic com três corretores aplicadas ao Supabase de produção e verificadas com testes transacionais revertidos. Baseline Neon aplicada por conexão autenticada, fora das requisições do site. Interface publicada na Vercel: `6f2714b350364e875077d7c5c3bdeb1951f5ccfb`, confirmada por status de publicação e `/api/version`.
 
 Contagens preservadas após migração e testes: 3 empresas, 4 contas, 3 imóveis. Todas as empresas existentes agora têm limite de 3 corretores. Nenhum funcionário foi desativado. Dois administradores legados não possuem e-mail; precisam informar um endereço confirmado para usar o login por e-mail. A validação de e-mail das funções existentes está correta; o aparente escape duplicado era representação JSON.
 
@@ -29,7 +29,11 @@ Domínio próprio e envio de e-mail foram explicitamente adiados pelo usuário. 
 - Migração Neon aplicada duas vezes no banco isolado: primeira instalação e repetição idempotente.
 - Prévia local `/painel` respondeu HTTP 200. Testes visuais/interativos pelo navegador não foram possíveis por falha do controle do navegador.
 
-Limitações: contratos de API usam banco simulado; testes SQL foram executados também no Supabase real, sem persistir fixtures. Concorrência entre conexões independentes, restauração de backup e testes visuais ainda não foram comprovados. O controle do navegador continua falhando. Não houve envio para clientes reais.
+Teste funcional adicional executado pelas APIs do site publicado com uma empresa sintética e sessões independentes de administrador e corretor: ativação com chave, limite de três, bloqueio do quarto cadastro, separação dos dois logins, bloqueio de gerenciamento da equipe e de metas para corretor, cadastro/exclusão de imóvel pelo corretor visível para administrador, desativação com revogação da sessão aberta, reativação sem reviver cookie antigo, recuperação administrativa, uso único do link, recusa de senha antiga, login com senha nova e troca da própria senha. A recuperação por e-mail corretamente informa indisponibilidade enquanto o serviço estiver adiado.
+
+Todos os cadastros sintéticos e a licença temporária foram removidos do Supabase; seis linhas de automação da mesma empresa de teste foram removidas do Neon. Contagens originais confirmadas: 3 empresas, 4 contas e 3 imóveis. Nenhum cliente real recebeu mensagens ou teve suas credenciais alteradas.
+
+Limitações: concorrência sob carga entre conexões independentes, restauração de backup e testes visuais ainda não foram comprovados. O controle do navegador continua falhando. Teste funcional HTTP não equivale à conferência visual das telas.
 
 Verificação adicional: versão de autenticação impede que um login anterior à troca de senha/e-mail ou desativação/reativação recrie sessão. Alteração de e-mail e emissão administrativa de recuperação verificam as credenciais sob trava. A criação da quarta vaga e reativação acima do limite foram recusadas no teste do banco real. Todos os testes automatizados do dashboard agora são exigidos pelo comando de publicação.
 
@@ -68,4 +72,4 @@ O fluxo em `integrations/n8n/04-immediate-property-offer.json` continua inativo.
 
 ### 7. Critério de liberação
 
-Ainda não afirmar que o SaaS está 100% pronto: faltam publicação coordenada, teste completo com duas empresas e dois papéis, integração real de mensagens, validação de cópias recuperáveis e tratamento de crescimento. Nenhuma compra, cobrança ou contratação foi realizada.
+Não afirmar que o SaaS está 100% pronto: publicação e testes funcionais de acesso foram concluídos, mas faltam integração real de mensagens, validação de cópias recuperáveis, conferência visual e tratamento de crescimento. O isolamento entre duas empresas foi exercitado no teste SQL; o teste HTTP usou uma empresa sintética com dois papéis. Nenhuma compra, cobrança ou contratação foi realizada.

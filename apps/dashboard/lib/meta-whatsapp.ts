@@ -19,7 +19,7 @@ export type IncomingWhatsAppMessage = {
   text: string;
   contactName: string | null;
   occurredAt: string | null;
-  media: { id: string; mimeType: string; caption: string | null } | null;
+  media: { id: string; mimeType: string; caption: string | null; kind?: 'image' | 'audio' } | null;
   accessToken: string | null;
   apiVersion: string;
 };
@@ -71,7 +71,7 @@ export function verifyMetaWebhookToken(token: string | null, expected = process.
   return received.length === comparison.length && timingSafeEqual(received, comparison);
 }
 
-function readableText(message: Record<string, unknown>) {
+export function readableText(message: Record<string, unknown>) {
   if (message.type === 'text' && message.text && typeof message.text === 'object') {
     const body = (message.text as Record<string, unknown>).body;
     return typeof body === 'string' ? body.trim().slice(0, 4000) : '';
@@ -83,13 +83,21 @@ function readableText(message: Record<string, unknown>) {
   return '';
 }
 
-function incomingImage(message: Record<string, unknown>) {
+export function incomingImage(message: Record<string, unknown>) {
   if (message.type !== 'image' || !message.image || typeof message.image !== 'object') return null;
   const image = message.image as Record<string, unknown>;
   const id = typeof image.id === 'string' ? image.id.trim().slice(0, 255) : '';
   const mimeType = typeof image.mime_type === 'string' ? image.mime_type.trim().toLowerCase().slice(0, 100) : '';
   const caption = typeof image.caption === 'string' ? image.caption.trim().slice(0, 4000) || null : null;
   return id ? { id, mimeType, caption } : null;
+}
+
+export function incomingAudio(message: Record<string, unknown>) {
+  if (message.type !== 'audio' || !message.audio || typeof message.audio !== 'object') return null;
+  const audio = message.audio as Record<string, unknown>;
+  const id = typeof audio.id === 'string' ? audio.id.trim().slice(0, 255) : '';
+  const mimeType = typeof audio.mime_type === 'string' ? audio.mime_type.trim().toLowerCase().slice(0, 100) : '';
+  return id ? { id, mimeType, caption: null, kind: 'audio' as const } : null;
 }
 
 export function parseIncomingWhatsAppMessages(payload: unknown, connections: MetaWhatsAppConnection[]): IncomingWhatsAppMessage[] {
@@ -118,8 +126,8 @@ export function parseIncomingWhatsAppMessages(payload: unknown, connections: Met
         const row = message as Record<string, unknown>;
         const phone = normalizePhone(String(row.from || ''));
         const externalMessageId = typeof row.id === 'string' ? row.id.slice(0, 255) : '';
-        const media = incomingImage(row);
-        const text = readableText(row) || media?.caption || (media ? '📷 Foto recebida' : '');
+        const media: IncomingWhatsAppMessage['media'] = incomingAudio(row) || incomingImage(row);
+        const text = readableText(row) || media?.caption || (media?.kind === 'audio' ? 'Áudio recebido' : media ? '📷 Foto recebida' : '');
         if (!phone || !externalMessageId || !text) continue;
         const unixSeconds = typeof row.timestamp === 'string' && /^\d+$/.test(row.timestamp) ? Number(row.timestamp) : NaN;
         if(Number.isFinite(unixSeconds)&&(unixSeconds<0||unixSeconds*1000>Date.now()+300000))continue;

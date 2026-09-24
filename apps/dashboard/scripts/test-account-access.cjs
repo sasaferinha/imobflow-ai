@@ -168,14 +168,164 @@ async function run(){
   actor.role='owner';
   assert.equal((await performance.PATCH(req({month:'2026-09'}))).status,200);assert.equal(wroteGoals,true);
 
-  const login=load('app/api/account/[action]/route.ts',{...deps,'@/lib/accounts':{...auth,authenticate:async()=>({...actor,passwordVersion:'hash'}),issueSession:async()=> 'session'},'@/lib/admin-auth':{COOKIE_NAME:'legacy'}});
+  const login=load('app/api/account/[action]/route.ts',{...deps,'@/lib/password-recovery':{sendWelcomeEmail:async()=>assert.fail('login must not send a welcome email')},'@/lib/accounts':{...auth,authenticate:async()=>({...actor,passwordVersion:'hash'}),issueSession:async()=> 'session'},'@/lib/admin-auth':{COOKIE_NAME:'legacy'}});
   const loginData={email:'user@example.invalid',password:'12345678'};
   assert.equal((await login.POST(req(loginData),{params:Promise.resolve({action:'login'})})).status,401);
   assert.equal((await login.POST(req(loginData),{params:Promise.resolve({action:'login-admin'})})).status,200);
   actor.role='broker';
   assert.equal((await login.POST(req(loginData),{params:Promise.resolve({action:'login-admin'})})).status,401);
   assert.equal((await login.POST(req(loginData),{params:Promise.resolve({action:'login'})})).status,200);
+  const blockedAttempts=[];
+  let credentialChecks=0;
+  const blockedLogin=load('app/api/account/[action]/route.ts',{
+    ...deps,
+    '@/lib/request-security':{...security,consumeRateLimit:async(_request,bucket,limit,windowSeconds)=>{blockedAttempts.push({bucket,limit,windowSeconds});return false;}},
+    '@/lib/accounts':{...auth,authenticate:async()=>{credentialChecks++;return null;}},
+    '@/lib/password-recovery':{sendWelcomeEmail:async()=>{}},
+    '@/lib/admin-auth':{COOKIE_NAME:'legacy'},
+  });
+  for(const action of ['login','login-admin']) {
+    const response=await blockedLogin.POST(req(loginData),{params:Promise.resolve({action})});
+    assert.equal(response.status,429,`${action} must stop before password verification when throttled`);
+    assert.equal(response.body.error,'Muitas tentativas. Aguarde 15 minutos.');
+  }
+  assert.equal(credentialChecks,0);
+  assert.deepEqual(blockedAttempts,[
+    {bucket:'account-login',limit:20,windowSeconds:900},
+    {bucket:'account-login',limit:20,windowSeconds:900},
+  ]);
   console.log('PASS server-enforced administrator/broker login and owner-only goal changes');
+
+  const automationChanges=[];
+  const automation=load('app/api/automations/route.ts',{
+    ...deps,
+    '@/lib/admin-auth':{isAdminRequest:()=>true},
+    '@/lib/tenant-context':{currentAccount:()=>actor},
+    '@/lib/automation-rules':{isFlowId:id=>id==='followup'},
+    '@/lib/automations':{
+      automationSnapshot:async()=>({flows:[]}),
+      completeAutomationResult:async()=>{automationChanges.push('complete');},
+      prepareMatchMessage:async()=>({message:'Rascunho'}),
+      runAutomations:async()=>{automationChanges.push('run');return {processed:1};},
+      setAutomationActive:async()=>{automationChanges.push('toggle');},
+    },
+  },{process:{env:{DATABASE_URL:'mock-only'}}});
+  const automationRequest=body=>({...req(body),headers:{get:()=>null},nextUrl:{origin:'https://imobflow.test'}});
+  assert.equal((await automation.POST(automationRequest({action:'toggle',flowId:'followup',active:true}))).status,403);
+  assert.equal((await automation.POST(automationRequest({action:'run',flowId:'followup'}))).status,403);
+  assert.equal(automationChanges.length,0,'broker must not change or execute automations');
+  assert.equal((await automation.POST(automationRequest({action:'prepare-message',id:'22222222-2222-4222-8222-222222222222'}))).status,200);
+  assert.equal((await automation.POST(automationRequest({action:'complete',id:'22222222-2222-4222-8222-222222222222'}))).status,200);
+  actor.role='owner';
+  assert.equal((await automation.POST(automationRequest({action:'toggle',flowId:'followup',active:true}))).status,200);
+  assert.equal((await automation.POST(automationRequest({action:'run',flowId:'followup'}))).status,200);
+  assert.deepEqual(automationChanges,['complete','toggle','run']);
+
+  let deletedSales=0;
+  const sales=load('app/api/performance/sales/[id]/route.ts',{
+    ...deps,
+    '@/lib/admin-auth':{isAdminRequest:()=>true},
+    '@/lib/database':{deleteSale:async()=>{deletedSales++;return true;}},
+  });
+  const saleParams={params:Promise.resolve({id:'22222222-2222-4222-8222-222222222222'})};
+  actor.role='broker';
+  assert.equal((await sales.DELETE(req({},'DELETE'),saleParams)).status,403);
+  assert.equal(deletedSales,0);
+  actor.role='owner';
+  assert.equal((await sales.DELETE(req({},'DELETE'),saleParams)).status,200);
+  assert.equal(deletedSales,1);
+  console.log('PASS broker login throttling and owner-only automation controls and sale deletion');
+
+  const adminChecks=[];
+  const adminLogin=load('app/api/admin/login/route.ts',{
+    'next/server':next,
+    '@/lib/request-security':{...security,hasSafeRequestSize:()=>true},
+    '@/lib/admin-auth':{COOKIE_NAME:'legacy',adminSessionToken:()=> 'admin-session',isValidAdminPassword:value=>{adminChecks.push(value);return value==='correct-secret';}},
+  });
+  assert.equal((await adminLogin.POST(req({},'POST',false))).status,403);
+  for (const raw of ['{', 'null', '[]', 'true', '123', '"string"', '{}', '{"password":123}', '{"password":{}}']) {
+    assert.equal((await adminLogin.POST({...req({}),text:async()=>raw})).status,400,'malformed admin login must be a client error');
+  }
+  assert.equal((await adminLogin.POST(req({password:'x'.repeat(4097)}))).status,413,'body limit must work even without Content-Length');
+  assert.equal(adminChecks.length,0,'invalid input must not reach password validation');
+  assert.equal((await adminLogin.POST(req({password:'wrong-secret'}))).status,401);
+  assert.equal((await adminLogin.POST(req({password:'correct-secret'}))).status,200);
+  assert.equal(adminChecks.length,2,'only valid password submissions reach credential validation');
+  console.log('PASS administrative login rejects malformed JSON, invalid password types and oversized bodies');
+
+  const managementAttempts=[];
+  let managementAllowed=false,managementPasswordChecks=0,licenseWrites=0;
+  const managementSecurity={...security,hasSafeRequestSize:()=>true,consumeRateLimit:async(_request,bucket,limit,windowSeconds)=>{
+    managementAttempts.push({bucket,limit,windowSeconds});
+    return managementAllowed;
+  }};
+  const managementAuth={COOKIE_NAME:'legacy',adminSessionToken:()=> 'admin-session',isValidAdminPassword:value=>{
+    managementPasswordChecks++;
+    return value==='correct-secret';
+  }};
+  const limitedAdminLogin=load('app/api/admin/login/route.ts',{
+    'next/server':next,
+    '@/lib/request-security':managementSecurity,
+    '@/lib/admin-auth':managementAuth,
+  });
+  const licenses=load('app/api/licenses/route.ts',{
+    'next/server':next,
+    '@/lib/request-security':managementSecurity,
+    '@/lib/admin-auth':managementAuth,
+    '@/lib/accounts':{newToken:()=> 'a'.repeat(64),tokenHash:auth.tokenHash},
+    '@/lib/supabase':{supabaseRequest:async()=>{licenseWrites++;return true;}},
+    '@/lib/plans':{isPlanId:id=>id==='basic',plans:{basic:{brokers:5}}},
+  });
+  assert.equal((await limitedAdminLogin.POST(req({password:'correct-secret'}))).status,429);
+  assert.equal((await licenses.POST(req({managementPassword:'correct-secret',plan:'basic'}))).status,429);
+  assert.equal(managementPasswordChecks,0,'throttled requests must not check the shared secret');
+  assert.equal(licenseWrites,0,'throttled requests must not create licenses');
+  assert.deepEqual(managementAttempts,[
+    {bucket:'admin-management',limit:5,windowSeconds:900},
+    {bucket:'admin-management',limit:5,windowSeconds:900},
+  ]);
+  managementAllowed=true;
+  assert.equal((await limitedAdminLogin.POST(req({password:'correct-secret'}))).status,200);
+  const issuedLicense=await licenses.POST(req({managementPassword:'correct-secret',plan:'basic'}));
+  assert.equal(issuedLicense.status,200);
+  assert.equal(issuedLicense.body.seatLimit,5);
+  assert.equal(licenseWrites,1);
+  console.log('PASS legacy admin login and active license creation share a five-attempt management limit');
+
+  background=[];
+  let welcomeCalls=0, welcomeFailure=false;
+  const welcomeLogs=[];
+  const enrollment=load('app/api/account/[action]/route.ts',{
+    ...deps,
+    '@/lib/admin-auth':{COOKIE_NAME:'legacy'},
+    '@/lib/accounts':{...auth,issueSession:async()=> 'session'},
+    '@/lib/password-recovery':{
+      passwordRecoveryFailure:mail.passwordRecoveryFailure,
+      sendWelcomeEmail:async(account,metadata)=>{
+        welcomeCalls++;
+        assert.equal(account.email,'new@example.invalid');
+        assert.equal(metadata.company,'Company Test');
+        if(welcomeFailure) throw new Error('private provider response');
+      },
+    },
+  },{console:{...console,error:(...args)=>welcomeLogs.push(args)}});
+  database=async route=>{
+    assert.equal(route,'rpc/redeem_access_license');
+    return [{broker_id:'new-owner',company_id:'new-company',company:'Company Test',broker_name:'Test Owner',role:'owner'}];
+  };
+  const enrollmentData={company:'Company Test',name:'Test Owner',email:'new@example.invalid',password:'12345678',accessKey:'IMF-abcdefghijklmnopqrs'};
+  const enrollmentResponse=await enrollment.POST(req(enrollmentData),{params:Promise.resolve({action:'enroll'})});
+  assert.equal(enrollmentResponse.status,200);
+  assert.equal(welcomeCalls,0,'first login must complete without waiting for email delivery');
+  assert.equal(background.length,1,'exactly one post-response welcome email must be scheduled');
+  await background.shift()();
+  assert.equal(welcomeCalls,1);
+  welcomeFailure=true;
+  assert.equal((await enrollment.POST(req(enrollmentData),{params:Promise.resolve({action:'enroll'})})).status,200);
+  await background.shift()();
+  assert.equal(welcomeCalls,2);
+  assert.equal(JSON.stringify(welcomeLogs),'[["welcome_email_failed",{"category":"internal"}]]','background email failures must be caught without provider data');
+  console.log('PASS enrollment responds before welcome email delivery and safely records background failures');
 
   let tenant;
   const leads=load('app/api/leads/route.ts',{...deps,'@/lib/admin-auth':{},'@/lib/automations':{runAutomationsAfterEvent:async()=>{}},'@/lib/database':{createLead:async()=>({id:'private-record'})},'@/lib/request-security':{...security,hasSafeRequestSize:()=>true},'@/lib/tenant-context':{withAccount:(a,fn)=>{tenant=a;return fn();}},'@/lib/public-company':{publicCompany:async slug=>slug==='company-a'?{id:'tenant-a',name:'A'}:slug==='company-b'?{id:'tenant-b',name:'B'}:null}});

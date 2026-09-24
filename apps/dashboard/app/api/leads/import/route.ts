@@ -1,43 +1,41 @@
 import { protectedRoute } from '@/lib/accounts';
-import { after, NextRequest, NextResponse } from 'next/server';
-import { runAutomationsAfterEvent } from '@/lib/automations';
+import { NextRequest, NextResponse } from 'next/server';
 import { importLeads } from '@/lib/database';
-import type { LeadInput, LeadLifecycleStatus } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
-import { hasSameOrigin } from '@/lib/request-security';
+import { hasSameOrigin, hasSafeRequestSize } from '@/lib/request-security';
+import { currentAccount } from '@/lib/tenant-context';
+import { IMPORT_BYTES, IMPORT_LIMIT, validateImportLead } from '@/lib/lead-import';
+import { supabaseRequest } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const statuses: LeadLifecycleStatus[] = ['Novo', 'Em atendimento', 'Visita', 'Proposta', 'Convertido', 'Perdido'];
-
-function clean(value: unknown, max = 500): string {
-  return typeof value === 'string' ? value.trim().slice(0, max) : '';
-}
-
 async function handlePOST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  const account = currentAccount();
+  if (account?.role !== 'owner') return NextResponse.json({ error: 'Somente o administrador pode importar clientes.' }, { status: 403 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
+  if (!hasSafeRequestSize(request, IMPORT_BYTES)) return NextResponse.json({ error: 'Arquivo muito grande. Use até 2 MB.' }, { status: 413 });
   try {
-    const body = await request.json() as { leads?: Array<Record<string, unknown>> };
-    const rawLeads = Array.isArray(body.leads) ? body.leads.slice(0, 500) : [];
-    const leads: LeadInput[] = rawLeads.map((item) => {
-      const status = clean(item.lifecycleStatus, 30) as LeadLifecycleStatus;
-      const lastContact = clean(item.lastContactAt, 40);
-      return {
-        name: clean(item.name, 120), phone: clean(item.phone, 30), email: clean(item.email, 160) || null,
-        goal: clean(item.goal, 50) || 'Não informado', propertyType: clean(item.propertyType, 50) || 'Não informado',
-        region: clean(item.region, 160) || 'Não informado', budget: clean(item.budget, 100) || 'Não informado',
-        details: clean(item.details, 1000) || null, source: clean(item.source, 80) || 'Importação CSV',
-        assignedTo: clean(item.assignedTo, 120) || null,
-        lifecycleStatus: statuses.includes(status) ? status : 'Novo',
-        lastContactAt: lastContact && !Number.isNaN(new Date(lastContact).getTime()) ? new Date(lastContact).toISOString() : null,
-      };
-    }).filter((lead) => lead.name && (lead.phone || lead.email));
-
-    if (leads.length === 0) return NextResponse.json({ error: 'Nenhum lead válido encontrado. Informe nome e telefone ou e-mail.' }, { status: 400 });
+    const raw = await request.text();
+    if (Buffer.byteLength(raw) > IMPORT_BYTES) return NextResponse.json({ error: 'Arquivo muito grande. Use até 2 MB.' }, { status: 413 });
+    let leads;
+    try {
+      const body = JSON.parse(raw);
+      if (!Array.isArray(body?.leads) || !body.leads.length || body.leads.length > IMPORT_LIMIT) throw Error('Envie de 1 a 500 clientes por importação.');
+      leads = (body.leads as unknown[]).map((row, index) => {
+        try { return validateImportLead(row); }
+        catch (e) { throw Error(`Registro ${index + 1}: ${e instanceof Error ? e.message : 'Dados inválidos.'}`); }
+      });
+    } catch (e) { return NextResponse.json({ error: e instanceof SyntaxError ? 'Arquivo inválido.' : e instanceof Error ? e.message : 'Dados inválidos.' }, { status: 400 }); }
+    if (leads.some(l => l.assignedTo)) {
+      const brokers = await supabaseRequest<Array<{ name: string }>>(`broker_accounts?company_id=eq.${account.companyId}&active=eq.true&select=name`, { allRows: true });
+      const unknown = leads.find(l => l.assignedTo && !brokers.some(b => b.name === l.assignedTo));
+      if (unknown) return NextResponse.json({ error: `Corretor não encontrado: ${unknown.assignedTo}. Use um nome ativo desta empresa ou deixe em branco.` }, { status: 400 });
+    }
     const data = await importLeads(leads);
-    after(runAutomationsAfterEvent);
+    // Lead INSERT triggers generate opportunities in the same database transaction.
+    // Importing contacts must never trigger outgoing messages or AI calls.
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     console.error('lead_import_failed', error);

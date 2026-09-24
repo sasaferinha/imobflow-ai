@@ -1,0 +1,7 @@
+.codex-build/
+.codex-finalizer/
+output/
+outputs/
+work/
+supabase/.temp/
+**/tsconfig.tsbuildinfo

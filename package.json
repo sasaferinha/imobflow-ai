@@ -7,6 +7,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "sync:check": "node scripts/check-sync.cjs",
+    "sync:test": "node scripts/test-check-sync.cjs",
     "dev:api": "pnpm --filter realestate-ai-mvp dev",
     "dev:dashboard": "pnpm --filter sites-project dev",
     "build": "pnpm -r build",
