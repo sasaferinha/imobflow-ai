@@ -14,6 +14,7 @@ import type { ConversationAttendanceSummary, ConversationMessage } from '@/lib/c
 import TeamModal from './team-modal';
 import ClientImport from './client-import';
 import PasswordModal from './password-modal';
+import ProfileModal from './profile-modal';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import ReleaseNotice from './release-notice';
 import OpportunityCenter, { actOnOpportunity } from './opportunity-center';
@@ -160,8 +161,8 @@ const compactMoney = new Intl.NumberFormat('pt-BR', { style:'currency', currency
 const leadDate = new Intl.DateTimeFormat('pt-BR', { timeZone:'America/Sao_Paulo' });
 const leadDateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle:'short', timeStyle:'short', timeZone:'America/Sao_Paulo' });
 
-async function loadPerformance(month: string) {
-  const response = await fetch(`/api/performance?month=${month}`);
+async function loadPerformance(month: string, signal?:AbortSignal) {
+  const response = await fetch(`/api/performance?month=${month}`, { signal });
   const result = await response.json() as { data?:PerformanceSnapshot; error?:string };
   if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível carregar os indicadores.');
   return result.data;
@@ -228,6 +229,16 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   useEffect(() => {
     if (publicDemo) window.parent.postMessage({ type: 'imobflow-demo-active', view: utilityModal === 'team' ? 'team' : view }, window.location.origin);
   }, [publicDemo, view, utilityModal]);
+
+  useEffect(() => subscribeDashboardSync({
+    entities: ['profile', 'team'], interval: 30000,
+    load: async signal => {
+      const response = await fetch('/api/account/profile', { signal, cache: 'no-store' });
+      if (!response.ok) throw new Error('profile_unavailable');
+      const result = await response.json() as { data: { name: string; company: string } };
+      return result.data;
+    }, apply: setProfile,
+  }), []);
 
   useEffect(() => subscribeDashboardSync({ entities: ['opportunities'], interval: 30000,
     load: async signal => {
@@ -360,7 +371,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
     if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar a mensagem.');
     pendingMessageKeys.current.delete(fingerprint);
     announceDashboardChange('conversations');
-    return { id: result.data.id, time: result.data.time };
+    return result.data;
   }
 
   async function refreshProperties() {
@@ -508,12 +519,15 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
       const saved = await persistConversationMessage({ leadId: lead.id, content, images: sharingProperty.images, propertyId: sharingProperty.id });
       conversationDispatch({
         type: 'share-property', id: conversationId, messageId: saved.id, time: saved.time,
-        text: content, images: sharingProperty.images, propertyTitle: sharingProperty.title,
+        text: content, images: publicDemo ? sharingProperty.images : [], propertyTitle: sharingProperty.title,
       });
       conversationDispatch({ type: 'select', id: conversationId });
       setSharingProperty(null);
       setView('conversations');
-      notify(`Imóvel salvo na conversa com ${lead.name}.`);
+      const photos = saved.photoDelivery;
+      notify(publicDemo ? 'Oferta demonstrativa. Nenhum cliente foi contatado.'
+        : photos ? `Oferta registrada: ${photos.sent}/${photos.total} fotos aceitas pelo WhatsApp${photos.pending ? `, ${photos.pending} na fila` : ''}${photos.failed ? `, ${photos.failed} com falha` : ''}. Confira a conversa.`
+        : saved.deliveryStatus === 'sent' ? `Oferta aceita pelo WhatsApp para ${lead.name}.` : 'Oferta registrada. Confira o status de envio na conversa.');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.');
     }
@@ -590,7 +604,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
           </div>
         </header>
 
-        {view === 'overview' && <Overview notify={notify} canEditGoals={account?.role === 'owner'} properties={properties} refreshProperties={refreshProperties} />}
+        {view === 'overview' && <Overview notify={notify} brokerId={account?.brokerId} canEditGoals={account?.role === 'owner'} properties={properties} leads={capturedLeads} refreshProperties={refreshProperties} />}
         {view === 'imports' && account?.role === 'owner' && <ClientImport publicDemo={publicDemo} onOpportunities={() => setView('opportunities')} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads(current => [...decorated, ...current.filter(lead => !decorated.some(item => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
         {view === 'goals' && account?.role === 'owner' && <GoalsManagement notify={notify} />}
         {view === 'conversations' && <ConversationCenter currentBrokerId={account?.brokerId} isAdministrator={account?.role === 'owner'} ready={conversationsReady&&!syncFailed} state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} claimLead={claimLead} currentBrokerName={profile.name} leads={capturedLeads} properties={properties} />}
@@ -623,10 +637,10 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
 
       {selectedProperty && <PropertyDetail property={selectedProperty} close={() => setSelectedProperty(null)} share={() => openPropertyShare(selectedProperty)} edit={() => { setEditingProperty(selectedProperty); setPropertyImages(selectedProperty.images); setSelectedProperty(null); setPropertyModalOpen(true); }} remove={() => removeProperty(selectedProperty)} />}
       {sharingProperty && <PropertyShareModal property={sharingProperty} leads={capturedLeads} close={() => setSharingProperty(null)} submit={sharePropertyWithLead} />}
-      {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
+      {utilityModal === 'profile' && <ProfileModal profile={profile} isOwner={account?.role === 'owner'} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); for (const entity of ['profile', 'team', 'leads', 'conversations', 'appointments', 'performance']) announceDashboardChange(entity); notify('Perfil salvo. A alteração também aparecerá nos outros dispositivos.'); }} />}
       {utilityModal === 'password' && <PasswordModal close={() => setUtilityModal(null)} />}
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { saveSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
-      {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
+      {utilityModal === 'broker' && <BrokerProfileModal brokerId={account?.brokerId} brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
       {utilityModal === 'team' && account?.role === 'owner' && <TeamModal close={() => setUtilityModal(null)} notify={notify} />}
 
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
@@ -642,25 +656,23 @@ function PeriodLoadNotice({ month, changeMonth, loading, error, retry }: { month
   </section>;
 }
 
-function Overview({ notify, canEditGoals, properties, refreshProperties }: { notify:(message:string)=>void; canEditGoals:boolean; properties:PropertyRecord[]; refreshProperties:()=>Promise<void> }) {
+function Overview({ notify, canEditGoals, brokerId, properties, leads, refreshProperties }: { notify:(message:string)=>void; canEditGoals:boolean; brokerId?:string; properties:PropertyRecord[]; leads:DashboardLead[]; refreshProperties:()=>Promise<void> }) {
   const [month, setMonth] = useState(() => businessCalendarDate().slice(0, 7));
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
   const [modal, setModal] = useState<'sale' | 'goals' | null>(null);
   const [dealType, setDealType] = useState<'Venda' | 'Aluguel'>('Venda');
   const [savingDeal, setSavingDeal] = useState(false);
+  const [saleLeadId, setSaleLeadId] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    let active = true;
-    loadPerformance(month).then((data) => {
-      if (active) {
-        setPerformance(data);
-        setLoadError(null);
-      }
-    }).catch((error) => active && setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os indicadores.')).finally(() => active && setLoading(false));
-    return () => { active = false; };
+    return subscribeDashboardSync({ entities:['performance','leads','appointments','profile','team'],interval:15000,
+      load:signal => loadPerformance(month,signal),
+      apply:data => { setPerformance(data); setLoadError(null); setLoading(false); },
+      onError:error => { setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os indicadores.'); setLoading(false); },
+    });
   }, [month, loadAttempt]);
 
   function changeMonth(value: string) {
@@ -679,10 +691,13 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
     setSavingDeal(true);
     const form = new FormData(event.currentTarget);
     try {
-      const response = await fetch('/api/performance', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ dealType, date:form.get('date'), broker:form.get('broker'), propertyId:form.get('propertyId'), client:form.get('client'), amount:Number(form.get('amount')) }) });
+      const response = await fetch('/api/performance', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ dealType, date:form.get('date'), brokerId:form.get('brokerId'), propertyId:form.get('propertyId'), leadId:saleLeadId || undefined, client:form.get('client'), amount:Number(form.get('amount')) }) });
       const result = await response.json() as { error?:string };
       if (!response.ok) throw new Error(result.error || 'Não foi possível registrar a venda.');
       setModal(null);
+      setSaleLeadId('');
+      announceDashboardChange('performance');
+      announceDashboardChange('leads');
       notify(dealType === 'Aluguel' ? 'Aluguel registrado separadamente das vendas' : 'Venda registrada no resultado da equipe');
       await Promise.all([refresh(), refreshProperties()]);
     } catch (error) {
@@ -694,26 +709,30 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
     event.preventDefault();
     if (!performance) return;
     const form = new FormData(event.currentTarget);
-    const brokerGoals = performance.brokers.map((broker,index) => ({ broker:broker.broker, goal:Number(form.get(`broker-goal-${index}`)) }));
+    const brokerGoals = performance.brokers.map((broker,index) => ({ broker:broker.broker, brokerId:broker.brokerId, goal:Number(form.get(`broker-goal-${index}`)) })).filter(broker => broker.brokerId);
     try {
-      const response = await fetch('/api/performance', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ month, companyGoal:Number(form.get('companyGoal')), leadsReceived:Number(form.get('leadsReceived')), convertedLeads:Number(form.get('convertedLeads')), recoveredLeads:Number(form.get('recoveredLeads')), brokerGoals }) });
+      const response = await fetch('/api/performance', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ month, companyGoal:Number(form.get('companyGoal')), brokerGoals }) });
       const result = await response.json() as { data?:PerformanceSnapshot; error?:string };
       if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível atualizar as metas.');
       setPerformance(result.data);
       setModal(null);
-      notify('Metas e indicadores atualizados');
+      announceDashboardChange('performance');
+      notify('Metas atualizadas; indicadores calculados automaticamente');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível atualizar as metas.');
     }
   }
 
   async function removeSale(id: string) {
-    if (!window.confirm('Excluir este registro de negócio?')) return;
+    if (!window.confirm('Cancelar este negócio? Ele sairá dos resultados, mas o histórico será preservado. A situação do imóvel e a etapa do lead serão restauradas somente quando ainda pertencem a este negócio, sem desfazer alterações posteriores.')) return;
     try {
-      const response = await fetch(`/api/performance/sales/${id}`, { method:'DELETE' });
-      if (!response.ok) throw new Error('Não foi possível excluir o negócio.');
-      await refresh();
-      notify('Negócio removido do resultado');
+      const response = await fetch(`/api/performance/sales/${encodeURIComponent(id)}`, { method:'DELETE' });
+      const result = await response.json() as { warning?:string; error?:string };
+      if (!response.ok) throw new Error(result.error || 'Não foi possível cancelar o negócio.');
+      announceDashboardChange('performance');
+      announceDashboardChange('leads');
+      await Promise.all([refresh(),refreshProperties()]);
+      notify(result.warning || 'Negócio cancelado; catálogo e resultados atualizados');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível excluir o negócio.');
     }
@@ -748,32 +767,33 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
     <section className="performance-kpis">
       <article><span>VGV vendido</span><strong>{compactMoney.format(performance.totalSold)}</strong><small>Resultado da empresa</small></article>
       <article><span>Ticket médio</span><strong>{compactMoney.format(performance.averageTicket)}</strong><small>Por negócio fechado</small></article>
-      <article><span>Leads convertidos</span><strong>{performance.convertedLeads}</strong><small>{performance.conversionRate.toFixed(1)}% de conversão</small></article>
-      <article><span>Leads recuperados</span><strong>{performance.recoveredLeads}</strong><small>Retomados e convertidos</small></article>
+      <article><span>Leads convertidos</span><strong>{performance.convertedLeads}</strong><small>{performance.conversionRate.toFixed(1)}% da base recebida no mês</small></article>
+      <article><span>Leads recuperados</span><strong>{performance.recoveredLeads}</strong><small>Cliente voltou após 30 dias sem contato</small></article>
       <article><span>Leads recebidos</span><strong>{performance.leadsReceived}</strong><small>No período selecionado</small></article>
     </section>
 
+    <p className="deal-help">Conversões: leads únicos convertidos no período ou vinculados a negócios ativos. A taxa considera apenas os leads recebidos no mês. Recuperados: clientes que responderam após pelo menos 30 dias sem contato recebido. {performance.trackingStartedAt && <>Rastreamento de conversões e recuperações desde {new Date(performance.trackingStartedAt).toLocaleDateString('pt-BR', { timeZone:'America/Sao_Paulo' })}; eventos anteriores sem data comprovada não são estimados.</>}</p>
     <section className="performance-grid">
-      <article className="panel broker-performance"><div className="panel-heading"><div><p className="eyebrow">Equipe comercial</p><h2>Desempenho por corretor</h2></div><span>VGV e metas individuais</span></div><div className="broker-table"><div className="broker-row broker-head"><span>Corretor</span><span>Vendido</span><span>Meta</span><span>Negócios</span><span>Progresso</span></div>{performance.brokers.map((broker,index) => <div className="broker-row" key={broker.broker}><span className="broker-name"><i className={`avatar-${index}`}>{broker.broker.split(' ').slice(0,2).map((part) => part[0]).join('')}</i><b>{broker.broker}<small>{index === 0 ? 'Líder do mês' : 'Equipe comercial'}</small></b></span><strong>{compactMoney.format(broker.sold)}</strong><span>{compactMoney.format(broker.goal)}</span><span>{broker.salesCount}</span><span className="broker-progress"><i><b style={{ width:`${Math.min(100, broker.progress)}%` }}/></i><em>{broker.progress.toFixed(0)}%</em></span></div>)}</div></article>
+      <article className="panel broker-performance"><div className="panel-heading"><div><p className="eyebrow">Equipe comercial</p><h2>Desempenho por corretor</h2></div><span>VGV e metas individuais</span></div><div className="broker-table"><div className="broker-row broker-head"><span>Corretor</span><span>Vendido</span><span>Meta</span><span>Negócios</span><span>Progresso</span></div>{performance.brokers.map((broker,index) => <div className="broker-row" key={broker.brokerId || broker.broker}><span className="broker-name"><i className={`avatar-${index}`}>{broker.broker.split(' ').slice(0,2).map((part) => part[0]).join('')}</i><b>{broker.broker}<small>{broker.sold > 0 && broker.sold === performance.brokers[0]?.sold ? 'Maior VGV do mês' : 'Equipe comercial'}</small></b></span><strong>{compactMoney.format(broker.sold)}</strong><span>{compactMoney.format(broker.goal)}</span><span>{broker.salesCount}</span><span className="broker-progress"><i><b style={{ width:`${Math.min(100, broker.progress)}%` }}/></i><em>{broker.progress.toFixed(0)}%</em></span></div>)}</div></article>
 
       <article className="panel sales-history"><div className="panel-heading"><div><p className="eyebrow">Evolução comercial</p><h2>Vendas nos últimos meses</h2></div></div><SalesHistoryChart history={performance.history} /></article>
     </section>
 
-    <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Negócios registrados</h2></div><strong>{money.format(performance.totalSold)} em vendas · {money.format(performance.sales.filter((sale) => sale.dealType === 'Aluguel').reduce((sum, sale) => sum + sale.amount, 0))}/mês em aluguéis registrados</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}<small className="deal-type-label">{sale.dealType || 'Venda'}</small></span><b>{money.format(sale.amount)}{sale.dealType === 'Aluguel' ? '/mês' : ''}</b>{canEditGoals && <button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button>}</div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
+    <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Negócios registrados</h2></div><strong>{money.format(performance.totalSold)} em vendas · {money.format(performance.sales.filter((sale) => sale.dealType === 'Aluguel').reduce((sum, sale) => sum + sale.amount, 0))}/mês em aluguéis registrados</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}<small className="deal-type-label">{sale.dealType || 'Venda'}</small></span><b>{money.format(sale.amount)}{sale.dealType === 'Aluguel' ? '/mês' : ''}</b>{canEditGoals && <button type="button" aria-label={`Cancelar negócio de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button>}</div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
     </div>
 
     {modal === 'sale' && <div className="modal-backdrop" role="presentation" onMouseDown={() => !savingDeal && setModal(null)}><form className="modal-card deal-modal" onSubmit={registerSale} onMouseDown={(event) => event.stopPropagation()}>
       <div className="modal-head"><div><p className="eyebrow">Resultado comercial</p><h2>{dealType === 'Venda' ? 'Registrar venda' : 'Registrar aluguel'}</h2></div><button type="button" disabled={savingDeal} aria-label="Fechar" onClick={() => setModal(null)}>×</button></div>
       <div className="native-segments" role="group" aria-label="Tipo de negócio">{(['Venda', 'Aluguel'] as const).map((type) => <button type="button" disabled={savingDeal} aria-pressed={dealType === type} key={type} onClick={() => setDealType(type)}>{type === 'Venda' ? 'Imóvel vendido' : 'Aluguel'}</button>)}</div>
       <p className="deal-help">{dealType === 'Venda' ? 'Registre o valor total da venda concluída.' : 'Informe o valor mensal contratado. Aluguéis não são somados ao VGV de vendas.'}</p>
-      <div className="form-grid"><label>Data<input name="date" type="date" defaultValue={defaultSaleDate} required /></label><label>Corretor<select name="broker" required>{performance.brokers.map((broker) => <option key={broker.broker}>{broker.broker}</option>)}</select></label></div>
-      <label>Cliente<input name="client" placeholder={dealType === 'Venda' ? 'Nome do comprador' : 'Nome do locatário'} required /></label><label>Imóvel do catálogo<select key={dealType} name="propertyId" defaultValue="" required><option value="" disabled>Selecione o imóvel</option>{saleOptions.map((property) => <option key={property.id} value={property.id}>{property.code ? `${property.code} · ` : ''}{property.title} · {property.district}</option>)}</select>{saleOptions.length === 0 ? <small className="deal-property-empty">Nenhum imóvel {dealType === 'Venda' ? 'à venda' : 'para aluguel'} disponível. Cadastre ou altere a situação no catálogo.</small> : usedFallbackOptions && <small className="deal-property-empty">Atenção: não foi encontrado imóvel com finalidade &ldquo;{dealType}&ldquo; disponível para registro. Selecionando imóveis disponíveis para continuar.</small>}</label>
+      <div className="form-grid"><label>Data<input name="date" type="date" max={today} defaultValue={defaultSaleDate} required /></label><label>Corretor<select name="brokerId" required>{performance.brokers.filter(broker => broker.brokerId && broker.active !== false && (canEditGoals || broker.brokerId === brokerId)).map((broker) => <option key={broker.brokerId} value={broker.brokerId}>{broker.broker}</option>)}</select></label></div>
+      <label>Lead do CRM<select value={saleLeadId} onChange={event => setSaleLeadId(event.target.value)}><option value="">Cliente não cadastrado no CRM</option>{leads.map(lead => <option key={lead.id} value={lead.id}>{lead.name} · {lead.phone}</option>)}</select><small>Vincule um lead para contabilizar sua conversão automaticamente.</small></label>{!saleLeadId && <label>Cliente<input name="client" placeholder={dealType === 'Venda' ? 'Nome do comprador' : 'Nome do locatário'} required /></label>}<label>Imóvel do catálogo<select key={dealType} name="propertyId" defaultValue="" required><option value="" disabled>Selecione o imóvel</option>{saleOptions.map((property) => <option key={property.id} value={property.id}>{property.code ? `${property.code} · ` : ''}{property.title} · {property.district}</option>)}</select>{saleOptions.length === 0 ? <small className="deal-property-empty">Nenhum imóvel {dealType === 'Venda' ? 'à venda' : 'para aluguel'} disponível. Cadastre ou altere a situação no catálogo.</small> : usedFallbackOptions && <small className="deal-property-empty">Atenção: não foi encontrado imóvel com finalidade &ldquo;{dealType}&ldquo; disponível para registro. Selecionando imóveis disponíveis para continuar.</small>}</label>
       <label>{dealType === 'Venda' ? 'Valor da venda (R$)' : 'Aluguel mensal (R$)'}<input key={dealType} name="amount" type="number" min="0.01" step="0.01" placeholder={dealType === 'Venda' ? '575000,00' : '2500,00'} required /></label>
-      <p className="deal-help">Ao registrar, o imóvel será marcado como {dealType === 'Venda' ? 'vendido' : 'alugado'} e deixará de estar disponível no catálogo.</p>
+      <p className="deal-help">Ao registrar, o imóvel será marcado como {dealType === 'Venda' ? 'vendido' : 'alugado'} e deixará de estar disponível no catálogo. O lead selecionado passará a convertido e sairá da fila de reativação.</p>
       <div className="modal-actions"><button type="button" disabled={savingDeal} onClick={() => setModal(null)}>Cancelar</button><button type="submit" disabled={savingDeal} className="primary-button">{savingDeal ? 'Salvando…' : dealType === 'Venda' ? 'Registrar venda' : 'Registrar aluguel'}</button></div>
     </form></div>}
 
-    {modal === 'goals' && canEditGoals && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card performance-settings-modal" onSubmit={saveGoals} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Planejamento mensal</p><h2>Metas e conversão</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><label>Meta da imobiliária<input name="companyGoal" type="number" min="0" step="10000" defaultValue={performance.companyGoal} required /></label><div className="form-grid"><label>Leads recebidos<input name="leadsReceived" type="number" min="0" defaultValue={performance.leadsReceived} required /></label><label>Leads convertidos<input name="convertedLeads" type="number" min="0" defaultValue={performance.convertedLeads} required /></label></div><label>Leads recuperados<input name="recoveredLeads" type="number" min="0" defaultValue={performance.recoveredLeads} required /></label><div className="broker-goal-fields"><strong>Metas individuais</strong>{performance.brokers.map((broker,index) => <label key={broker.broker}>{broker.broker}<input name={`broker-goal-${index}`} type="number" min="0" step="10000" defaultValue={broker.goal} required /></label>)}</div><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar indicadores</button></div></form></div>}
+    {modal === 'goals' && canEditGoals && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card performance-settings-modal" onSubmit={saveGoals} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Planejamento mensal</p><h2>Metas mensais</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><label>Meta da imobiliária<input name="companyGoal" type="number" min="0" step="10000" defaultValue={performance.companyGoal} required /></label><p className="deal-help">Leads, conversões e recuperações são calculados pelos eventos do CRM e não podem ser editados manualmente.</p><div className="broker-goal-fields"><strong>Metas individuais</strong>{performance.brokers.map((broker,index) => <label key={broker.brokerId || broker.broker}>{broker.broker}<input name={`broker-goal-${index}`} type="number" min="0" step="10000" defaultValue={broker.goal} disabled={!broker.brokerId} required /></label>)}</div><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar metas</button></div></form></div>}
   </>;
 }
 
@@ -806,17 +826,15 @@ function GoalsManagement({ notify }: { notify:(message:string)=>void }) {
     const form = new FormData(event.currentTarget);
     const brokerGoals = performance.brokers.map((broker,index) => ({
       broker: broker.broker,
+      brokerId: broker.brokerId,
       goal: Number(form.get(`broker-goal-${index}`)),
-    }));
+    })).filter(broker => broker.brokerId);
     try {
       const response = await fetch('/api/performance', {
         method:'PATCH', headers:{ 'Content-Type':'application/json' },
         body:JSON.stringify({
           month,
           companyGoal:Number(form.get('companyGoal')),
-          leadsReceived:performance.leadsReceived,
-          convertedLeads:performance.convertedLeads,
-          recoveredLeads:performance.recoveredLeads,
           brokerGoals,
         }),
       });
@@ -824,6 +842,7 @@ function GoalsManagement({ notify }: { notify:(message:string)=>void }) {
       if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar as metas.');
       setPerformance(result.data);
       notify('Metas salvas com sucesso');
+      announceDashboardChange('performance');
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : 'Não foi possível salvar as metas.');
     } finally {
@@ -848,7 +867,7 @@ function GoalsManagement({ notify }: { notify:(message:string)=>void }) {
       <div className="individual-goals-list">
         {performance.brokers.map((broker,index) => <label key={`${month}-${broker.broker}`}>
           <span className="broker-name"><i className={`avatar-${index}`}>{broker.broker.split(' ').slice(0,2).map((part) => part[0]).join('')}</i><b>{broker.broker}<small>{compactMoney.format(broker.sold)} vendido no mês</small></b></span>
-          <span className="goal-input-prefix">R$<input name={`broker-goal-${index}`} type="number" min="0" step="1000" defaultValue={broker.goal} required /></span>
+          <span className="goal-input-prefix">R$<input name={`broker-goal-${index}`} type="number" min="0" step="1000" defaultValue={broker.goal} disabled={!broker.brokerId} required /></span>
         </label>)}
         {!performance.brokers.length && <p className="performance-empty">Cadastre corretores para definir metas individuais.</p>}
       </div>
@@ -962,7 +981,9 @@ function PropertyDetail({ property, close, share, edit, remove }: { property:Pro
   </div>;
 }
 
-function PropertyShareModal({ property, leads, close, submit }: { property:Property; leads:DashboardLead[]; close:()=>void; submit:(event:FormEvent<HTMLFormElement>)=>void }) {
+function PropertyShareModal({ property, leads, close, submit }: { property:Property; leads:DashboardLead[]; close:()=>void; submit:(event:FormEvent<HTMLFormElement>)=>Promise<void> }) {
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [leadSearch, setLeadSearch] = useState('');
   const [category, setCategory] = useState<'Todos' | 'Quentes' | 'Mornos' | 'Frios'>('Todos');
   const [selectedLeadId, setSelectedLeadId] = useState(leads[0]?.id || '');
@@ -972,19 +993,31 @@ function PropertyShareModal({ property, leads, close, submit }: { property:Prope
     return categoryMatches && normalizeCsvHeader(`${lead.name} ${lead.region} ${lead.budget} ${lead.lifecycleStatus}`).includes(normalizeCsvHeader(leadSearch));
   });
   const defaultMessage = `Separei uma opção que combina com o seu perfil:\n\n${property.title}\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><form className="modal-card property-share-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Compartilhar oportunidade</p><h2>Enviar imóvel</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><div className="share-property-preview">{property.images[0] ? <img src={property.images[0]} alt="" /> : <span>▦</span>}<div><strong>{property.title}</strong><small>{property.district} · {property.price}</small><em>{property.images.length ? `${property.images.length} ${property.images.length === 1 ? 'foto incluída' : 'fotos incluídas'}` : 'Sem fotos cadastradas'}</em></div></div><input type="hidden" name="leadId" value={selectedLeadId} /><div className="lead-picker"><label>Cliente ou lead<div className="picker-search">⌕<input value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder="Pesquisar pelo nome do cliente" /></div></label><div className="picker-categories" role="group" aria-label="Categorias de leads">{(['Todos', 'Quentes', 'Mornos', 'Frios'] as const).map((item) => <button type="button" key={item} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="lead-picker-results">{filteredLeads.map((lead) => <button type="button" className={selectedLeadId === lead.id ? 'selected' : ''} aria-pressed={selectedLeadId === lead.id} key={lead.id} onClick={() => setSelectedLeadId(lead.id)}><span className={`lead-avatar avatar-${lead.tone}`}>{lead.initials}</span><span><strong>{lead.name}</strong><small>{lead.region} · {lead.budget}</small></span><em>{lead.temperature}</em></button>)}{!filteredLeads.length && <p className="picker-empty">Nenhum cliente encontrado nesta categoria.</p>}</div></div><label>Mensagem<textarea name="message" defaultValue={defaultMessage} rows={7} required /></label><p className="share-channel-note"><span>Conversa do ImobFlow</span> O envio externo pelo WhatsApp será ativado quando a API estiver conectada.</p><div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="submit" className="primary-button" disabled={!selectedLeadId}>Enviar para conversa</button></div></form></div>;
-}
-
-function ProfileModal({ profile, close, save }: { profile:{ name:string; company:string }; close:()=>void; save:(profile:{ name:string; company:string })=>void }) {
-  function submit(event: FormEvent<HTMLFormElement>) {
+  const photoCount = Math.min(5, new Set(property.images).size);
+  const dismiss = () => { if (!sendingRef.current) close(); };
+  const send = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    save({ name:String(form.get('name')).trim(), company:String(form.get('company')).trim() });
-  }
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><form className="modal-card" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Equipe</p><h2>Editar perfil</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><label>Nome<input name="name" defaultValue={profile.name} autoFocus required/></label><label>Imobiliária<input name="company" defaultValue={profile.company} required/></label><div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="submit" className="primary-button">Salvar perfil</button></div></form></div>;
+    if (sendingRef.current) return;
+    sendingRef.current = true; setSending(true);
+    try { await submit(event); } finally { sendingRef.current = false; setSending(false); }
+  };
+  return <div className="modal-backdrop" role="presentation" onMouseDown={dismiss}>
+    <form className="modal-card property-share-modal" onSubmit={send} onMouseDown={(event) => event.stopPropagation()} aria-busy={sending}>
+      <div className="modal-head"><div><p className="eyebrow">Compartilhar oportunidade</p><h2>Enviar imóvel</h2></div><button type="button" aria-label="Fechar" onClick={dismiss} disabled={sending}>×</button></div>
+      <div className="share-property-preview">{property.images[0] ? <img src={property.images[0]} alt="" /> : <span>▦</span>}<div><strong>{property.title}</strong><small>{property.district} · {property.price}</small><em>{photoCount ? `${photoCount} ${photoCount === 1 ? 'foto será anexada' : 'fotos serão anexadas'}` : 'Sem fotos cadastradas — envio de texto'}</em></div></div>
+      <input type="hidden" name="leadId" value={selectedLeadId} />
+      <div className="lead-picker"><label>Cliente ou lead<div className="picker-search">⌕<input value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder="Pesquisar pelo nome do cliente" disabled={sending} /></div></label>
+        <div className="picker-categories" role="group" aria-label="Categorias de leads">{(['Todos', 'Quentes', 'Mornos', 'Frios'] as const).map((item) => <button type="button" key={item} aria-pressed={category === item} onClick={() => setCategory(item)} disabled={sending}>{item}</button>)}</div>
+        <div className="lead-picker-results">{filteredLeads.map((lead) => <button type="button" className={selectedLeadId === lead.id ? 'selected' : ''} aria-pressed={selectedLeadId === lead.id} key={lead.id} onClick={() => setSelectedLeadId(lead.id)} disabled={sending}><span className={`lead-avatar avatar-${lead.tone}`}>{lead.initials}</span><span><strong>{lead.name}</strong><small>{lead.region} · {lead.budget}</small></span><em>{lead.temperature}</em></button>)}{!filteredLeads.length && <p className="picker-empty">Nenhum cliente encontrado nesta categoria.</p>}</div>
+      </div>
+      <label>Mensagem<textarea name="message" defaultValue={defaultMessage} rows={7} required disabled={sending} /></label>
+      <p className="share-channel-note"><span>Envio pelo WhatsApp</span> Texto e até 5 fotos, com o status de cada envio na conversa. É necessário ter WhatsApp conectado, assumir o atendimento e uma mensagem do cliente nas últimas 24 horas. Fora desse prazo, envie primeiro um modelo aprovado e aguarde a resposta.</p>
+      <div className="modal-actions"><button type="button" onClick={dismiss} disabled={sending}>Cancelar</button><button type="submit" className="primary-button" disabled={!selectedLeadId || sending}>{sending ? 'Preparando envio…' : 'Enviar pelo WhatsApp'}</button></div>
+    </form>
+  </div>;
 }
 
-function BrokerProfileModal({ brokerName, company, close }: { brokerName:string; company:string; close:()=>void }) {
+function BrokerProfileModal({ brokerId, brokerName, company, close }: { brokerId?:string; brokerName:string; company:string; close:()=>void }) {
   const [month, setMonth] = useState(() => businessCalendarDate().slice(0, 7));
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
@@ -992,14 +1025,11 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let active = true;
-    loadPerformance(month).then((data) => {
-      if (active) {
-        setPerformance(data);
-        setError(null);
-      }
-    }).catch((reason) => active && setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o desempenho.')).finally(() => active && setLoading(false));
-    return () => { active = false; };
+    return subscribeDashboardSync({ entities:['performance','leads','appointments','profile','team'],interval:15000,
+      load:signal => loadPerformance(month,signal),
+      apply:data => { setPerformance(data); setError(null); setLoading(false); },
+      onError:reason => { setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o desempenho.'); setLoading(false); },
+    });
   }, [month, loadAttempt]);
 
   function changeMonth(value: string) {
@@ -1007,9 +1037,9 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
     setLoading(true); setError(null); setMonth(value);
   }
 
-  const broker = performance?.brokers.find((item) => item.broker.toLowerCase() === brokerName.toLowerCase());
-  const brokerSales = performance?.sales.filter((sale) => sale.dealType !== 'Aluguel' && sale.broker === broker?.broker) || [];
-  const rank = performance && broker ? performance.brokers.findIndex((item) => item.broker === broker.broker) + 1 : 0;
+  const broker = performance?.brokers.find((item) => brokerId && performance.dataMode !== 'demo' ? item.brokerId === brokerId : item.broker.toLowerCase() === brokerName.toLowerCase());
+  const brokerSales = performance?.sales.filter((sale) => sale.dealType !== 'Aluguel' && (broker?.brokerId ? sale.brokerId === broker.brokerId : sale.broker === broker?.broker)) || [];
+  const rank = performance && broker ? performance.brokers.filter(item => item.sold > broker.sold).length + 1 : 0;
   const averageTicket = broker?.salesCount ? broker.sold / broker.salesCount : 0;
   const teamShare = performance?.totalSold && broker ? (broker.sold / performance.totalSold) * 100 : 0;
   const remaining = broker ? Math.max(0, broker.goal - broker.sold) : 0;
@@ -1021,7 +1051,7 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
     <div className="broker-profile-header"><div className="broker-profile-person"><span>{brokerName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</span><div><p>Meu desempenho</p><h2>{brokerName}</h2><small>{company}{performance?.dataMode === 'demo' ? ' • dados demonstrativos locais' : ''}</small></div></div><div className="broker-profile-actions"><label>Competência<input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></label><button type="button" aria-label="Fechar perfil" onClick={close}>×</button></div></div>
     {loading || error || !performance || performance.month !== month ? <PeriodLoadNotice month={month} changeMonth={changeMonth} loading={loading} error={error} retry={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }} /> : !broker ? <div className="broker-profile-loading">Este perfil ainda não possui metas associadas para {monthTitle}.</div> : <div className="broker-performance-reveal" key={brokerAnimationKey}>
       <section className="broker-goal-overview"><div><p>Meta individual de {monthTitle}</p><strong>{money.format(broker.sold)}</strong><span>de {money.format(broker.goal)}</span></div><div className="broker-goal-ring" style={{ '--broker-progress':'0deg', '--broker-progress-target':`${Math.min(100, broker.progress) * 3.6}deg` } as CSSProperties}><span><strong>{broker.progress.toFixed(0)}%</strong><small>alcançado</small></span></div><dl><div><dt>Falta para a meta</dt><dd>{money.format(remaining)}</dd></div><div><dt>Posição na equipe</dt><dd>{rank}º lugar</dd></div><div><dt>Participação no VGV</dt><dd>{teamShare.toFixed(1)}%</dd></div></dl></section>
-      <section className="broker-stat-grid"><article><span>Negócios fechados</span><strong>{broker.salesCount}</strong><small>No mês selecionado</small></article><article><span>Ticket médio</span><strong>{compactMoney.format(averageTicket)}</strong><small>Por imóvel vendido</small></article><article><span>Leads recebidos</span><strong>{broker.leadsReceived}</strong><small>Carteira mensal</small></article><article><span>Leads convertidos</span><strong>{broker.convertedLeads}</strong><small>{broker.conversionRate.toFixed(1)}% de conversão</small></article><article><span>Leads recuperados</span><strong>{broker.recoveredLeads}</strong><small>Oportunidades retomadas</small></article><article><span>Visitas realizadas</span><strong>{broker.visits}</strong><small>Atendimentos presenciais</small></article></section>
+      <section className="broker-stat-grid"><article><span>Imóveis vendidos</span><strong>{broker.salesCount}</strong><small>No mês selecionado</small></article><article><span>Ticket médio</span><strong>{compactMoney.format(averageTicket)}</strong><small>Por imóvel vendido</small></article><article><span>Leads recebidos</span><strong>{broker.leadsReceived}</strong><small>Carteira mensal</small></article><article><span>Leads convertidos</span><strong>{broker.convertedLeads}</strong><small>{broker.conversionRate.toFixed(1)}% da base recebida no mês</small></article><article><span>Leads recuperados</span><strong>{broker.recoveredLeads}</strong><small>Oportunidades retomadas</small></article><article><span>Visitas agendadas</span><strong>{broker.visits}</strong><small>Horários registrados no mês</small></article></section>
       <section className="broker-profile-content"><article className="broker-month-chart"><div><p>Evolução individual</p><h3>Vendas por mês</h3></div>{broker.history.length > 0 ? <div className="broker-history-bars">{broker.history.map((item) => <div key={item.month}><span>{compactMoney.format(item.sold)}</span><i><b style={{ height:`${Math.max(10, (item.sold / historyMax) * 100)}%` }}/></i><small>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</small></div>)}</div> : <p className="broker-empty">Ainda não há histórico de vendas.</p>}</article><article className="broker-sales-list"><div><p>Fechamentos do mês</p><h3>Vendas recentes</h3></div>{brokerSales.length > 0 ? <ul>{brokerSales.map((sale) => <li key={sale.id}><span><strong>{sale.property}</strong><small>{sale.client} • {new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</small></span><b>{money.format(sale.amount)}</b></li>)}</ul> : <p className="broker-empty">Nenhuma venda registrada neste mês.</p>}</article></section>
     </div>}
   </article></div>;

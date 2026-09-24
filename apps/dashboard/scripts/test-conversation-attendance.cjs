@@ -9,7 +9,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 const base = path.join(__dirname, '..');
 function load(file, mocks = {}) {
   const mod = { exports: {} };
-  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(base, file), 'utf8'), {
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(base, file), 'utf8'), { fileName: file,
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, {
     module: mod, exports: mod.exports, Date, Intl,
@@ -78,7 +78,7 @@ function load(file, mocks = {}) {
       if (query.startsWith('messages?')) return [{ id: 'message-a', conversation_id: 'conversation-a', direction: 'incoming', content: 'Olá', created_at: '2026-09-12T12:00:00Z' }];
       return [];
     } },
-    './tenant-context': {}, './message-delivery': {}, './message-outbox': {}, './whatsapp-media': {},
+    './tenant-context': { currentAccount: () => null }, './message-delivery': {}, './message-outbox': {}, './whatsapp-media': {},
   });
   const result = await listConversationData();
   assert.equal(result.messages.length, 1);

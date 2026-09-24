@@ -50,7 +50,7 @@ async function run() {
 
   const routes = [
     'leads', 'conversations', 'conversations/demo', 'conversations/settings', 'properties',
-    'appointments', 'performance', 'opportunities', 'brokers', 'conversations/whatsapp',
+    'appointments', 'performance', 'opportunities', 'brokers', 'account/profile', 'conversations/whatsapp',
     'integrations/meta/embedded-signup', 'version',
   ];
   for (const route of routes) {
@@ -65,6 +65,8 @@ async function run() {
   const opportunities = await json('/api/opportunities');
   assert.equal(leads.length, 3);
   assert.equal(performance.brokers.length, 2);
+  const team = await json('/api/brokers');
+  for (const broker of performance.brokers) assert.ok(team.some(member => member.id === broker.brokerId && member.active === broker.active), 'demo metrics preserve stable broker identity for goal and sale forms');
   assert.equal(performance.leadsReceived, leads.length);
   assert.equal(performance.convertedLeads, leads.filter(lead => lead.lifecycleStatus === 'Convertido').length);
   assert.equal(performance.totalSold, performance.sales.reduce((sum, sale) => sum + sale.amount, 0));
@@ -83,7 +85,8 @@ async function run() {
   assert.equal((await json('/api/performance?month=2001-02')).totalSold, 0);
   assert.equal((await json('/api/integrations/meta/embedded-signup')).available, false, 'demo must not load the Meta SDK');
 
-  for (const route of [...routes, 'admin/logout', 'account/password', 'brokers/example', 'conversations/owner']) {
+  const mutationRoutes = [...routes, 'admin/logout', 'account/password', 'brokers/example', 'conversations/owner'];
+  for (const route of mutationRoutes) {
     for (const method of ['POST', 'PATCH', 'PUT', 'DELETE']) {
       const result = await dashboardFetch(`/api/${route}`, { method, body: '{}' });
       assert.equal(result.status, 403, `${method} ${route} must not alter production`);
@@ -115,7 +118,7 @@ async function run() {
   location.pathname = '/painel';
   assert.equal((await (await dashboardFetch('/api/leads')).json()).native, true);
   assert.equal(nativeCalls.length, 2, 'normal dashboard still uses its native transport');
-  console.log('PASS product demo: all tabs have coherent fictional data; 64 writes blocked; external and unknown requests isolated; no native fallback; production transport preserved');
+  console.log(`PASS product demo: all tabs have coherent fictional data; ${mutationRoutes.length * 4} writes blocked; external and unknown requests isolated; no native fallback; production transport preserved`);
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });

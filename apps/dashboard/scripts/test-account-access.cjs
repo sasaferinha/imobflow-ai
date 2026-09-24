@@ -166,7 +166,7 @@ async function run(){
   actor.role='broker';
   assert.equal((await performance.PATCH(req({month:'2026-09'}))).status,403);assert.equal(wroteGoals,false);
   actor.role='owner';
-  assert.equal((await performance.PATCH(req({month:'2026-09'}))).status,200);assert.equal(wroteGoals,true);
+  assert.equal((await performance.PATCH(req({month:'2026-09',companyGoal:0,brokerGoals:[]}))).status,200);assert.equal(wroteGoals,true);
 
   const login=load('app/api/account/[action]/route.ts',{...deps,'@/lib/password-recovery':{sendWelcomeEmail:async()=>assert.fail('login must not send a welcome email')},'@/lib/accounts':{...auth,authenticate:async()=>({...actor,passwordVersion:'hash'}),issueSession:async()=> 'session'},'@/lib/admin-auth':{COOKIE_NAME:'legacy'}});
   const loginData={email:'user@example.invalid',password:'12345678'};

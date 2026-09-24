@@ -57,10 +57,12 @@ const images = compile('lib/property-images.ts', {
     return require(name);
   },
 });
-const managed = 'https://project.supabase.co/storage/v1/object/public/property-images/company/existing.webp';
-const stored = await images.persistPropertyImages([managed, 'https://evil.test/photo.jpg', `data:image/webp;base64,${Buffer.from('image').toString('base64')}`]);
+const managed = 'https://project.supabase.co/storage/v1/object/public/property-images/00000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000099.webp';
+const foreignTenant = managed.replace('/00000000-0000-4000-8000-000000000001/', '/00000000-0000-4000-8000-000000000002/');
+const stored = await images.persistPropertyImages([managed, foreignTenant, 'https://evil.test/photo.jpg', `data:image/webp;base64,${Buffer.from('image').toString('base64')}`]);
 assert.equal(stored[0], managed);
 assert.equal(stored.length, 2);
+assert.ok(!stored.includes(foreignTenant), 'a managed origin is not permission to reuse another tenant photo');
 assert.equal(uploaded.length, 1);
 assert.match(stored[1], /^https:\/\/project\.supabase\.co\/storage\/v1\/object\/public\/property-images\//);
 assert.equal(uploaded[0].options.headers.Authorization, 'Bearer test-server-key');

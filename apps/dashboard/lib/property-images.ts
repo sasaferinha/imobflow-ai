@@ -11,7 +11,8 @@ function configuration() {
 }
 
 function isManagedUrl(value: string, baseUrl: string) {
-  return value.startsWith(`${baseUrl}/storage/v1/object/public/${BUCKET}/`);
+  const prefix = `${baseUrl}/storage/v1/object/public/${BUCKET}/${supabaseCompanyId()}/`;
+  return value.startsWith(prefix) && /^[0-9a-f-]{36}\.(jpg|png|webp)$/i.test(value.slice(prefix.length));
 }
 
 export async function persistPropertyImages(images: string[]) {

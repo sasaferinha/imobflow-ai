@@ -8,6 +8,8 @@ export type DeliveryStatus =
   | "read"
   | "failed";
 export function deliveryError(code: number | null) {
+  if (code === 131053)
+    return "A foto não foi enviada ou uma mensagem anterior da oferta falhou. Confira o envio e as fotos cadastradas.";
   if (code === 0)
     return "Envio cancelado porque o responsável pelo atendimento mudou.";
   if (code === 130497)

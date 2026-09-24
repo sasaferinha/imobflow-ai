@@ -47,6 +47,10 @@ export type SaleRecord = {
   id: string;
   date: string;
   broker: string;
+  brokerId?: string;
+  propertyId?: string;
+  leadId?: string;
+  source?: 'crm' | 'legacy';
   property: string;
   client: string;
   amount: number;
@@ -57,6 +61,8 @@ export type SaleInput = Omit<SaleRecord, 'id' | 'createdAt'>;
 
 export type BrokerPerformance = {
   broker: string;
+  brokerId?: string;
+  active?: boolean;
   goal: number;
   sold: number;
   salesCount: number;
@@ -83,13 +89,11 @@ export type PerformanceSnapshot = {
   brokers: BrokerPerformance[];
   history: Array<{ month: string; sold: number }>;
   sales: SaleRecord[];
+  trackingStartedAt?: string;
 };
 
 export type PerformanceSettingsInput = {
   month: string;
   companyGoal: number;
-  leadsReceived: number;
-  convertedLeads: number;
-  recoveredLeads: number;
-  brokerGoals: Array<{ broker: string; goal: number }>;
+  brokerGoals: Array<{ broker: string; brokerId: string; goal: number }>;
 };

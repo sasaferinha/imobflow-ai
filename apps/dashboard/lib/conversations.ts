@@ -3,6 +3,7 @@ import { currentAccount } from './tenant-context';
 import { isWhatsAppMediaPath, isWhatsAppAudioPath, readStoredWhatsAppImage } from './whatsapp-media';
 import {deliveryError,type DeliveryStatus} from './message-delivery';
 import {sendQueuedMessage} from './message-outbox';
+import { hideMessageContent } from './message-visibility';
 
 export type ConversationAttendanceSummary = {
   leadId: string;
@@ -19,6 +20,7 @@ export type ConversationMessage = {
   text: string;
   time: string;
   images: string[];
+  photoDelivery?: { total: number; sent: number; pending: number; failed: number };
   audios?: string[];
   deliveryStatus?: DeliveryStatus;
   deliveryError?: string;
@@ -26,6 +28,8 @@ export type ConversationMessage = {
   canRetry?:boolean;
   attempts?:number;
   nextAttemptAt?:string;
+  hidden?:boolean;
+  canHide?:boolean;
   attendanceMode?:ConversationAttendanceSummary['attendanceMode'];
   assignedBrokerId?:string|null;
 };
@@ -99,7 +103,10 @@ export async function listConversationData(input: { leadId?: string; before?: st
     const event=eventsById.get(String(row.external_message_id));
     if(event) {message.deliveryStatus=event.status;message.deliveryError=event.status==='failed'?deliveryError(event.error_code):undefined;}
     const job=jobsById.get(message.id);if(job){message.attempts=job.attempts;message.nextAttemptAt=job.state==='pending'?job.next_attempt_at:undefined;message.canRetry=job.state==='pending'&&job.attempts>0&&job.attempts<3&&Date.parse(job.next_attempt_at)<=Date.now();}
-    return message;
+    const account = currentAccount();
+    message.canHide = 'dashboard_hidden_at' in row && Boolean(account && (account.role === 'owner' || attendance?.assignedBrokerId === account.brokerId))
+      && !['pending', 'sending', 'uncertain'].includes(job?.state || '');
+    return row.dashboard_hidden_at ? hideMessageContent(message) : message;
   });
   return { messages: mappedMessages, attendance: [...attendanceByConversation.values()], nextCursor };
 }
@@ -111,17 +118,21 @@ export async function createConversationMessage(input: {
   propertyId?: string | null;
   requestId: string;
   templateName?: string;
-}): Promise<ConversationMessage> {
+}, deadline = Date.now() + 50000): Promise<ConversationMessage> {
+  // Budget starts before validation/database reads, not after enqueueing. The
+  // route reserves ten seconds for final status reads and response serialization.
+  const request = <T>(path: string, options: Parameters<typeof supabaseRequest>[1] = {}) =>
+    supabaseRequest<T>(path, { ...options, timeoutMs: 4000 });
   const companyId = supabaseCompanyId();
   const account = currentAccount();
   if (!account) throw new Error('Entre na sua conta para continuar.');
-  const leads = await supabaseRequest<Array<{ id: string }>>(
+  const leads = await request<Array<{ id: string }>>(
     `leads?id=eq.${encodeURIComponent(input.leadId)}&company_id=eq.${companyId}&select=id&limit=1`,
   );
   if (!leads.length) throw new Error('Lead não encontrado nesta imobiliária.');
-  let verifiedImages = input.images || [];
+  let verifiedImages: string[] = [];
   if (input.propertyId) {
-    const properties = await supabaseRequest<Array<{ id: string; status: string; images: unknown }>>(
+    const properties = await request<Array<{ id: string; status: string; images: unknown }>>(
       `properties?id=eq.${encodeURIComponent(input.propertyId)}&company_id=eq.${companyId}&select=id,status,images&limit=1`,
     );
     if (!properties.length) throw new Error('Imóvel não encontrado nesta imobiliária.');
@@ -133,44 +144,65 @@ export async function createConversationMessage(input: {
       : [];
   }
   const lookup = `conversations?company_id=eq.${companyId}&lead_id=eq.${encodeURIComponent(input.leadId)}&select=id&limit=1`;
-  let conversations = await supabaseRequest<Array<{ id: string; assigned_broker_id?: string | null; assigned_to?: string | null }>>(lookup.replace('select=id', 'select=id,assigned_broker_id,assigned_to'));
+  let conversations = await request<Array<{ id: string; assigned_broker_id?: string | null; assigned_to?: string | null }>>(lookup.replace('select=id', 'select=id,assigned_broker_id,assigned_to'));
   if (!conversations.length) {
-    conversations = await supabaseRequest<Array<{ id: string; assigned_broker_id?: string | null; assigned_to?: string | null }>>('conversations', {
+    conversations = await request<Array<{ id: string; assigned_broker_id?: string | null; assigned_to?: string | null }>>('conversations', {
       method: 'POST', prefer: 'return=representation',
       body: { company_id: companyId, lead_id: input.leadId, channel: 'painel', external_conversation_id: `painel:${input.leadId}`, status: 'open', last_message_at: new Date().toISOString() },
     });
   }
   const conversationId = conversations[0].id;
   if (account.role === 'owner' && conversations[0].assigned_broker_id !== account.brokerId) {
-    await supabaseRequest(
+    await request(
       `conversations?company_id=eq.${companyId}&id=eq.${conversationId}`,
       { method: 'PATCH', body: { assigned_broker_id: account.brokerId, assigned_to: account.name, bot_paused: true } },
     );
-    await supabaseRequest(
+    await request(
       `leads?company_id=eq.${companyId}&id=eq.${encodeURIComponent(input.leadId)}`,
       { method: 'PATCH', body: { assigned_to: account.name } },
     );
   }
-  const messageId=await supabaseRequest<string>('rpc/enqueue_conversation_message',{method:'POST',body:{p_company_id:companyId,p_conversation_id:conversationId,p_key:`human:${account.brokerId}:${input.requestId}`,p_content:input.content,p_broker_id:account.brokerId,p_template_name:input.templateName||null}});
-  // Property links are sent in the text; local previews are not represented as delivered media.
-  void verifiedImages;
-  await sendQueuedMessage(companyId,messageId);
-  const [message]=await supabaseRequest<Record<string,unknown>[]>(`messages?company_id=eq.${companyId}&id=eq.${messageId}&select=*&limit=1`);
-  if (input.propertyId && message.delivery_status==='sent') {
-    await supabaseRequest('lead_property_events', {
+  const requestKey = `human:${account.brokerId}:${input.requestId}`;
+  const imageTools = input.propertyId && !input.templateName ? await import('./property-whatsapp-media') : null;
+  const attachments = input.propertyId && !input.templateName
+    ? [...new Set(verifiedImages)].map(url => imageTools!.propertyImageAttachment(url, companyId, input.propertyId!)) : [];
+  const messageIds = input.propertyId && !input.templateName
+    ? await request<string[]>('rpc/enqueue_property_offer', { method: 'POST', body: {
+      p_company_id: companyId, p_conversation_id: conversationId, p_key: requestKey,
+      p_content: input.content, p_broker_id: account.brokerId, p_property_id: input.propertyId, p_images: attachments,
+    } })
+    : [await request<string>('rpc/enqueue_conversation_message',{method:'POST',body:{p_company_id:companyId,p_conversation_id:conversationId,p_key:requestKey,p_content:input.content,p_broker_id:account.brokerId,p_template_name:input.templateName||null}})];
+  const messageId = messageIds[0];
+  // All photos already exist durably. Leave remaining work to the recovery worker
+  // when the request budget runs short; each has its own idempotent queue claim.
+  for (const id of messageIds) {
+    if (Date.now() + 44000 > deadline) break;
+    await sendQueuedMessage(companyId, id, deadline);
+  }
+  const [message]=await request<Record<string,unknown>[]>(`messages?company_id=eq.${companyId}&id=eq.${messageId}&select=*&limit=1`);
+  if (input.propertyId && input.templateName && message.delivery_status==='sent') {
+    await request('lead_property_events', {
       method: 'POST',
       body: { company_id: companyId, lead_id: input.leadId, property_id: input.propertyId, event_type: 'Enviado' },
     });
   }
-  return mapMessage(message, input.leadId);
+  const result = mapMessage(message, input.leadId);
+  if (messageIds.length > 1) {
+    const photos = await request<Array<{state: string}>>(`message_outbox?company_id=eq.${companyId}&id=in.(${messageIds.slice(1).join(',')})&select=state`);
+    result.photoDelivery = { total: messageIds.length - 1, sent: photos.filter(row => row.state === 'sent').length,
+      pending: photos.filter(row => ['pending', 'sending'].includes(row.state)).length,
+      failed: photos.filter(row => ['failed', 'cancelled', 'uncertain'].includes(row.state)).length };
+  }
+  return result;
 }
 
 export async function readConversationImage(messageId: string, index: number) {
   const companyId = supabaseCompanyId();
   if (!/^[0-9a-f-]{36}$/i.test(messageId) || !Number.isInteger(index) || index < 0 || index > 4) throw new Error('Foto inválida.');
-  const messages = await supabaseRequest<Array<{ media_urls: unknown }>>(
-    `messages?id=eq.${encodeURIComponent(messageId)}&company_id=eq.${companyId}&select=media_urls&limit=1`,
+  const messages = await supabaseRequest<Array<{ media_urls: unknown; dashboard_hidden_at?: string | null }>>(
+    `messages?id=eq.${encodeURIComponent(messageId)}&company_id=eq.${companyId}&select=media_urls,dashboard_hidden_at&limit=1`,
   );
+  if (messages[0]?.dashboard_hidden_at) throw new Error('Foto não encontrada.');
   const path = Array.isArray(messages[0]?.media_urls) && typeof messages[0].media_urls[index] === 'string' ? messages[0].media_urls[index] : '';
   if (!isWhatsAppMediaPath(path, companyId)) throw new Error('Foto não encontrada.');
   return readStoredWhatsAppImage(path);
@@ -178,7 +210,7 @@ export async function readConversationImage(messageId: string, index: number) {
 
 function mapMessage(row: Record<string, unknown>, leadId: string): ConversationMessage {
   const createdAt = new Date(String(row.created_at));
-  return {
+  const message: ConversationMessage = {
     id: String(row.id), leadId, createdAt: String(row.created_at),
     side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing',
     text: String(row.content || ''),
@@ -189,6 +221,9 @@ function mapMessage(row: Record<string, unknown>, leadId: string): ConversationM
     images: mediaLinks(row, false),
     audios: mediaLinks(row, true),
   };
+  // POST retries can return an already-sent, later-hidden message too. Every
+  // dashboard response must mask it, not only the paginated GET projection.
+  return row.dashboard_hidden_at ? hideMessageContent(message) : message;
 }
 
 function mediaLinks(row: Record<string, unknown>, audio: boolean): string[] {

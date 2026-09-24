@@ -164,7 +164,7 @@ export function createProductDemoTransport(): typeof fetch {
       leadsReceived: active ? 3 : 0, convertedLeads: active ? 1 : 0, recoveredLeads: 0,
       conversionRate: active ? 100 / 3 : 0, history,
       brokers: team.map((broker, index) => ({
-        broker: broker.name, goal: 500000, sold: active && index === 0 ? 480000 : 0,
+        brokerId: broker.id, active: broker.active, broker: broker.name, goal: 500000, sold: active && index === 0 ? 480000 : 0,
         salesCount: active && index === 0 ? 1 : 0, progress: active && index === 0 ? 96 : 0,
         leadsReceived: active ? index === 0 ? 2 : 1 : 0, convertedLeads: active && index === 0 ? 1 : 0,
         recoveredLeads: 0, visits: active && index === 0 ? 1 : 0,
@@ -172,7 +172,7 @@ export function createProductDemoTransport(): typeof fetch {
         history: history.map(item => ({ ...item, sold: index === 0 ? item.sold : 0 })),
       })),
       sales: active ? [{
-        id: 'example-sale-1', dealType: 'Venda', date: saleDate, broker: 'Marina Alves',
+        id: 'example-sale-1', dealType: 'Venda', date: saleDate, broker: 'Marina Alves', brokerId: productDemoAccount.brokerId,
         property: properties[2].title, client: leads[2].name, amount: 480000, createdAt: `${saleDate}T12:00:00.000Z`,
       }] : [],
     };
@@ -211,6 +211,7 @@ export function createProductDemoTransport(): typeof fetch {
         return response({ data: opportunities.slice(offset, offset + 50) });
       }
       case '/api/brokers': return response({ data: team, brokerLimit: 5, publicContactPath: '' });
+      case '/api/account/profile': return response({ data: productDemoAccount });
       case '/api/conversations/whatsapp': return response({ data: {
         configured: true, phoneNumberId: '000000000000001', apiVersion: 'v26.0', enabled: true,
         hasAccessToken: true, verification: 'verified', displayPhoneNumber: '+55 (00) 00000-0000',

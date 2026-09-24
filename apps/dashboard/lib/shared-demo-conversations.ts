@@ -1,14 +1,15 @@
 import { demoContacts, type DemoMessage } from './demo-conversations';
 import { currentAccount } from './tenant-context';
 import { supabaseCompanyId, supabaseRequest } from './supabase';
+import { hideMessageContent } from './message-visibility';
 
-type ThreadRow = { contact_id: string; assigned_broker_id: string; messages: DemoMessage[]; revision: number };
+type ThreadRow = { contact_id: string; assigned_broker_id: string; messages: DemoMessage[]; revision: number; hidden_message_ids?: string[] };
 export type SharedDemoThread = { id: string; assignedTo: string | null; assignedBrokerId: string | null; messages: DemoMessage[]; revision: number };
 
 export async function listSharedDemoThreads(): Promise<SharedDemoThread[]> {
   const companyId = supabaseCompanyId();
   const [threads, brokers] = await Promise.all([
-    supabaseRequest<ThreadRow[]>(`demo_conversation_threads?company_id=eq.${companyId}&select=contact_id,assigned_broker_id,messages,revision`),
+    supabaseRequest<ThreadRow[]>(`demo_conversation_threads?company_id=eq.${companyId}&select=contact_id,assigned_broker_id,messages,revision,hidden_message_ids`),
     supabaseRequest<Array<{ id: string; name: string }>>(`broker_accounts?company_id=eq.${companyId}&select=id,name`),
   ]);
   return demoContacts.map(contact => {
@@ -17,7 +18,7 @@ export async function listSharedDemoThreads(): Promise<SharedDemoThread[]> {
       id: `lead-example-${contact.id}`, revision: thread?.revision || 0,
       assignedBrokerId: thread?.assigned_broker_id || null,
       assignedTo: brokers.find(broker => broker.id === thread?.assigned_broker_id)?.name || null,
-      messages: [...contact.messages, ...(thread?.messages || [])],
+      messages: visibleDemoMessages(contact.messages, thread),
     };
   });
 }
@@ -43,5 +44,25 @@ export async function saveSharedDemoAction(input: { contactId: string; content?:
   const assignedTo = thread.assigned_broker_id === account.brokerId ? account.name
     : (await supabaseRequest<Array<{ name: string }>>(`broker_accounts?company_id=eq.${account.companyId}&id=eq.${thread.assigned_broker_id}&select=name&limit=1`))[0]?.name || null;
   return { id: `lead-example-${contactId}`, revision: thread.revision, assignedTo, assignedBrokerId: thread.assigned_broker_id,
-    messages: [...demoContacts.find(contact => contact.id === contactId)!.messages, ...thread.messages] };
+    messages: visibleDemoMessages(demoContacts.find(contact => contact.id === contactId)!.messages, thread) };
+}
+
+function visibleDemoMessages(seed: DemoMessage[], thread?: ThreadRow): DemoMessage[] {
+  const account = currentAccount();
+  const canHide = Boolean(thread && account && (account.role === 'owner' || thread.assigned_broker_id === account.brokerId));
+  const hiddenIds = new Set(thread?.hidden_message_ids || []);
+  return [...seed, ...(thread?.messages || [])].map(message => hiddenIds.has(message.id)
+    ? hideMessageContent(message) : { ...message, canHide });
+}
+
+export async function hideSharedDemoMessage(contactId: string, messageId: string): Promise<SharedDemoThread> {
+  const account = currentAccount();
+  if (!account) throw new Error('invalid_broker');
+  const normalizedContact = contactId.replace(/^example-/, '');
+  if (!/^example-[a-z-]{1,40}$/.test(contactId) || !/^(?:example-[0-9]|[0-9a-f-]{36})$/i.test(messageId)
+    || !demoContacts.some(contact => contact.id === normalizedContact)) throw new Error('invalid_message');
+  await supabaseRequest('rpc/hide_demo_dashboard_message', { method: 'POST', body: {
+    p_company_id: account.companyId, p_broker_id: account.brokerId, p_contact_id: normalizedContact, p_message_id: messageId,
+  } });
+  return (await listSharedDemoThreads()).find(thread => thread.id === `lead-example-${normalizedContact}`)!;
 }

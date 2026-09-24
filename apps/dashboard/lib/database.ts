@@ -6,6 +6,8 @@ import type { AppointmentInput, AppointmentRecord, PerformanceSettingsInput, Per
 import { supabaseCompanyId, supabaseRequest } from './supabase';
 import { moneyValue } from './property-matching';
 import { importPhone } from './lead-import';
+import { currentAccount } from './tenant-context';
+import { buildPerformance, performanceMonths, type BrokerAlias, type MetricRow, type PerformanceBroker } from './performance-metrics';
 
 // Exact identifiers written by the retired demo bootstrap. Preserve the records
 // for review, but never count them as real sales.
@@ -164,8 +166,6 @@ function mapAppointment(row: Record<string, unknown>, leadNames = new Map<string
   };
 }
 
-function normalizePhone(value: string) { return value.replace(/\D/g, ''); }
-
 function parseBudget(value: string): [number | null, number | null] {
   const normalized = value.toLowerCase().replace(/r\$/g, '').replace(/\./g, '').replace(',', '.');
   const values = [...normalized.matchAll(/(\d+(?:\.\d+)?)\s*(milh(?:ão|oes|ões)?|mi|mil|k)?/g)].map((match) => {
@@ -231,83 +231,69 @@ function propertyMeta(row: Record<string, unknown>) {
 export async function getPerformance(month: string): Promise<PerformanceSnapshot> {
   const sql = database();
   const companyId = supabaseCompanyId();
-  await sql`INSERT INTO site_performance_months (company_id, month, company_goal, leads_received, converted_leads, recovered_leads)
-    VALUES (${companyId}, ${month}, 0, 0, 0, 0) ON CONFLICT (company_id, month) DO NOTHING`;
-  const settingsRows = await sql`SELECT company_goal, leads_received, converted_leads, recovered_leads FROM site_performance_months WHERE company_id=${companyId} AND month=${month}`;
-  const [goalRows, brokerRows] = await Promise.all([
-    sql`SELECT broker, goal, leads_received, converted_leads, recovered_leads, visits FROM site_broker_goals WHERE company_id=${companyId} AND month=${month} ORDER BY broker`,
-    supabaseRequest<Array<{ name: string }>>(`broker_accounts?company_id=eq.${encodeURIComponent(companyId)}&role=eq.broker&active=eq.true&select=name&order=created_at.asc`, { allRows: true }),
+  const actorId = currentAccount()?.brokerId;
+  if (!actorId) throw new Error('Contexto da conta ausente.');
+  const months = performanceMonths(month);
+  const start = `${months[0]}-01`;
+  const end = new Date(`${month}-01T12:00:00Z`); end.setUTCMonth(end.getUTCMonth()+1);
+  const until = end.toISOString().slice(0,10);
+  const filter = `company_id=eq.${encodeURIComponent(companyId)}`;
+  const [settings, goals, brokers, aliases, legacySales, crmSales, cancelled, crm] = await Promise.all([
+    sql`SELECT company_goal FROM site_performance_months WHERE company_id=${companyId} AND month=${month}`,
+    sql`SELECT broker, goal FROM site_broker_goals WHERE company_id=${companyId} AND month=${month}`,
+    supabaseRequest<PerformanceBroker[]>(`broker_accounts?${filter}&select=id,name,active&order=created_at.asc`, { allRows:true }),
+    supabaseRequest<BrokerAlias[]>(`broker_name_history?${filter}&select=id,broker_id,name`, { allRows:true }),
+    sql`SELECT id,sale_date,broker,property,client,amount,deal_type,created_at FROM site_sales WHERE company_id=${companyId} AND sale_date>=${start}::date AND sale_date<${until}::date AND NOT (COALESCE(reference_key,'') = ANY(${demoSaleKeys}::text[]))`,
+    supabaseRequest<Record<string,unknown>[]>(`property_deals?${filter}&cancelled_at=is.null&sale_date=gte.${start}&sale_date=lt.${until}&select=*&order=sale_date.asc`, { allRows:true }),
+    supabaseRequest<Array<{ legacy_sale_id:string }>>(`cancelled_legacy_sales?${filter}&select=id,legacy_sale_id`, { allRows:true }),
+    supabaseRequest<{ metrics:MetricRow[]; trackingStartedAt:string }>('rpc/performance_crm_month', { method:'POST', body:{ p_company_id:companyId,p_actor_id:actorId,p_month:month } }),
   ]);
-  const saleRows = await sql`SELECT id, sale_date, broker, property, client, amount, deal_type, created_at FROM site_sales
-    WHERE company_id=${companyId} AND TO_CHAR(sale_date, 'YYYY-MM')=${month}
-      AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[])) ORDER BY sale_date DESC, created_at DESC`;
-  const historyRows = await sql`WITH recent_months AS (
-      SELECT DISTINCT TO_CHAR(sale_date, 'YYYY-MM') AS month FROM site_sales
-      WHERE company_id=${companyId} AND deal_type='Venda' AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[]))
-        AND sale_date < ((${month} || '-01')::date + INTERVAL '1 month') ORDER BY month DESC LIMIT 6
-    )
-    SELECT TO_CHAR(sale_date, 'YYYY-MM') AS month, broker, SUM(amount) AS sold FROM site_sales
-    WHERE company_id=${companyId} AND deal_type='Venda' AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[]))
-      AND TO_CHAR(sale_date, 'YYYY-MM') IN (SELECT month FROM recent_months)
-    GROUP BY TO_CHAR(sale_date, 'YYYY-MM'), broker ORDER BY month`;
-  const sales = saleRows.map(mapSale);
-  const completedSales = sales.filter((sale) => sale.dealType !== 'Aluguel');
-  const totalSold = completedSales.reduce((total, sale) => total + sale.amount, 0);
-  const settings = settingsRows[0];
-  const leadsReceived = Number(settings.leads_received);
-  const convertedLeads = Number(settings.converted_leads);
-  return {
-    dataMode: 'live', month, companyGoal: Number(settings.company_goal), totalSold, salesCount: completedSales.length,
-    averageTicket: completedSales.length ? totalSold / completedSales.length : 0, leadsReceived, convertedLeads,
-    recoveredLeads: Number(settings.recovered_leads), conversionRate: leadsReceived ? (convertedLeads / leadsReceived) * 100 : 0,
-    brokers: Array.from(new Set([
-      ...brokerRows.map((broker) => String(broker.name)),
-      ...goalRows.map((goal) => String(goal.broker)),
-    ])).map((brokerName) => {
-      const goal = goalRows.find((item) => String(item.broker) === brokerName);
-      const broker = goal || { broker: brokerName, goal: 0, leads_received: 0, converted_leads: 0, recovered_leads: 0, visits: 0 };
-      const brokerSales = completedSales.filter((sale) => sale.broker === String(broker.broker));
-      const sold = brokerSales.reduce((total, sale) => total + sale.amount, 0);
-      const target = Number(broker.goal);
-      const brokerLeads = Number(broker.leads_received);
-      const brokerConverted = Number(broker.converted_leads);
-      return {
-        broker: String(broker.broker), goal: target, sold, salesCount: brokerSales.length, progress: target ? (sold / target) * 100 : 0,
-        leadsReceived: brokerLeads, convertedLeads: brokerConverted, recoveredLeads: Number(broker.recovered_leads), visits: Number(broker.visits),
-        conversionRate: brokerLeads ? (brokerConverted / brokerLeads) * 100 : 0,
-        history: historyRows.filter((row) => String(row.broker) === String(broker.broker)).map((row) => ({ month: String(row.month), sold: Number(row.sold) })),
-      };
-    }).sort((a, b) => b.sold - a.sold),
-    history: Array.from(new Set(historyRows.map((row) => String(row.month)))).map((historyMonth) => ({
-      month: historyMonth,
-      sold: historyRows.filter((row) => String(row.month) === historyMonth).reduce((total, row) => total + Number(row.sold), 0),
-    })), sales,
-  };
+  const cancelledIds = new Set(cancelled.map(s => s.legacy_sale_id));
+  return buildPerformance({ month, companyGoal:Number(settings[0]?.company_goal || 0), brokers, aliases,
+    goals:goals.map(row => ({ broker:String(row.broker),goal:Number(row.goal) })),
+    sales:[...legacySales.filter(row => !cancelledIds.has(String(row.id))).map(row => ({ ...mapSale(row),id:`legacy:${row.id}`,source:'legacy' as const })),...crmSales.map(row => ({ ...mapSale(row),source:'crm' as const }))],
+    metrics:crm.metrics,trackingStartedAt:crm.trackingStartedAt });
 }
 
 export async function createSale(input: SaleInput): Promise<SaleRecord> {
-  const rows = await database()`INSERT INTO site_sales (company_id, sale_date, broker, property, client, amount, deal_type)
-    VALUES (${supabaseCompanyId()}, ${input.date}, ${input.broker}, ${input.property}, ${input.client}, ${input.amount}, ${input.dealType || 'Venda'})
-    RETURNING id, sale_date, broker, property, client, amount, deal_type, created_at`;
-  return mapSale(rows[0]);
+  const row = await supabaseRequest<Record<string,unknown>>('rpc/record_property_deal', { method:'POST', body:{
+    p_company_id:supabaseCompanyId(), p_actor_id:currentAccount()?.brokerId, p_property_id:input.propertyId,
+    p_broker_id:input.brokerId, p_lead_id:input.leadId || null, p_date:input.date, p_amount:input.amount,
+    p_deal_type:input.dealType || 'Venda', p_client:input.client,
+  } });
+  return { ...mapSale(row),source:'crm' };
 }
 
-export async function deleteSale(id: string): Promise<boolean> {
-  const rows = await database()`DELETE FROM site_sales WHERE id=${id} AND company_id=${supabaseCompanyId()} RETURNING id`;
-  return rows.length > 0;
+export async function deleteSale(id: string): Promise<{ ok:boolean; propertyRestored:boolean; warning?:string } | null> {
+  const companyId = supabaseCompanyId();
+  const actor = currentAccount();
+  if (!actor || actor.role !== 'owner') throw new Error('deal_forbidden');
+  if (!id.startsWith('legacy:')) {
+    return supabaseRequest('rpc/cancel_property_deal', { method:'POST', body:{ p_company_id:companyId,p_actor_id:actor.brokerId,p_deal_id:id } });
+  }
+  const legacyId = id.slice(7);
+  const [row] = await database()`SELECT id,sale_date,broker,property,client,amount,deal_type,created_at FROM site_sales WHERE id=${legacyId} AND company_id=${companyId}`;
+  if (!row) return null;
+  // Legacy rows have no property identity: keep the source and never guess
+  // which same-named property should be reopened.
+  await supabaseRequest('cancelled_legacy_sales?on_conflict=company_id,legacy_sale_id', { method:'POST',prefer:'resolution=ignore-duplicates',body:{
+    company_id:companyId,legacy_sale_id:legacyId,sale_snapshot:row,cancelled_by:actor.brokerId,
+  } });
+  return { ok:true,propertyRestored:false,warning:'Registro antigo cancelado e preservado no histórico. Como não possui vínculo seguro com o imóvel, revise a situação no catálogo.' };
 }
 
 export async function updatePerformanceSettings(input: PerformanceSettingsInput) {
   const sql = database();
   const companyId = supabaseCompanyId();
-  await sql`INSERT INTO site_performance_months (company_id, month, company_goal, leads_received, converted_leads, recovered_leads)
-    VALUES (${companyId}, ${input.month}, ${input.companyGoal}, ${input.leadsReceived}, ${input.convertedLeads}, ${input.recoveredLeads})
-    ON CONFLICT (company_id, month) DO UPDATE SET company_goal=EXCLUDED.company_goal, leads_received=EXCLUDED.leads_received,
-      converted_leads=EXCLUDED.converted_leads, recovered_leads=EXCLUDED.recovered_leads, updated_at=NOW()`;
-  for (const item of input.brokerGoals) {
-    await sql`INSERT INTO site_broker_goals (company_id, month, broker, goal) VALUES (${companyId}, ${input.month}, ${item.broker}, ${item.goal})
-      ON CONFLICT (company_id, month, broker) DO UPDATE SET goal=EXCLUDED.goal`;
-  }
+  const brokers = await supabaseRequest<PerformanceBroker[]>(`broker_accounts?company_id=eq.${encodeURIComponent(companyId)}&select=id,name,active`);
+  if (input.brokerGoals.some(item => !brokers.some(b => b.id === item.brokerId))) throw new Error('Corretor não encontrado nesta empresa.');
+  const queries = [
+    sql`INSERT INTO site_performance_months (company_id,month,company_goal) VALUES (${companyId},${input.month},${input.companyGoal})
+      ON CONFLICT(company_id,month) DO UPDATE SET company_goal=EXCLUDED.company_goal,updated_at=NOW()`,
+    ...input.brokerGoals.map(item => sql`INSERT INTO site_broker_goals(company_id,month,broker,goal) VALUES(${companyId},${input.month},${`id:${item.brokerId}`},${item.goal})
+      ON CONFLICT(company_id,month,broker) DO UPDATE SET goal=EXCLUDED.goal`),
+  ];
+  await sql.transaction(queries);
   return getPerformance(input.month);
 }
 
@@ -316,6 +302,7 @@ function mapSale(row: Record<string, unknown>): SaleRecord {
   return {
     dealType: row.deal_type === 'Aluguel' ? 'Aluguel' : 'Venda',
     id: String(row.id), date, broker: String(row.broker), property: String(row.property), client: String(row.client),
+    brokerId:row.broker_id ? String(row.broker_id) : undefined,propertyId:row.property_id ? String(row.property_id) : undefined,leadId:row.lead_id ? String(row.lead_id) : undefined,
     amount: Number(row.amount), createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }

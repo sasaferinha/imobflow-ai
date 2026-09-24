@@ -10,8 +10,9 @@ function load(file, dependencies = {}) {
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const mod = { exports: {} };
   vm.runInNewContext(code, {
-    module: mod, exports: mod.exports, Date, console,
+    module: mod, exports: mod.exports, Date, Error, console,
     require(name) {
+      if (name in dependencies) return dependencies[name];
       if (name === 'next/server') return { NextResponse: { json: Response.json }, after: () => {} };
       if (name === '@/lib/accounts') return { protectedRoute: fn => fn };
       if (name === '@/lib/admin-auth') return { isAdminRequest: () => true };
@@ -64,53 +65,34 @@ async function run() {
     assert.equal(saved.bedrooms, 2); assert.equal(saved.parkingSpaces, 0); assert.equal(saved.area, 75.5);
   }
 
-  let catalog = { title: 'Casa', status: 'Disponível', purpose: 'Venda' };
-  let counter = 0, paired = false, releasePair;
-  let pairPromise;
+  let catalog = { title:'Casa',status:'Disponível',purpose:'Venda' };
   const sales = new Map();
+  let actor={role:'owner',brokerId:'00000000-0000-4000-8000-000000000011'};
   const performance = load('app/api/performance/route.ts', {
     '@/lib/database': {
       createSale: async input => {
-        const row = { ...input, id: `sale-${++counter}` }; sales.set(row.id, row);
-        if (paired) { if (sales.size === 2) releasePair(); await pairPromise; }
-        return row;
-      },
-      deleteSale: async id => sales.delete(id),
-    },
-    '@/lib/supabase': {
-      supabaseCompanyId: () => 'company-a',
-      supabaseRequest: async (resource, options = {}) => {
-        const params = new URLSearchParams(resource.split('?')[1]);
-        assert.equal(params.get('company_id'), 'eq.company-a');
-        assert.equal(params.get('id'), `eq.${propertyId}`);
-        if (!options.method) return [{ ...catalog }];
-        assert.equal(options.method, 'PATCH');
-        assert.equal(options.prefer, 'return=representation');
-        const expected = params.get('status');
-        assert.ok(expected, 'closing a deal must compare the original status');
-        if (expected !== `eq.${catalog.status}`) return [];
-        catalog = { ...catalog, status: options.body.status };
-        return [{ id: propertyId }];
+        if (!['Disponível','Reservado'].includes(catalog.status)) throw new Error('property_unavailable');
+        if (catalog.purpose !== input.dealType) throw new Error('deal_purpose_mismatch');
+        catalog.status=input.dealType === 'Aluguel' ? 'Alugado' : 'Vendido';
+        const row={...input,id:`sale-${sales.size+1}`};sales.set(row.id,row);return row;
       },
     },
+    '@/lib/tenant-context': {currentAccount:()=>actor},
   });
-  const sale = { propertyId, date: '2026-09-13', broker: 'Corretor', client: 'Cliente', amount: 500000, dealType: 'Venda' };
-  for (const date of ['2026-02-30', '2025-02-29', '2026-13-01', '2026-00-10', '0000-01-01']) {
-    assert.equal((await performance.POST(request({ ...sale, date }))).status, 400, `invalid calendar date ${date}`);
-  }
-  assert.equal(sales.size, 0);
-  paired = true;
-  pairPromise = new Promise(resolve => { releasePair = resolve; });
-  const responses = await Promise.all([performance.POST(request(sale)), performance.POST(request(sale))]);
-  assert.deepEqual(responses.map(response => response.status).sort(), [201, 409]);
-  assert.equal(sales.size, 1, 'concurrent sales must not duplicate performance totals');
-  assert.equal(catalog.status, 'Vendido');
-  assert.equal((await performance.POST(request(sale))).status, 409, 'retry must not register a sold property twice');
-  paired = false;
-  catalog = { title: 'Apartamento', status: 'Reservado', purpose: 'Aluguel' };
-  assert.equal((await performance.POST(request({ ...sale, date: '2024-02-29', dealType: 'Aluguel', amount: 2000 }))).status, 201);
-  assert.equal(catalog.status, 'Alugado');
-  console.log('PASS property API: invalid numeric fields rejected before writes; valid decimals/zero preserved; real calendar dates; competing sales close once; reserved rentals close normally.');
+  const sale = { propertyId,date:'2026-09-13',brokerId:'00000000-0000-4000-8000-000000000012',client:'Cliente',amount:500000,dealType:'Venda' };
+  for(const date of ['2026-02-30','2025-02-29','2026-13-01','2026-00-10','0000-01-01']) assert.equal((await performance.POST(request({...sale,date}))).status,400);
+  for(const invalid of [null,'500',-1,Infinity,{},1e15]) assert.equal((await performance.POST(request({...sale,amount:invalid}))).status,400);
+  assert.equal(sales.size,0);
+  const responses=await Promise.all([performance.POST(request(sale)),performance.POST(request(sale))]);
+  assert.deepEqual(responses.map(response=>response.status).sort(),[201,409]);assert.equal(sales.size,1);assert.equal(catalog.status,'Vendido');
+  assert.equal((await performance.POST(request(sale))).status,409);
+  catalog={title:'Apartamento',status:'Reservado',purpose:'Aluguel'};
+  assert.equal((await performance.POST(request({...sale,date:'2024-02-29',dealType:'Aluguel',amount:2000}))).status,201);
+  assert.equal(catalog.status,'Alugado');
+  actor={role:'broker',brokerId:'00000000-0000-4000-8000-000000000019'};
+  catalog={title:'Casa',status:'Disponível',purpose:'Venda'};
+  assert.equal((await performance.POST(request(sale))).status,201);assert.equal(sales.get('sale-3').brokerId,actor.brokerId,'broker cannot attribute a sale to another account');
+  console.log('PASS property API: validated catalogue numbers, valid dates/amounts, stable actor binding and atomic deal error responses.');
 }
 
 module.exports = run;

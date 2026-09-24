@@ -12,6 +12,7 @@ import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
 import { ConversationMessageBubble } from './conversation-message';
 import { ConversationSettings } from './conversation-settings';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
+import { hideMessageContent } from '@/lib/message-visibility';
 
 const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
   id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
@@ -60,6 +61,13 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
     {!preview&&<ConversationSettings/>}
     </div>
     {preview ? <ConversationWorkspace {...props} demonstration ready={demoReady} state={previewState} dispatch={previewDispatch} leads={previewLeads}
+      hideDemoMessage={async (contactId, messageId) => {
+        const response = await fetch(`/api/conversations/demo?contactId=${encodeURIComponent(contactId)}&id=${encodeURIComponent(messageId)}`, { method: 'DELETE' });
+        const result = await response.json() as { data?: SharedDemoThread; error?: string };
+        if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível remover a mensagem da demonstração.');
+        previewDispatch({ type: 'hydrate', contacts: [result.data] });
+        announceDashboardChange('demo-conversations');
+      }}
       claimLead={async lead => { await saveDemoAction({ contactId: lead.id, action: 'claim' }); }}
       persistMessage={async input => {
         const messageId = crypto.randomUUID();
@@ -83,12 +91,13 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, currentBrokerId, isAdministrator = false, leads = [], properties = [], demonstration = false, ready = true }: {
+function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, hideDemoMessage, currentBrokerName, currentBrokerId, isAdministrator = false, leads = [], properties = [], demonstration = false, ready = true }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
   notify: (message: string) => void; openAgenda: () => void;
-  persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string }>;
+  persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string; hidden?: boolean }>;
   refreshProperties: () => Promise<void>;
   claimLead: (lead: LeadProfile) => Promise<void>;
+  hideDemoMessage?: (contactId: string, messageId: string) => Promise<void>;
   currentBrokerId?:string;
   isAdministrator?: boolean;
   currentBrokerName: string;
@@ -219,7 +228,8 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     savingRef.current = true; setSaving(true);
     try {
       const saved = await persistMessage({ leadId, content });
-      dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time, text: content });
+      dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time, text: content,
+        message: saved.hidden ? hideMessageContent({ id: saved.id, time: saved.time, side: 'outgoing' as const, text: content }) : undefined });
       notify(demonstration ? 'Mensagem adicionada à prévia. Nenhum cliente foi contatado.' : 'Mensagem salva no histórico do lead.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível salvar a mensagem.';
@@ -239,9 +249,10 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     const text = `Separei uma opção que combina com o seu perfil:\n\n${property.purpose} · ${property.propertyType || 'Imóvel'}\n${property.district}${property.city ? `, ${property.city}` : ''}\n${property.meta}\n${property.price}${property.publicUrl ? `\n\nVeja os detalhes: ${property.publicUrl}` : ''}`;
     try {
       const saved = await persistMessage({ leadId, content: text, images: property.images, propertyId: property.id });
-      dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: demonstration?property.images:[], propertyTitle: property.title });
+      dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: demonstration?property.images:[], propertyTitle: property.title,
+        message: saved.hidden ? hideMessageContent({ id: saved.id, time: saved.time, side: 'outgoing' as const, text }) : undefined });
       setPropertyPickerOpen(false);
-      notify(demonstration ? `${property.title} adicionado apenas à demonstração.` : `${property.title} salvo na conversa com ${selected.name}.`);
+      notify(demonstration ? `${property.title} adicionado apenas à demonstração.` : 'Oferta registrada. Confira o status de envio de cada mensagem e foto na conversa.');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.');
     } finally {
@@ -277,6 +288,21 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     try{const response=await fetch('/api/conversations/owner',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({leadId,release:true})});const result=await response.json() as {error?:string};if(!response.ok)throw Error(result.error || 'Não foi possível devolver o atendimento.');announceDashboardChange('conversations');notify('Atendimento automático retomado para as próximas mensagens.');}
     catch(e){notify(e instanceof Error?e.message:'Não foi possível devolver o atendimento.');}finally{savingRef.current = false; setSaving(false);}
   }
+  async function hideMessage(messageId: string) {
+    if (!ready) throw new Error('Aguarde a sincronização do histórico antes de remover mensagens.');
+    if (demonstration) {
+      if (!hideDemoMessage) throw new Error('A remoção não está disponível nesta demonstração.');
+      await hideDemoMessage(leadId, messageId);
+    } else {
+      const response = await fetch(`/api/conversations?id=${encodeURIComponent(messageId)}`, { method: 'DELETE' });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Não foi possível remover a mensagem.');
+      const message = thread.messages.find(item => item.id === messageId);
+      if (message) dispatch({ type: 'hydrate', merge: true, contacts: [{ id: selected.id, messages: [hideMessageContent(message)] }] });
+      announceDashboardChange('conversations');
+    }
+    notify(demonstration ? 'Mensagem removida apenas da demonstração da equipe.' : 'Mensagem removida do painel da equipe. O WhatsApp e os registros técnicos foram preservados.');
+  }
   return <div className="conversation-demo conversation-clean">
     {!ready&&<p role="status">A sincronização está indisponível. Aguarde a atualização antes de enviar.</p>}
     <div className={`inbox-layout${profileOpen ? ' has-profile' : ''}`}>
@@ -310,7 +336,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
           </div>
         </div>
         {!demonstration && <ConversationAttendanceBanner attendance={attendance} ready={ready} saving={saving} release={() => void releaseConversation()}/>}
-        <div className="full-chat-body" ref={bodyRef}>{!demonstration && historyPage.leadId === leadId && historyPage.cursor && <button type="button" className="conversation-property-button" disabled={loadingOlder} onClick={() => void loadOlderMessages()}>{loadingOlder ? 'Carregando…' : 'Carregar mensagens anteriores'}</button>}{thread.messages.length ? thread.messages.map(message => <ConversationMessageBubble key={message.id} message={message} demo={demonstration}/>) : <p className="conversation-empty-thread">{ready ? 'Ainda não há mensagens deste lead no painel.' : 'Carregando histórico…'}</p>}</div>
+        <div className="full-chat-body" ref={bodyRef}>{!demonstration && historyPage.leadId === leadId && historyPage.cursor && <button type="button" className="conversation-property-button" disabled={loadingOlder} onClick={() => void loadOlderMessages()}>{loadingOlder ? 'Carregando…' : 'Carregar mensagens anteriores'}</button>}{thread.messages.length ? thread.messages.map(message => <ConversationMessageBubble key={message.id} message={message} demo={demonstration} onHide={ready ? hideMessage : undefined}/>) : <p className="conversation-empty-thread">{ready ? 'Ainda não há mensagens deste lead no painel.' : 'Carregando histórico…'}</p>}</div>
         <details className="conversation-quick-reply" key={selected.id}><summary>Resposta sugerida</summary><div><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div></details>
         {sendNotice && <p className="conversation-send-notice" role="alert">{sendNotice}</p>}
         <form className="full-composer" onSubmit={send}><button type="button" className="conversation-property-button" disabled={loadingProperties || !ready || saving || !canSend} onClick={() => void openPropertyPicker()}>{loadingProperties ? 'Atualizando…' : 'Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => { setSendNotice(''); dispatch({ type: 'draft', id: selected.id, text: event.target.value }); }} aria-label={`Mensagem para ${selected.name}`} placeholder={canSend ? 'Escreva uma resposta…' : attendance.mode === 'closed' ? 'Conversa encerrada' : canClaim ? 'Assuma o atendimento para enviar' : 'Envio disponível ao corretor responsável'} maxLength={4000}/><button className="send-button" type="button" onClick={() => void submitDraft()} disabled={!thread.draft.trim() || !ready || saving || !canSend} aria-label="Adicionar mensagem"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m5 12 7-7 7 7M12 5v14"/></svg></button></form>
