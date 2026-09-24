@@ -43,7 +43,7 @@ export default function LoginClient() {
         <button className="access-submit" type="submit" disabled={loading}>{loading ? 'Aguarde…' : recovering ? 'Enviar link de recuperação' : registering ? 'Criar empresa e entrar' : 'Entrar no painel'}<span aria-hidden="true">→</span></button>
         {!registering && <button className="access-text-button" type="button" disabled={loading} onClick={() => { setRecovering(!recovering); setMessage(''); }}>{recovering ? 'Voltar ao login' : 'Esqueci minha senha'}</button>}
       </form>
-      <p className="access-footnote">{registering ? 'Plano Basic: 1 administrador e até 3 corretores. A chave é enviada após o pagamento.' : 'Cada corretor possui seu próprio acesso e senha.'}</p>
+      <p className="access-footnote">{registering ? 'Basic: 5 corretores. Plus: 8. Pro: 12. Todos incluem um administrador separado. Sua chave define o plano contratado.' : 'Cada corretor possui seu próprio acesso e senha.'}</p>
     </div>
   </section></main>;
 }

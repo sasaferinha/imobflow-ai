@@ -1,22 +1,28 @@
 'use client';
+import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 /* eslint-disable @next/next/no-img-element -- previews use locally compressed data URLs */
 
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
 import ConversationCenter from './conversation-center';
+import AppointmentTimeField from './appointment-time-field';
+import AppointmentRecordPicker from './appointment-record-picker';
+import WhatsAppIntegration from './whatsapp-integration';
 import { createLiveConversationState, demoConversationReducer } from '@/lib/demo-conversations';
-import type { ConversationMessage } from '@/lib/conversations';
+import type { ConversationAttendanceSummary, ConversationMessage } from '@/lib/conversations';
 import TeamModal from './team-modal';
+import ClientImport from './client-import';
 import PasswordModal from './password-modal';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import ReleaseNotice from './release-notice';
 import OpportunityCenter, { actOnOpportunity } from './opportunity-center';
 import type { Opportunity } from '@/lib/opportunities';
+import { businessCalendarDate, isCalendarMonth } from '@/lib/calendar-date';
 
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
 
-type View = 'overview' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'opportunities';
+type View = 'imports' | 'overview' | 'goals' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'opportunities' | 'integrations';
 type Property = PropertyRecord;
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
 type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
@@ -32,32 +38,41 @@ const leadFilterGroups: Array<{ id: LeadFilterGroup; label: string; options: Arr
 
 const navItems: Array<{ id: View; icon: string; label: string; badge?: string }> = [
   { id: 'overview', icon: '⌂', label: 'Visão geral' },
+  { id: 'goals', icon: '◎', label: 'Metas' },
   { id: 'conversations', icon: '◌', label: 'Conversas' },
   { id: 'leads', icon: '◎', label: 'Leads' },
   { id: 'opportunities', icon: '◇', label: 'Oportunidades' },
   { id: 'properties', icon: '▦', label: 'Imóveis' },
   { id: 'agenda', icon: '□', label: 'Agenda' },
+  { id: 'imports', icon: '↓', label: 'Importar clientes' },
+  { id: 'integrations', icon: '◈', label: 'Integrações' },
 ];
 
 function NavigationIcon({ view }: { view: View }) {
   const paths: Record<View, ReactNode> = {
-    opportunities: <><path d="m12 3 9 9-9 9-9-9Z" /><path d="m8 12 3 3 5-6" /></>,
-    overview: <><path d="m3 10 9-7 9 7v10H3Z" /><path d="M9 20v-7h6v7" /></>,
-    conversations: <path d="M4 4h16v12H9l-5 4V4Z" />,
-    leads: <><circle cx="9" cy="8" r="3" /><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v2" /></>,
-    properties: <><path d="M4 21V3h12v18M16 9h4v12M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3" /></>,
-    agenda: <><rect x="3" y="5" width="18" height="16" /><path d="M7 3v4M17 3v4M3 11h18M7 15h3M14 15h3" /></>,
-  };
+  imports: <><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" /></>,
+  opportunities: <><path d="m12 3 9 9-9 9-9-9Z" /><path d="m8 12 3 3 5-6" /></>,
+  overview: <><path d="m3 10 9-7 9 7v10H3Z" /><path d="M9 20v-7h6v7" /></>,
+  goals: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><path d="m15 9 6-6M17 3h4v4" /></>,
+  conversations: <path d="M4 4h16v12H9l-5 4V4Z" />,
+  leads: <><circle cx="9" cy="8" r="3" /><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v2" /></>,
+  properties: <><path d="M4 21V3h12v18M16 9h4v12M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3" /></>,
+  agenda: <><rect x="3" y="5" width="18" height="16" /><path d="M7 3v4M17 3v4M3 11h18M7 15h3M14 15h3" /></>,
+  integrations: <><path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-12 0V8Z" /><path d="M12 17v4" /></>,
+};
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[view]}</svg>;
 }
 
 const headers: Record<View, { eyebrow: string; title: string; copy: string }> = {
-  opportunities: { eyebrow: 'Recuperação de clientes', title: 'Oportunidades', copy: 'Imóveis compatíveis com o perfil dos seus leads. Você decide quando entrar em contato.' },
+  imports: { eyebrow: 'Carteira da imobiliária', title: 'Importar clientes antigos', copy: 'Aproveite os contatos que sua empresa já tem.' },
+  opportunities: { eyebrow: 'Compatibilidade de imóveis', title: 'Oportunidades', copy: 'Imóveis compatíveis com o perfil dos seus leads. Você decide quando entrar em contato.' },
   overview: { eyebrow: 'Visão executiva', title: 'Bom dia, Marina', copy: 'Acompanhe os principais indicadores da operação comercial.' },
+  goals: { eyebrow: 'Planejamento comercial', title: 'Metas', copy: 'Defina os objetivos mensais da imobiliária e de cada corretor.' },
   conversations: { eyebrow: 'Central de atendimento', title: 'Conversas', copy: 'Gerencie contatos, mensagens e responsáveis por cada atendimento.' },
   leads: { eyebrow: 'Gestão comercial', title: 'Leads', copy: 'Priorize oportunidades com base no perfil e no interesse de cada cliente.' },
   properties: { eyebrow: 'Portfólio imobiliário', title: 'Imóveis', copy: 'Consulte, filtre e mantenha o portfólio de imóveis atualizado.' },
   agenda: { eyebrow: 'Compromissos comerciais', title: 'Agenda', copy: 'Organize visitas, responsáveis e confirmações em um só lugar.' },
+  integrations: { eyebrow: 'Conexões', title: 'Integrações', copy: 'Conecte o WhatsApp da imobiliária para conversar com clientes reais.' },
 };
 
 function decorateLead(lead: LeadProfile, index: number): DashboardLead {
@@ -91,6 +106,34 @@ function matchesLeadFilters(lead: DashboardLead, filters: LeadFilter[]) {
   });
 }
 
+function normalizeText(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
+}
+
+function normalizePropertyPurpose(value: PropertyRecord['purpose'] | string) {
+  const purpose = normalizeText(String(value || 'venda'));
+  if (purpose === 'aluguel' || purpose === 'alugar' || purpose === 'rent') return 'aluguel';
+  if (purpose === 'venda' || purpose === 'comprar' || purpose === 'compra' || purpose === 'buy') return 'venda';
+  return purpose || 'venda';
+}
+
+function normalizePropertyStatus(value: PropertyRecord['status'] | string) {
+  const status = normalizeText(String(value || 'disponivel'));
+  if (status === 'disponivel' || status === 'available') return 'disponivel';
+  if (status === 'reservado' || status === 'reservada' || status === 'reserved') return 'reservado';
+  if (status === 'vendido' || status === 'vendida' || status === 'sold') return 'vendido';
+  if (status === 'alugado' || status === 'aluguel' || status === 'rented') return 'alugado';
+  return 'disponivel';
+}
+
+function isSaleProperty(property: PropertyRecord, dealType: 'Venda' | 'Aluguel') {
+  const purpose = normalizePropertyPurpose(property.purpose);
+  const status = normalizePropertyStatus(property.status);
+  const purposeMatches = dealType === 'Aluguel' ? purpose === 'aluguel' : purpose === 'venda';
+  const statusMatches = status === 'disponivel' || status === 'reservado';
+  return purposeMatches && statusMatches;
+}
+
 async function preparePropertyImage(file: File) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error(`${file.name}: formato não aceito.`);
   if (file.size > 12_000_000) throw new Error(`${file.name}: arquivo maior que 12 MB.`);
@@ -108,65 +151,8 @@ async function preparePropertyImage(file: File) {
   return image;
 }
 
-function parseCsvLine(line: string, separator: string) {
-  const cells: string[] = [];
-  let value = '';
-  let quoted = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index];
-    if (character === '"') {
-      if (quoted && line[index + 1] === '"') { value += '"'; index += 1; }
-      else quoted = !quoted;
-    } else if (character === separator && !quoted) {
-      cells.push(value.trim()); value = '';
-    } else value += character;
-  }
-  cells.push(value.trim());
-  return cells;
-}
-
 function normalizeCsvHeader(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function parseImportedDate(value: string) {
-  if (!value) return null;
-  const brazilian = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  const normalized = brazilian ? `${brazilian[3]}-${brazilian[2]}-${brazilian[1]}T12:00:00.000Z` : value;
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function parseLeadCsv(text: string) {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) throw new Error('O arquivo precisa ter cabeçalho e pelo menos uma linha de dados.');
-  const separator = (lines[0].match(/;/g) || []).length >= (lines[0].match(/,/g) || []).length ? ';' : ',';
-  const headers = parseCsvLine(lines[0], separator).map(normalizeCsvHeader);
-  const aliases: Record<string, string[]> = {
-    name: ['nome', 'name', 'lead', 'cliente'], phone: ['telefone', 'phone', 'celular', 'whatsapp'], email: ['email'],
-    goal: ['objetivo', 'interesse', 'intencao', 'goal'], propertyType: ['tipoimovel', 'tipodeimovel', 'imovel', 'tipo'],
-    region: ['regiao', 'bairro', 'cidade'], budget: ['orcamento', 'faixa', 'valor', 'budget'], details: ['detalhes', 'observacoes', 'notas'],
-    source: ['origem', 'source', 'canal'], assignedTo: ['corretor', 'responsavel', 'assignedto'], lifecycleStatus: ['status', 'etapa', 'lifecycle'],
-    lastContactAt: ['ultimocontato', 'dataultimocontato', 'lastcontact', 'lastcontactat'],
-  };
-  const column = (key: string) => headers.findIndex((header) => aliases[key].includes(header));
-  const indexes = Object.fromEntries(Object.keys(aliases).map((key) => [key, column(key)]));
-  if (indexes.name < 0 || (indexes.phone < 0 && indexes.email < 0)) throw new Error('Inclua as colunas Nome e Telefone ou E-mail.');
-  const statuses: LeadLifecycleStatus[] = ['Novo', 'Em atendimento', 'Visita', 'Proposta', 'Convertido', 'Perdido'];
-  const read = (cells: string[], key: string) => indexes[key] >= 0 ? cells[indexes[key]] || '' : '';
-  return lines.slice(1).slice(0, 500).map((line) => {
-    const cells = parseCsvLine(line, separator);
-    const rawStatus = read(cells, 'lifecycleStatus');
-    const lifecycleStatus = statuses.find((status) => normalizeCsvHeader(status) === normalizeCsvHeader(rawStatus)) || 'Novo';
-    return {
-      name: read(cells, 'name'), phone: read(cells, 'phone'), email: read(cells, 'email') || null,
-      goal: read(cells, 'goal') || 'Não informado', propertyType: read(cells, 'propertyType') || 'Não informado',
-      region: read(cells, 'region') || 'Não informado', budget: read(cells, 'budget') || 'Não informado',
-      details: read(cells, 'details') || null, source: read(cells, 'source') || 'Importação CSV',
-      assignedTo: read(cells, 'assignedTo') || null, lifecycleStatus,
-      lastContactAt: parseImportedDate(read(cells, 'lastContactAt')),
-    };
-  }).filter((lead) => lead.name && (lead.phone || lead.email));
 }
 
 const money = new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL', maximumFractionDigits:0 });
@@ -192,13 +178,13 @@ function announcePropertyChange() {
   announceDashboardChange('properties');
 }
 
-export default function DashboardClient({ account }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' } }) {
-  const [view, setView] = useState<View>('overview');
+export default function DashboardClient({ account, publicDemo = false, initialView = 'overview' }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View }) {
+  const [view, setView] = useState<View>(initialView);
   const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createLiveConversationState);
   const [leadSearch, setLeadSearch] = useState('');
   const [leadFilters, setLeadFilters] = useState<LeadFilter[]>([]);
   const [leadMode, setLeadMode] = useState<LeadMode>('all');
-  const [leadImportOpen, setLeadImportOpen] = useState(false);
+
   const [properties, setProperties] = useState<Property[]>([]);
   const [propertySearch, setPropertySearch] = useState('');
   const [propertyModalOpen, setPropertyModalOpen] = useState(false);
@@ -222,6 +208,27 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
   const [syncFailed, setSyncFailed] = useState(false);
   const [conversationsReady,setConversationsReady]=useState(false);
 
+  useEffect(() => {
+    if (!publicDemo) return;
+    const receive = (event: MessageEvent) => {
+      if (event.source !== window.parent || event.origin !== window.location.origin) return;
+      if (event.data?.type === 'imobflow-demo-view' && event.data.view === 'team') {
+        setUtilityModal('team');
+        return;
+      }
+      if (event.data?.type === 'imobflow-demo-view' && navItems.some(item => item.id === event.data.view)) {
+        setView(event.data.view as View);
+        setUtilityModal(null);
+      }
+    };
+    window.addEventListener('message', receive);
+    return () => window.removeEventListener('message', receive);
+  }, [publicDemo]);
+
+  useEffect(() => {
+    if (publicDemo) window.parent.postMessage({ type: 'imobflow-demo-active', view: utilityModal === 'team' ? 'team' : view }, window.location.origin);
+  }, [publicDemo, view, utilityModal]);
+
   useEffect(() => subscribeDashboardSync({ entities: ['opportunities'], interval: 30000,
     load: async signal => {
       const response = await fetch('/api/opportunities', { signal, cache: 'no-store' });
@@ -232,23 +239,25 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
 
 
   useEffect(() => subscribeDashboardSync({
-    entities: ['leads', 'conversations'],
+    entities: ['leads', 'conversations'], interval: 15000,
     load: async signal => {
       const [leadResponse, messageResponse] = await Promise.all([
         fetch('/api/leads', { cache: 'no-store', signal }),
         fetch('/api/conversations', { cache: 'no-store', signal }),
       ]);
       if (!leadResponse.ok || !messageResponse.ok) throw new Error('Não foi possível atualizar os atendimentos.');
+      const conversations = await messageResponse.json() as { data: ConversationMessage[]; attendance?: ConversationAttendanceSummary[] };
       return { leads: (await leadResponse.json() as { data: LeadProfile[] }).data,
-        messages: (await messageResponse.json() as { data: ConversationMessage[] }).data };
+        messages: conversations.data, attendance: conversations.attendance || [] };
     },
-    apply: ({ leads: remoteLeads, messages }) => {
+    apply: ({ leads: remoteLeads, messages, attendance }) => {
       const combined = remoteLeads.filter((lead, index, all) => all.findIndex((item) => item.id === lead.id) === index).map(decorateLead);
       setCapturedLeads(combined);
       setSelectedLead(current => combined.find(lead => lead.id === current?.id) || combined[0] || null);
       const grouped = new Map<string, ConversationMessage[]>();
       for (const message of messages) grouped.set(message.leadId, [...(grouped.get(message.leadId) || []), message]);
-      conversationDispatch({ type: 'hydrate', contacts: combined.map(lead => ({ id: `lead-${lead.id}`, messages: grouped.get(lead.id) || [] })) });
+      const attendanceByLead = new Map(attendance.map(summary => [summary.leadId, summary]));
+      conversationDispatch({ type: 'hydrate', merge: true, contacts: combined.map(lead => ({ id: `lead-${lead.id}`, messages: grouped.get(lead.id) || [], attendance: attendanceByLead.get(lead.id) || null })) });
       setSyncFailed(false);
       setConversationsReady(true);
     },
@@ -256,7 +265,7 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
   }), []);
 
   useEffect(() => subscribeDashboardSync({
-    entities: ['properties'],
+    entities: ['properties'], interval: 30000,
     load: async signal => {
       const response = await fetch('/api/properties', { cache: 'no-store', signal });
       if (!response.ok) throw new Error('Falha ao atualizar imóveis.');
@@ -266,7 +275,7 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
   }), []);
 
   useEffect(() => subscribeDashboardSync({
-    entities: ['appointments'],
+    entities: ['appointments'], interval: 30000,
     load: async signal => {
       const response = await fetch('/api/appointments', { cache: 'no-store', signal });
       if (!response.ok) throw new Error('Falha ao atualizar agenda.');
@@ -285,7 +294,7 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
         setNotificationsOpen(false);
         setProfileOpen(false);
         setUtilityModal(null);
-        setLeadImportOpen(false);
+
       }
     }
     window.addEventListener('keydown', closeOnEscape);
@@ -294,6 +303,7 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
 
   useEffect(() => {
     let storedValue: string | null = null;
+    if (publicDemo) return;
     let restoreTimer: number | null = null;
     try {
       storedValue = window.localStorage?.getItem(PANEL_SETTINGS_KEY) || null;
@@ -319,7 +329,7 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
     return () => {
       if (restoreTimer !== null) window.clearTimeout(restoreTimer);
     };
-  }, []);
+  }, [publicDemo]);
 
   const visibleLeads = useMemo(() => capturedLeads.filter((lead) => {
     const matchesSearch = `${lead.name} ${lead.intent} ${lead.region}`.toLowerCase().includes(leadSearch.toLowerCase());
@@ -359,6 +369,7 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
 
   function saveSettings(nextSettings: DashboardSettings) {
     setSettings(nextSettings);
+    if (publicDemo) return;
     try {
       window.localStorage?.setItem(PANEL_SETTINGS_KEY, JSON.stringify(nextSettings));
     } catch {
@@ -542,7 +553,7 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
 
   return (
     <main className={`app-shell ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
-      <ReleaseNotice />
+      {!publicDemo && <ReleaseNotice />}
       {syncFailed && <div className="sync-notice" role="status">Não foi possível atualizar os atendimentos. Tentando reconectar…</div>}
       <aside className="sidebar">
         <button type="button" className="brand brand-button" onClick={() => openView('overview')} aria-label="Ir para a visão geral">
@@ -550,7 +561,7 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
           <div><strong>ImobFlow</strong><span>Gestão Imobiliária</span></div>
         </button>
         <nav className="nav-list" aria-label="Navegação principal">
-          {navItems.map((item) => (
+          {navItems.filter((item) => !['goals','imports'].includes(item.id) || account?.role === 'owner').map((item) => (
             <button type="button" key={item.id} className={`nav-item ${view === item.id ? 'active' : ''}`} onClick={() => openView(item.id)} aria-label={item.label} title={item.label} aria-current={view === item.id ? 'page' : undefined}>
               <span className="nav-icon"><NavigationIcon view={item.id} /></span><span className="nav-label">{item.label}</span>{item.badge && <b>{item.badge}</b>}
             </button>
@@ -560,7 +571,8 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
         <div className="sidebar-card"><div><strong>Integrações</strong><span>Confira o estado dos canais em Conversas</span></div></div>
         <div className="profile-wrap">
           <div className="profile-row"><button type="button" className="profile-identity" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}><span className="avatar">{profile.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span><div><strong>{profile.name}</strong><span>{profile.company}</span></div></button><button type="button" className="profile-options" aria-label="Mais opções do perfil" aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>•••</button></div>
-          {profileOpen && <div className="profile-menu popover"><strong>{account?.role === 'owner' ? 'Painel do administrador' : 'Perfil do corretor'}</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button>{account?.role === 'owner' && <button type="button" onClick={() => { setUtilityModal('team'); setProfileOpen(false); }}>Gerenciar corretores</button>}<button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={() => { setUtilityModal('password'); setProfileOpen(false); }}>Trocar minha senha</button><button type="button" onClick={async () => { await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
+          <button type="button" className="nav-item mobile-profile-nav" onClick={() => setProfileOpen((open) => !open)} aria-label="Perfil e configurações" aria-expanded={profileOpen} title="Perfil e configurações"><span className="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg></span><span className="nav-label">Perfil</span></button>
+          {profileOpen && <div className="profile-menu popover"><strong>{account?.role === 'owner' ? 'Painel do administrador' : 'Perfil do corretor'}</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button>{account?.role === 'owner' && <button type="button" onClick={() => { setUtilityModal('team'); setProfileOpen(false); }}>Gerenciar corretores</button>}<button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={() => { setUtilityModal('password'); setProfileOpen(false); }}>Trocar minha senha</button><button type="button" onClick={async () => { if (publicDemo) { notify('Você está na demonstração. Nenhuma sessão real foi alterada.'); return; } await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
         </div>
       </aside>
 
@@ -573,16 +585,20 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
               <button type="button" className="icon-button" aria-label={`Notificações: ${unreadCount} não lidas`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>♢{settings.alerts && unreadCount > 0 && <i />}</button>
               {notificationsOpen && <div className="notification-menu popover"><div><strong>Notificações de oportunidades</strong></div>{!notifications.length && <p>Nenhum match forte disponível.</p>}{notifications.map((item) => <button type="button" className={item.unread ? 'unread' : ''} key={item.id} onClick={() => { setFocusedOpportunity(item.id); setView('opportunities'); setNotificationsOpen(false); void actOnOpportunity(item.id, 'read').catch(() => notify('Não foi possível marcar a notificação como lida.')); }}><i />Novo match de {item.score}% para {item.leadName}.</button>)}</div>}
             </div>
-            {view === 'leads' ? <button type="button" className="primary-button" onClick={() => setLeadImportOpen(true)}>＋ Importar clientes</button> : <button type="button" className="primary-button" onClick={openNewProperty}>＋ Novo imóvel</button>}
+            {view === 'leads' && account?.role === 'owner' && <button type="button" className="primary-button" onClick={() => setView('imports')}>＋ Importar clientes</button>}
+            {view === 'properties' && <button type="button" className="primary-button" onClick={openNewProperty}>＋ Novo imóvel</button>}
           </div>
         </header>
 
-        {view === 'overview' && <Overview notify={notify} canEditGoals={account?.role === 'owner'} />}
-        {view === 'conversations' && <ConversationCenter currentBrokerId={account?.brokerId} ready={conversationsReady&&!syncFailed} state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} claimLead={claimLead} currentBrokerName={profile.name} leads={capturedLeads} properties={properties} />}
-        {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setLeadImportOpen(true)} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} />{selectedLead ? <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /> : <section className="panel empty-live-data"><h2>Nenhum lead cadastrado</h2><p>Importe a carteira da imobiliária ou receba um novo contato pelo formulário do site.</p><button type="button" className="primary-button" onClick={() => setLeadImportOpen(true)}>Importar clientes</button></section>}</>}
+        {view === 'overview' && <Overview notify={notify} canEditGoals={account?.role === 'owner'} properties={properties} refreshProperties={refreshProperties} />}
+        {view === 'imports' && account?.role === 'owner' && <ClientImport publicDemo={publicDemo} onOpportunities={() => setView('opportunities')} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads(current => [...decorated, ...current.filter(lead => !decorated.some(item => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
+        {view === 'goals' && account?.role === 'owner' && <GoalsManagement notify={notify} />}
+        {view === 'conversations' && <ConversationCenter currentBrokerId={account?.brokerId} isAdministrator={account?.role === 'owner'} ready={conversationsReady&&!syncFailed} state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} claimLead={claimLead} currentBrokerName={profile.name} leads={capturedLeads} properties={properties} />}
+        {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setView('imports')} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} />{selectedLead ? <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /> : <section className="panel empty-live-data"><h2>Nenhum lead cadastrado</h2><p>Importe a carteira da imobiliária ou receba um novo contato pelo formulário do site.</p>{account?.role === 'owner' && <button type="button" className="primary-button" onClick={() => setView('imports')}>Importar clientes</button>}</section>}</>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} brokerName={profile.name} />}
         {view === 'opportunities' && <OpportunityCenter focusedId={focusedOpportunity} onLead={id => { const lead = capturedLeads.find(item => item.id === id); if (lead) { setSelectedLead(lead); setLeadFilters([]); setLeadSearch(''); setView('leads'); } else notify('Atualize a lista de leads para consultar este cadastro.'); }} onProperty={id => { const property = properties.find(item => item.id === id); if (property) setSelectedProperty(property); else notify('Atualize a lista de imóveis para consultar este cadastro.'); }} />}
+        {view === 'integrations' && <WhatsAppIntegration canEdit={account?.role === 'owner'} onOpenConversations={() => setView('conversations')} />}
       </section>
 
       {propertyModalOpen && (
@@ -612,14 +628,23 @@ export default function DashboardClient({ account }: { account?: { brokerId:stri
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { saveSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
       {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
       {utilityModal === 'team' && account?.role === 'owner' && <TeamModal close={() => setUtilityModal(null)} notify={notify} />}
-      {leadImportOpen && <LeadImportModal close={() => setLeadImportOpen(false)} notify={notify} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads((current) => [...decorated, ...current.filter((lead) => !decorated.some((item) => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
+
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
     </main>
   );
 }
 
-function Overview({ notify, canEditGoals }: { notify:(message:string)=>void; canEditGoals:boolean }) {
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+function PeriodLoadNotice({ month, changeMonth, loading, error, retry }: { month:string; changeMonth:(month:string)=>void; loading:boolean; error:string|null; retry:()=>void }) {
+  return <section className="performance-loading panel" aria-busy={loading}>
+    <label>Competência <input type="month" value={month} onChange={event => changeMonth(event.target.value)} /></label>
+    <p role={error ? 'alert' : 'status'}>{loading ? 'Carregando dados do mês selecionado...' : error || 'Não foi possível carregar os dados deste mês.'}</p>
+    {!loading && <button type="button" onClick={retry}>Tentar novamente</button>}
+  </section>;
+}
+
+function Overview({ notify, canEditGoals, properties, refreshProperties }: { notify:(message:string)=>void; canEditGoals:boolean; properties:PropertyRecord[]; refreshProperties:()=>Promise<void> }) {
+  const [month, setMonth] = useState(() => businessCalendarDate().slice(0, 7));
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
   const [modal, setModal] = useState<'sale' | 'goals' | null>(null);
   const [dealType, setDealType] = useState<'Venda' | 'Aluguel'>('Venda');
@@ -636,7 +661,12 @@ function Overview({ notify, canEditGoals }: { notify:(message:string)=>void; can
       }
     }).catch((error) => active && setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os indicadores.')).finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month]);
+  }, [month, loadAttempt]);
+
+  function changeMonth(value: string) {
+    if (!isCalendarMonth(value) || value === month) return;
+    setLoading(true); setLoadError(null); setModal(null); setMonth(value);
+  }
 
   async function refresh() {
     const data = await loadPerformance(month);
@@ -649,12 +679,12 @@ function Overview({ notify, canEditGoals }: { notify:(message:string)=>void; can
     setSavingDeal(true);
     const form = new FormData(event.currentTarget);
     try {
-      const response = await fetch('/api/performance', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ dealType, date:form.get('date'), broker:form.get('broker'), property:form.get('property'), client:form.get('client'), amount:Number(form.get('amount')) }) });
+      const response = await fetch('/api/performance', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ dealType, date:form.get('date'), broker:form.get('broker'), propertyId:form.get('propertyId'), client:form.get('client'), amount:Number(form.get('amount')) }) });
       const result = await response.json() as { error?:string };
       if (!response.ok) throw new Error(result.error || 'Não foi possível registrar a venda.');
       setModal(null);
       notify(dealType === 'Aluguel' ? 'Aluguel registrado separadamente das vendas' : 'Venda registrada no resultado da equipe');
-      await refresh();
+      await Promise.all([refresh(), refreshProperties()]);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Não foi possível registrar o negócio.');
     } finally { setSavingDeal(false); }
@@ -689,18 +719,25 @@ function Overview({ notify, canEditGoals }: { notify:(message:string)=>void; can
     }
   }
 
-  if (loading && !performance) return <div className="performance-loading panel">Carregando indicadores comerciais...</div>;
-  if (!performance) return <div className="performance-loading panel">{loadError || 'Os indicadores não estão disponíveis neste momento.'}</div>;
+  if (loading || loadError || !performance || performance.month !== month) return <PeriodLoadNotice month={month} changeMonth={changeMonth} loading={loading} error={loadError} retry={() => { setLoading(true); setLoadError(null); setLoadAttempt(value => value + 1); }} />;
 
   const goalProgress = performance.companyGoal ? Math.min(100, (performance.totalSold / performance.companyGoal) * 100) : 0;
   const remaining = Math.max(0, performance.companyGoal - performance.totalSold);
   const monthTitle = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(`${month}-01T12:00:00Z`));
-  const defaultSaleDate = month === new Date().toISOString().slice(0, 7) ? new Date().toISOString().slice(0, 10) : `${month}-01`;
+  const today = businessCalendarDate();
+  const defaultSaleDate = month === today.slice(0, 7) ? today : `${month}-01`;
+  const saleProperties = properties.filter((property) => isSaleProperty(property, dealType));
+  const availableProperties = properties.filter((property) => {
+    const status = normalizePropertyStatus(property.status);
+    return status === 'disponivel' || status === 'reservado';
+  });
+  const saleOptions = saleProperties.length > 0 ? saleProperties : availableProperties;
+  const usedFallbackOptions = saleProperties.length === 0 && availableProperties.length > 0;
 
   const performanceKey = `${month}-${performance.totalSold}-${performance.salesCount}-${performance.history.map((item) => `${item.month}:${item.sold}`).join('|')}`;
   return <>
     <div className="performance-animated" key={performanceKey}>
-    <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setLoadError(null); setMonth(event.target.value); }} /></label>{canEditGoals && <button type="button" onClick={() => setModal('goals')}>Editar metas</button>}<button type="button" className="primary-button" onClick={() => setModal('sale')}>＋ Registrar negócio</button></div></section>
+    <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></label>{canEditGoals && <button type="button" onClick={() => setModal('goals')}>Editar metas</button>}<button type="button" className="primary-button" onClick={() => { setModal('sale'); void refreshProperties().catch(() => notify('Não foi possível atualizar o catálogo. Tente novamente antes de registrar o negócio.')); }}>＋ Registrar negócio</button></div></section>
 
     <section className="company-goal-card">
       <div className="company-goal-copy"><p>Meta mensal da imobiliária</p><strong>{money.format(performance.totalSold)}</strong><span>de {money.format(performance.companyGoal)}</span></div>
@@ -722,7 +759,7 @@ function Overview({ notify, canEditGoals }: { notify:(message:string)=>void; can
       <article className="panel sales-history"><div className="panel-heading"><div><p className="eyebrow">Evolução comercial</p><h2>Vendas nos últimos meses</h2></div></div><SalesHistoryChart history={performance.history} /></article>
     </section>
 
-    <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Negócios registrados</h2></div><strong>{money.format(performance.totalSold)} em vendas · {money.format(performance.sales.filter((sale) => sale.dealType === 'Aluguel').reduce((sum, sale) => sum + sale.amount, 0))}/mês em aluguéis registrados</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}<small className="deal-type-label">{sale.dealType || 'Venda'}</small></span><b>{money.format(sale.amount)}{sale.dealType === 'Aluguel' ? '/mês' : ''}</b><button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button></div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
+    <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Negócios registrados</h2></div><strong>{money.format(performance.totalSold)} em vendas · {money.format(performance.sales.filter((sale) => sale.dealType === 'Aluguel').reduce((sum, sale) => sum + sale.amount, 0))}/mês em aluguéis registrados</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}<small className="deal-type-label">{sale.dealType || 'Venda'}</small></span><b>{money.format(sale.amount)}{sale.dealType === 'Aluguel' ? '/mês' : ''}</b>{canEditGoals && <button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button>}</div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
     </div>
 
     {modal === 'sale' && <div className="modal-backdrop" role="presentation" onMouseDown={() => !savingDeal && setModal(null)}><form className="modal-card deal-modal" onSubmit={registerSale} onMouseDown={(event) => event.stopPropagation()}>
@@ -730,14 +767,94 @@ function Overview({ notify, canEditGoals }: { notify:(message:string)=>void; can
       <div className="native-segments" role="group" aria-label="Tipo de negócio">{(['Venda', 'Aluguel'] as const).map((type) => <button type="button" disabled={savingDeal} aria-pressed={dealType === type} key={type} onClick={() => setDealType(type)}>{type === 'Venda' ? 'Imóvel vendido' : 'Aluguel'}</button>)}</div>
       <p className="deal-help">{dealType === 'Venda' ? 'Registre o valor total da venda concluída.' : 'Informe o valor mensal contratado. Aluguéis não são somados ao VGV de vendas.'}</p>
       <div className="form-grid"><label>Data<input name="date" type="date" defaultValue={defaultSaleDate} required /></label><label>Corretor<select name="broker" required>{performance.brokers.map((broker) => <option key={broker.broker}>{broker.broker}</option>)}</select></label></div>
-      <label>Cliente<input name="client" placeholder={dealType === 'Venda' ? 'Nome do comprador' : 'Nome do locatário'} required /></label><label>Imóvel<input name="property" placeholder={dealType === 'Venda' ? 'Imóvel vendido' : 'Imóvel alugado'} required /></label>
+      <label>Cliente<input name="client" placeholder={dealType === 'Venda' ? 'Nome do comprador' : 'Nome do locatário'} required /></label><label>Imóvel do catálogo<select key={dealType} name="propertyId" defaultValue="" required><option value="" disabled>Selecione o imóvel</option>{saleOptions.map((property) => <option key={property.id} value={property.id}>{property.code ? `${property.code} · ` : ''}{property.title} · {property.district}</option>)}</select>{saleOptions.length === 0 ? <small className="deal-property-empty">Nenhum imóvel {dealType === 'Venda' ? 'à venda' : 'para aluguel'} disponível. Cadastre ou altere a situação no catálogo.</small> : usedFallbackOptions && <small className="deal-property-empty">Atenção: não foi encontrado imóvel com finalidade &ldquo;{dealType}&ldquo; disponível para registro. Selecionando imóveis disponíveis para continuar.</small>}</label>
       <label>{dealType === 'Venda' ? 'Valor da venda (R$)' : 'Aluguel mensal (R$)'}<input key={dealType} name="amount" type="number" min="0.01" step="0.01" placeholder={dealType === 'Venda' ? '575000,00' : '2500,00'} required /></label>
-      <p className="deal-help">O registro financeiro não muda automaticamente a situação do catálogo. Atualize o imóvel em Editar.</p>
+      <p className="deal-help">Ao registrar, o imóvel será marcado como {dealType === 'Venda' ? 'vendido' : 'alugado'} e deixará de estar disponível no catálogo.</p>
       <div className="modal-actions"><button type="button" disabled={savingDeal} onClick={() => setModal(null)}>Cancelar</button><button type="submit" disabled={savingDeal} className="primary-button">{savingDeal ? 'Salvando…' : dealType === 'Venda' ? 'Registrar venda' : 'Registrar aluguel'}</button></div>
     </form></div>}
 
     {modal === 'goals' && canEditGoals && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}><form className="modal-card performance-settings-modal" onSubmit={saveGoals} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Planejamento mensal</p><h2>Metas e conversão</h2></div><button type="button" aria-label="Fechar" onClick={() => setModal(null)}>×</button></div><label>Meta da imobiliária<input name="companyGoal" type="number" min="0" step="10000" defaultValue={performance.companyGoal} required /></label><div className="form-grid"><label>Leads recebidos<input name="leadsReceived" type="number" min="0" defaultValue={performance.leadsReceived} required /></label><label>Leads convertidos<input name="convertedLeads" type="number" min="0" defaultValue={performance.convertedLeads} required /></label></div><label>Leads recuperados<input name="recoveredLeads" type="number" min="0" defaultValue={performance.recoveredLeads} required /></label><div className="broker-goal-fields"><strong>Metas individuais</strong>{performance.brokers.map((broker,index) => <label key={broker.broker}>{broker.broker}<input name={`broker-goal-${index}`} type="number" min="0" step="10000" defaultValue={broker.goal} required /></label>)}</div><div className="modal-actions"><button type="button" onClick={() => setModal(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar indicadores</button></div></form></div>}
   </>;
+}
+
+function GoalsManagement({ notify }: { notify:(message:string)=>void }) {
+  const [month, setMonth] = useState(() => businessCalendarDate().slice(0, 7));
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    loadPerformance(month)
+      .then((data) => { if (active) { setPerformance(data); setError(null); } })
+      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as metas.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [month, loadAttempt]);
+
+  function changeMonth(value: string) {
+    if (saving || !isCalendarMonth(value) || value === month) return;
+    setLoading(true); setError(null); setMonth(value);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!performance || saving || loading || error || performance.month !== month) return;
+    setSaving(true);
+    const form = new FormData(event.currentTarget);
+    const brokerGoals = performance.brokers.map((broker,index) => ({
+      broker: broker.broker,
+      goal: Number(form.get(`broker-goal-${index}`)),
+    }));
+    try {
+      const response = await fetch('/api/performance', {
+        method:'PATCH', headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          month,
+          companyGoal:Number(form.get('companyGoal')),
+          leadsReceived:performance.leadsReceived,
+          convertedLeads:performance.convertedLeads,
+          recoveredLeads:performance.recoveredLeads,
+          brokerGoals,
+        }),
+      });
+      const result = await response.json() as { data?:PerformanceSnapshot; error?:string };
+      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar as metas.');
+      setPerformance(result.data);
+      notify('Metas salvas com sucesso');
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Não foi possível salvar as metas.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const monthTitle = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(`${month}-01T12:00:00Z`));
+  if (loading || error || !performance || performance.month !== month) return <PeriodLoadNotice month={month} changeMonth={changeMonth} loading={loading} error={error} retry={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }} />;
+
+  return <form className="goals-page" onSubmit={submit}>
+    <section className="goals-page-toolbar">
+      <div><p className="eyebrow">Competência</p><strong>{monthTitle}</strong></div>
+      <label>Mês<input type="month" value={month} disabled={saving} onChange={(event) => changeMonth(event.target.value)} /></label>
+    </section>
+    <section className="panel company-goal-editor">
+      <div><p className="eyebrow">Objetivo da empresa</p><h2>Meta geral da imobiliária</h2><span>O progresso será atualizado automaticamente a cada venda registrada.</span></div>
+      <label>Valor mensal (R$)<input name="companyGoal" type="number" min="0" step="1000" defaultValue={performance.companyGoal} key={`${month}-company`} required /></label>
+    </section>
+    <section className="panel individual-goals-editor">
+      <div className="panel-heading"><div><p className="eyebrow">Equipe comercial</p><h2>Metas individuais</h2></div><span>{performance.brokers.length} {performance.brokers.length === 1 ? 'corretor' : 'corretores'}</span></div>
+      <div className="individual-goals-list">
+        {performance.brokers.map((broker,index) => <label key={`${month}-${broker.broker}`}>
+          <span className="broker-name"><i className={`avatar-${index}`}>{broker.broker.split(' ').slice(0,2).map((part) => part[0]).join('')}</i><b>{broker.broker}<small>{compactMoney.format(broker.sold)} vendido no mês</small></b></span>
+          <span className="goal-input-prefix">R$<input name={`broker-goal-${index}`} type="number" min="0" step="1000" defaultValue={broker.goal} required /></span>
+        </label>)}
+        {!performance.brokers.length && <p className="performance-empty">Cadastre corretores para definir metas individuais.</p>}
+      </div>
+    </section>
+    <div className="goals-page-actions"><span>As metas valem apenas para {monthTitle}.</span><button type="submit" className="primary-button" disabled={saving}>{saving ? 'Salvando...' : 'Salvar metas'}</button></div>
+  </form>;
 }
 
 function SalesHistoryChart({ history }: { history: { month: string; sold: number }[] }) {
@@ -772,48 +889,6 @@ function LeadIntelligenceCenter({ leads, mode, onMode }: { leads: DashboardLead[
       <span>{card.label}</span><strong>{card.value}</strong><small>{card.detail}</small>
     </button>)}
   </section>;
-}
-
-function LeadImportModal({ close, notify, onImported }: { close: () => void; notify: (message: string) => void; onImported: (leads: LeadProfile[]) => void }) {
-  const [fileName, setFileName] = useState('');
-  const [preview, setPreview] = useState<ReturnType<typeof parseLeadCsv>>([]);
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function chooseFile(file: File | undefined) {
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.csv') || file.size > 5_000_000) { setError('Selecione um CSV de até 5 MB.'); return; }
-    try {
-      const leads = parseLeadCsv(await file.text());
-      if (leads.length === 0) throw new Error('Nenhum lead válido foi encontrado no arquivo.');
-      setFileName(file.name); setPreview(leads); setError(null);
-    } catch (reason) {
-      setPreview([]); setFileName(''); setError(reason instanceof Error ? reason.message : 'Não foi possível ler o CSV.');
-    }
-  }
-
-  function downloadTemplate() {
-    const content = 'Nome;Telefone;Email;Objetivo;Tipo de imóvel;Região;Orçamento;Último contato;Status;Origem;Corretor;Observações\nAna Souza;(35) 99999-0000;ana@exemplo.com;Comprar;Apartamento;Centro;Até R$ 600 mil;15/07/2026;Em atendimento;Portal;Marina Oliveira;Prefere varanda';
-    const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a'); link.href = url; link.download = 'modelo-leads-imobflow.csv'; link.click(); URL.revokeObjectURL(url);
-  }
-
-  async function submit() {
-    if (!preview.length) return;
-    setImporting(true);
-    try {
-      const response = await fetch('/api/leads/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leads: preview }) });
-      const result = await response.json() as { data?: { imported: number; skipped: number; leads: LeadProfile[] }; error?: string };
-      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível importar a base.');
-      onImported(result.data.leads);
-      notify(`${result.data.imported} leads importados${result.data.skipped ? ` e ${result.data.skipped} duplicados ignorados` : ''}`);
-      close();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível importar a base.');
-    } finally { setImporting(false); }
-  }
-
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className="modal-card lead-import-modal" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Entrada de dados</p><h2>Importar base de leads</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><p className="lead-import-intro">Envie uma planilha CSV. O ImobFlow identifica colunas, ignora duplicados e calcula prioridade, inatividade e potencial de recuperação.</p><input id="lead-csv-file" className="visually-hidden" type="file" accept=".csv,text/csv" onChange={(event) => void chooseFile(event.target.files?.[0])} /><button type="button" className={`lead-import-drop ${preview.length ? 'ready' : ''}`} onClick={() => document.getElementById('lead-csv-file')?.click()}><span>{preview.length ? '✓' : '⇧'}</span><strong>{fileName || 'Selecionar arquivo CSV'}</strong><small>{preview.length ? `${preview.length} registros válidos encontrados` : 'Até 500 leads por arquivo • máximo de 5 MB'}</small></button><div className="lead-import-columns"><strong>Colunas reconhecidas</strong><p>Nome, telefone, e-mail, objetivo, tipo de imóvel, região, orçamento, último contato, status, origem, corretor e observações.</p><button type="button" onClick={downloadTemplate}>Baixar modelo CSV</button></div>{error && <p className="lead-import-error">{error}</p>}{preview.length > 0 && <div className="lead-import-preview"><div><strong>Prévia da importação</strong><span>{preview.length} leads prontos</span></div>{preview.slice(0, 4).map((lead,index) => <div key={`${lead.phone}-${index}`}><span><b>{lead.name}</b><small>{lead.phone || lead.email}</small></span><span>{lead.goal}<small>{lead.propertyType}</small></span><span>{lead.region}<small>{lead.lastContactAt ? new Date(lead.lastContactAt).toLocaleDateString('pt-BR') : 'Sem último contato'}</small></span></div>)}</div>}<div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="button" className="primary-button" disabled={!preview.length || importing} onClick={() => void submit()}>{importing ? 'Analisando e importando...' : `Importar ${preview.length || ''} leads`}</button></div></article></div>;
 }
 
 function LeadFilterBar({ leads, active, onChange }: { leads: DashboardLead[]; active: LeadFilter[]; onChange: (filters: LeadFilter[]) => void }) {
@@ -910,7 +985,8 @@ function ProfileModal({ profile, close, save }: { profile:{ name:string; company
 }
 
 function BrokerProfileModal({ brokerName, company, close }: { brokerName:string; company:string; close:()=>void }) {
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => businessCalendarDate().slice(0, 7));
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -924,7 +1000,12 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
       }
     }).catch((reason) => active && setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o desempenho.')).finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month]);
+  }, [month, loadAttempt]);
+
+  function changeMonth(value: string) {
+    if (!isCalendarMonth(value) || value === month) return;
+    setLoading(true); setError(null); setMonth(value);
+  }
 
   const broker = performance?.brokers.find((item) => item.broker.toLowerCase() === brokerName.toLowerCase());
   const brokerSales = performance?.sales.filter((sale) => sale.dealType !== 'Aluguel' && sale.broker === broker?.broker) || [];
@@ -937,14 +1018,15 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
   const brokerAnimationKey = `${month}-${broker?.sold || 0}-${broker?.history.map((item) => `${item.month}:${item.sold}`).join('|') || ''}`;
 
   return <div className="modal-backdrop broker-profile-backdrop" role="presentation" onMouseDown={close}><article className="modal-card broker-profile-modal" onMouseDown={(event) => event.stopPropagation()}>
-    <div className="broker-profile-header"><div className="broker-profile-person"><span>{brokerName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</span><div><p>Meu desempenho</p><h2>{brokerName}</h2><small>{company}{performance?.dataMode === 'demo' ? ' • dados demonstrativos locais' : ''}</small></div></div><div className="broker-profile-actions"><label>Competência<input type="month" value={month} onChange={(event) => { setLoading(true); setError(null); setMonth(event.target.value); }} /></label><button type="button" aria-label="Fechar perfil" onClick={close}>×</button></div></div>
-    {loading && !performance ? <div className="broker-profile-loading">Carregando desempenho mensal...</div> : error && !performance ? <div className="broker-profile-loading">{error}</div> : !broker ? <div className="broker-profile-loading">Este perfil ainda não possui metas associadas para {monthTitle}.</div> : <div className="broker-performance-reveal" key={brokerAnimationKey}>
+    <div className="broker-profile-header"><div className="broker-profile-person"><span>{brokerName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</span><div><p>Meu desempenho</p><h2>{brokerName}</h2><small>{company}{performance?.dataMode === 'demo' ? ' • dados demonstrativos locais' : ''}</small></div></div><div className="broker-profile-actions"><label>Competência<input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></label><button type="button" aria-label="Fechar perfil" onClick={close}>×</button></div></div>
+    {loading || error || !performance || performance.month !== month ? <PeriodLoadNotice month={month} changeMonth={changeMonth} loading={loading} error={error} retry={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }} /> : !broker ? <div className="broker-profile-loading">Este perfil ainda não possui metas associadas para {monthTitle}.</div> : <div className="broker-performance-reveal" key={brokerAnimationKey}>
       <section className="broker-goal-overview"><div><p>Meta individual de {monthTitle}</p><strong>{money.format(broker.sold)}</strong><span>de {money.format(broker.goal)}</span></div><div className="broker-goal-ring" style={{ '--broker-progress':'0deg', '--broker-progress-target':`${Math.min(100, broker.progress) * 3.6}deg` } as CSSProperties}><span><strong>{broker.progress.toFixed(0)}%</strong><small>alcançado</small></span></div><dl><div><dt>Falta para a meta</dt><dd>{money.format(remaining)}</dd></div><div><dt>Posição na equipe</dt><dd>{rank}º lugar</dd></div><div><dt>Participação no VGV</dt><dd>{teamShare.toFixed(1)}%</dd></div></dl></section>
       <section className="broker-stat-grid"><article><span>Negócios fechados</span><strong>{broker.salesCount}</strong><small>No mês selecionado</small></article><article><span>Ticket médio</span><strong>{compactMoney.format(averageTicket)}</strong><small>Por imóvel vendido</small></article><article><span>Leads recebidos</span><strong>{broker.leadsReceived}</strong><small>Carteira mensal</small></article><article><span>Leads convertidos</span><strong>{broker.convertedLeads}</strong><small>{broker.conversionRate.toFixed(1)}% de conversão</small></article><article><span>Leads recuperados</span><strong>{broker.recoveredLeads}</strong><small>Oportunidades retomadas</small></article><article><span>Visitas realizadas</span><strong>{broker.visits}</strong><small>Atendimentos presenciais</small></article></section>
       <section className="broker-profile-content"><article className="broker-month-chart"><div><p>Evolução individual</p><h3>Vendas por mês</h3></div>{broker.history.length > 0 ? <div className="broker-history-bars">{broker.history.map((item) => <div key={item.month}><span>{compactMoney.format(item.sold)}</span><i><b style={{ height:`${Math.max(10, (item.sold / historyMax) * 100)}%` }}/></i><small>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</small></div>)}</div> : <p className="broker-empty">Ainda não há histórico de vendas.</p>}</article><article className="broker-sales-list"><div><p>Fechamentos do mês</p><h3>Vendas recentes</h3></div>{brokerSales.length > 0 ? <ul>{brokerSales.map((sale) => <li key={sale.id}><span><strong>{sale.property}</strong><small>{sale.client} • {new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</small></span><b>{money.format(sale.amount)}</b></li>)}</ul> : <p className="broker-empty">Nenhuma venda registrada neste mês.</p>}</article></section>
     </div>}
   </article></div>;
 }
+
 
 function SettingsModal({ settings, close, save }: { settings:DashboardSettings; close:()=>void; save:(settings:DashboardSettings)=>void }) {
   const [draft, setDraft] = useState(settings);
@@ -978,8 +1060,9 @@ function Agenda({ items, setItems, notify, leads, properties, brokerName }: { it
   async function addAppointment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    if (!form.get('leadId') || !form.get('propertyId')) { notify('Selecione o cliente e o imóvel para agendar a visita.'); return; }
     try {
-      const response = await fetch('/api/appointments', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:activeDate, time:String(form.get('time')), name:String(form.get('name')), property:String(form.get('property')), broker:brokerName, status:'Aguardando', color:'amber' }) });
+      const response = await fetch('/api/appointments', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:activeDate, time:String(form.get('time')), name:String(form.get('name')), property:String(form.get('property')), leadId:String(form.get('leadId')), propertyId:String(form.get('propertyId')), broker:brokerName, status:'Aguardando', color:'amber' }) });
       const result = await response.json() as { data?:AppointmentRecord; error?:string };
       if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar o horário.');
       setItems((current) => [...current, result.data!]);
@@ -1046,7 +1129,13 @@ function Agenda({ items, setItems, notify, leads, properties, brokerName }: { it
       <div className="summary-number"><strong>{visibleItems.length}</strong><span>visitas agendadas</span></div>
       <ul><li><span><i className="mint"/>Confirmadas</span><strong>{visibleItems.filter((item) => item.status === 'Confirmada').length}</strong></li><li><span><i className="amber"/>Aguardando</span><strong>{visibleItems.filter((item) => item.status === 'Aguardando').length}</strong></li><li><span><i className="blue"/>Corretores</span><strong>{brokerCount}</strong></li></ul>
       <button type="button" className="primary-button" aria-expanded={formOpen} onClick={() => setFormOpen((open) => !open)}>＋ Novo horário</button>
-      {formOpen && <form className="inline-form" onSubmit={addAppointment}><h3>Nova visita</h3><span>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR')}</span><label>Horário<input name="time" type="time" required/></label><label>Cliente<select name="name" required defaultValue=""><option value="" disabled>Selecione um lead</option>{leads.map((lead) => <option key={lead.id} value={lead.name}>{lead.name}</option>)}</select></label><label>Imóvel<select name="property" required defaultValue=""><option value="" disabled>Selecione um imóvel</option>{properties.map((property) => <option key={property.id} value={property.title}>{property.title}</option>)}</select></label><div><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div></form>}
+      {formOpen && <form className="inline-form appointment-form" onSubmit={addAppointment}>
+        <header><h3>Nova visita</h3><time dateTime={activeDate}>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR')}</time></header>
+        <AppointmentTimeField/>
+        <AppointmentRecordPicker kind="lead" leads={leads}/>
+        <AppointmentRecordPicker kind="property" properties={properties}/>
+        <div className="visit-form-actions"><button type="button" onClick={() => setFormOpen(false)}>Cancelar</button><button type="submit">Adicionar</button></div>
+      </form>}
     </aside>
   </div>;
 }

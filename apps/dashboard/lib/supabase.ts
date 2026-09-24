@@ -5,6 +5,7 @@ type RequestOptions = {
   body?: unknown;
   prefer?: string;
   allRows?: boolean;
+  timeoutMs?: number;
 };
 
 export function supabaseCompanyId() {
@@ -58,6 +59,7 @@ export async function supabaseServiceRequest<T>(path: string, options: RequestOp
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     cache: 'no-store',
+    signal: AbortSignal.timeout(options.timeoutMs ?? 15000),
   });
 
   if (!response.ok) {

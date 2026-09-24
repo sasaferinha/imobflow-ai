@@ -9,7 +9,7 @@ function compile(file, context = {}) {
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
   const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const module = { exports: {} };
-  vm.runInNewContext(output, { module, exports: module.exports, require, Buffer, Date, URL, URLSearchParams, console, ...context });
+  vm.runInNewContext(output, { module, exports: module.exports, require, Buffer, Date, URL, URLSearchParams, AbortSignal, console, ...context });
   return module.exports;
 }
 

@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { protectedRoute } from '@/lib/accounts';
 import { hasSameOrigin } from '@/lib/request-security';
-import { listOpportunities, opportunityAction } from '@/lib/opportunities';
+import { listOpportunities, listReactivationLeads, opportunityAction } from '@/lib/opportunities';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const GET = protectedRoute(async (request: NextRequest) => {
   const offset = Number(request.nextUrl.searchParams.get('offset') || 0);
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) return NextResponse.json({ error: 'Página inválida.' }, { status: 400 });
+  const mode = request.nextUrl.searchParams.get('mode') || 'matches';
+  if (!['matches', 'inactive'].includes(mode)) return NextResponse.json({ error: 'Opção inválida.' }, { status: 400 });
+  if (mode === 'inactive') {
+    try { return NextResponse.json(await listReactivationLeads(offset), { headers: { 'Cache-Control': 'no-store' } }); }
+    catch { return NextResponse.json({ error: 'Não foi possível verificar os contatos. Tente novamente.' }, { status: 503 }); }
+  }
   try { return NextResponse.json({ data: await listOpportunities(offset) }, { headers: { 'Cache-Control': 'no-store' } }); }
   catch { return NextResponse.json({ error: 'Não foi possível carregar as oportunidades.' }, { status: 503 }); }
 });

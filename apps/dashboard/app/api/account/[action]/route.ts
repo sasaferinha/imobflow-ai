@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { ACCOUNT_COOKIE, authenticate, cookieOptions, hashPassword, issueSession, normalizeEmail, normalizeName, tokenHash } from '@/lib/accounts';
 import { COOKIE_NAME } from '@/lib/admin-auth';
 import { type Account } from '@/lib/tenant-context';
 import { consumeRateLimit, hasSameOrigin } from '@/lib/request-security';
 import { supabaseRequest } from '@/lib/supabase';
+import { sendWelcomeEmail, passwordRecoveryFailure } from '@/lib/password-recovery';
 
 export const runtime = 'nodejs';
 export async function POST(request: NextRequest, { params }: { params: Promise<{ action: string }> }) {
@@ -11,7 +12,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { action } = await params;
   if (!['login', 'login-admin', 'enroll'].includes(action)) return NextResponse.json({ error: 'Ação inválida.' }, { status: 404 });
   try {
-    if (!await consumeRateLimit(request, `account-${action}`, action === 'login' ? 10 : 5, 900)) return NextResponse.json({ error: 'Muitas tentativas. Aguarde 15 minutos.' }, { status: 429 });
+    const allowed = action === 'enroll'
+      ? await consumeRateLimit(request, 'account-enroll', 5, 900)
+      : await consumeRateLimit(request, 'account-login', 20, 900);
+    if (!allowed) return NextResponse.json({ error: 'Muitas tentativas. Aguarde 15 minutos.' }, { status: 429, headers: { 'Retry-After': '900' } });
     const raw = await request.text();
     if (Buffer.byteLength(raw) > 4096) return NextResponse.json({ error: 'Dados acima do limite.' }, { status: 413 });
     let body: Record<string, unknown>;
@@ -45,6 +49,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (!row) throw new Error('empty_license_redemption');
         account = { brokerId: row.broker_id, companyId: row.company_id, company: row.company, name: row.broker_name, role: row.role };
       } catch { return NextResponse.json({ error: 'Não foi possível criar o acesso. Confira a chave, a empresa e se ainda há vagas no plano.' }, { status: 409 }); }
+      const welcomeAccount = { id: account.brokerId, company_id: account.companyId, email, password_hash: '', active: true, role: account.role, auth_version: 0 };
+      const welcomeMetadata = { company: account.company, role: account.role };
+      // The account already exists: email delivery must not hold up its first login.
+      after(async () => {
+        try { await sendWelcomeEmail(welcomeAccount, welcomeMetadata); }
+        catch (error) { console.error('welcome_email_failed', passwordRecoveryFailure(error)); }
+      });
     }
     const token = await issueSession(account, passwordVersion, authVersion);
     const response = NextResponse.json({ ok: true });

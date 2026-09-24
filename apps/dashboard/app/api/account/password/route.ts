@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
           const allowed = await supabaseRequest<boolean>('rpc/consume_rate_limit',{method:'POST',body:{p_bucket:'password-email',p_identifier_hash:tokenHash(role+'\0'+email),p_window_seconds:3600,p_limit:3}});
           if (!allowed) return;
           const accounts = await supabaseRequest<RecoveryAccount[]>(`broker_accounts?email_key=eq.${encodeURIComponent(email)}&role=eq.${role}&active=eq.true&select=id,company_id,email,password_hash,active,role,auth_version&limit=2`);
-          if (accounts.length === 1) await sendPasswordEmail(accounts[0]);
+          if (accounts.length === 1) await sendPasswordEmail(accounts[0], request.url);
         } catch (error) { console.error('password_recovery_email_failed', passwordRecoveryFailure(error)); }
       });
       return json({ message: 'Se houver uma conta ativa com esses dados, você receberá um link de recuperação por e-mail.' });

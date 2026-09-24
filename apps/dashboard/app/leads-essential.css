@@ -10,6 +10,17 @@
 .app-shell .leads-essential .essential-lead-row > span { display: block; overflow-wrap: anywhere; }
 .app-shell .leads-essential .essential-lead-row .lead-cell { display: flex; }
 .app-shell .leads-essential .lead-table { overflow-x: auto; }
+.app-shell.app-shell .leads-essential .essential-lead-row { align-items: center; padding: 20px 16px; line-height: 1.5; text-align: left; }
+.app-shell.app-shell .leads-essential .essential-lead-row.table-head { padding-top: 13px; padding-bottom: 13px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.app-shell .leads-essential .essential-lead-row > span { min-width: 0; }
+.app-shell .leads-essential .essential-lead-row > span > small,
+.app-shell .leads-essential .lead-cell small { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5; }
+.app-shell .leads-essential .lead-cell { align-items: center; gap: 12px; }
+.app-shell .leads-essential .lead-cell b { font-size: 14px; font-weight: 600; line-height: 1.5; }
+.app-shell .leads-essential .lead-assigned-to { color: var(--muted); font-size: 13px; font-weight: 400; white-space: normal; }
+.app-shell .leads-essential .live-leads { color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.app-shell .leads-essential .essential-lead-row > span:last-child { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.app-shell .leads-essential .lifecycle-badge { padding: 4px 10px; font-weight: 500; }
 .app-shell .leads-essential .lead-action-grid { grid-template-columns: 1fr; }
 @media (max-width: 640px) {
   .app-shell .lead-essential-summary { grid-template-columns: 1fr; gap: 8px; }

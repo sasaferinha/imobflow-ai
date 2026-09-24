@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { protectedRoute } from "@/lib/accounts";
 import { requireCompanyId } from "@/lib/tenant-context";
 import { supabaseServiceRequest as db } from "@/lib/supabase";
+import { loadMetaWhatsAppConnectionForCompany } from "@/lib/meta-whatsapp-connections";
 export const GET = protectedRoute(async () => {
   try {
     const company = requireCompanyId();
-    const [incoming, outgoing, events, settings] = await Promise.all([
+    const [incoming, outgoing, events, settings, whatsapp] = await Promise.all([
       db<unknown[]>(
         `messages?company_id=eq.${company}&direction=eq.incoming&select=id&limit=1`,
       ),
@@ -18,7 +19,9 @@ export const GET = protectedRoute(async () => {
       db<Array<{ last_scheduler_at: string | null }>>(
         `conversation_settings?company_id=eq.${company}&select=last_scheduler_at&limit=1`,
       ),
+      loadMetaWhatsAppConnectionForCompany(company),
     ]);
+    const whatsappConnection = whatsapp[0];
     return NextResponse.json({
       data: {
         database: "Conectado",
@@ -26,13 +29,17 @@ export const GET = protectedRoute(async () => {
           ? "Recebimento registrado"
           : "Aguardando primeiro recebimento",
         meta:
-          events[0]?.status === "failed" ||
-          outgoing[0]?.delivery_status === "failed"
+          !whatsappConnection
+            ? "WhatsApp ainda não configurado"
+            : events[0]?.status === "failed" ||
+              outgoing[0]?.delivery_status === "failed"
             ? "Falha no último envio"
             : events[0]?.status === "read" || events[0]?.status === "delivered"
-              ? "Última entrega confirmada"
+            ? "Última entrega confirmada"
+            : (events[0]?.status === "sent" || outgoing[0]?.delivery_status === "sent")
+              ? "Mensagem enviada (aguardando confirmação)"
               : "Entrega ainda não confirmada",
-        ai: "Opcional · roteiro básico ativo",
+        ai: process.env.OPENAI_API_KEY?.trim() ? "IA configurada · roteiro básico em caso de falha" : "Roteiro básico ativo · IA não configurada",
         scheduler: settings[0]?.last_scheduler_at
           ? `Última execução: ${new Date(settings[0].last_scheduler_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
           : "Execução ainda não confirmada",

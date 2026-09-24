@@ -40,7 +40,7 @@ export type AppointmentRecord = {
   createdAt: string;
 };
 
-export type AppointmentInput = Omit<AppointmentRecord, 'id' | 'createdAt'>;
+export type AppointmentInput = Omit<AppointmentRecord, 'id' | 'createdAt'> & { leadId?: string; propertyId?: string };
 
 export type SaleRecord = {
   dealType?: 'Venda' | 'Aluguel';

@@ -1,8 +1,18 @@
 "use client";
+import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 /* eslint-disable @next/next/no-img-element -- authenticated private media proxy */
 import { useState } from "react";
 import type { DemoMessage } from "@/lib/demo-conversations";
 import { announceDashboardChange } from "@/lib/dashboard-sync";
+function AudioMessage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  return <div style={{ width: 300, maxWidth: '100%', marginBottom: 8 }}>
+    <audio controls preload="none" aria-label="Ouvir áudio da conversa" src={src}
+      style={{ width: '100%', maxWidth: '100%' }} onError={() => setFailed(true)} />
+    {failed && <p role="status">Não foi possível reproduzir. O áudio pode ter expirado ou o formato não ser compatível com este navegador.</p>}
+    <a href={src} download>Baixar áudio</a>
+  </div>;
+}
 function Photo({ src }: { src: string }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -67,6 +77,7 @@ export function ConversationMessageBubble({
         </div>
       ) : null}
       {message.propertyTitle && <strong>{message.propertyTitle}</strong>}
+      {message.audios?.map((src) => <AudioMessage key={src} src={src} />)}
       <p>{message.text}</p>
       <small>
         {message.time} ·{" "}

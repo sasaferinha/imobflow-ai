@@ -1,4 +1,5 @@
 "use client";
+import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 import { useEffect, useState } from "react";
 export function ConversationHealth() {
   const [data, setData] = useState<Record<string, string> | null>(null);

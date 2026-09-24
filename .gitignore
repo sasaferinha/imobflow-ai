@@ -6,6 +6,7 @@ dist/
 .wrangler/
 coverage/
 next-env.d.ts
+*.tsbuildinfo
 .env
 .env.*
 !.env.example

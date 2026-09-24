@@ -1,9 +1,11 @@
+import { isProductDemo } from './dashboard-transport';
+
 const CHANNEL = 'imobflow_data_sync';
 const LOCAL_EVENT = 'imobflow_data_changed';
 
 export function announceDashboardChange(entity: string) {
   window.dispatchEvent(new CustomEvent(LOCAL_EVENT, { detail: { entity } }));
-  if ('BroadcastChannel' in window) {
+  if (!isProductDemo() && 'BroadcastChannel' in window) {
     const channel = new BroadcastChannel(CHANNEL);
     channel.postMessage({ entity });
     channel.close();
@@ -44,7 +46,7 @@ export function subscribeDashboardSync<T>({ entities, load, apply, onError, inte
   };
   const onFocus = () => { void refresh(true); };
   const onLocal = (event: Event) => onChange(event as CustomEvent);
-  const channel = 'BroadcastChannel' in window ? new BroadcastChannel(CHANNEL) : null;
+  const channel = !isProductDemo() && 'BroadcastChannel' in window ? new BroadcastChannel(CHANNEL) : null;
   if (channel) channel.onmessage = onChange;
   window.addEventListener(LOCAL_EVENT, onLocal);
   window.addEventListener('focus', onFocus);

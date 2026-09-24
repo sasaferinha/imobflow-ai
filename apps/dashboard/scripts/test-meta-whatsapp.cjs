@@ -62,3 +62,16 @@ assert.equal(parsedImage[0].accessToken, 'test-media-token');
 assert.equal(meta.parseIncomingWhatsAppMessages({ ...payload, object: 'other' }, connections).length, 0);
 assert.equal(meta.parseIncomingWhatsAppMessages({ ...payload, entry: [{ changes: [{ field: 'messages', value: { metadata: { phone_number_id: 'other' }, messages: payload.entry[0].changes[0].value.messages } }] }] }, connections).length, 0);
 console.log('PASS Meta WhatsApp webhook signature, tenant mapping and inbound payload contracts');
+
+const audioPayload = structuredClone(payload);
+audioPayload.entry[0].changes[0].value.messages = [{ id: 'wamid.audio', from: '5535999999999', timestamp: '1789000001', type: 'audio', audio: { id: 'audio-123', mime_type: 'audio/ogg; codecs=opus', voice: true } }];
+const [audioMessage] = meta.parseIncomingWhatsAppMessages(audioPayload, connections);
+assert.equal(audioMessage.text, 'Áudio recebido');
+assert.equal(audioMessage.media.kind, 'audio');
+assert.equal(audioMessage.media.id, 'audio-123');
+assert.equal(audioMessage.companyId, companyId);
+assert.equal(meta.parseIncomingWhatsAppMessages(audioPayload, [{ ...connections[0], enabled: false }]).length, 0);
+assert.equal(meta.parseIncomingWhatsAppMessages(audioPayload, [{ ...connections[0], phoneNumberId: '999' }]).length, 0);
+audioPayload.entry[0].changes[0].value.messages[0].audio.id = '';
+assert.equal(meta.parseIncomingWhatsAppMessages(audioPayload, connections).length, 0);
+console.log('PASS inbound audio and disabled/foreign tenant mapping');

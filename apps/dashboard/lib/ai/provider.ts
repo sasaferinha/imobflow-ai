@@ -6,6 +6,7 @@ export type AILeadProfile = {
 export type LLMConversationMessage = { role: 'user' | 'assistant'; content: string };
 export type LeadProfileExtraction = {
   extractedFields: AILeadProfile; confidence: number; requestsHumanHandoff: boolean;
+  summaryDecision?: 'confirmed' | 'correction' | 'none';
 };
 export interface LLMProvider {
   extractLeadProfile(input: { message: string; currentProfile?: AILeadProfile; recentMessages?: LLMConversationMessage[] }): Promise<{ data: LeadProfileExtraction }>;

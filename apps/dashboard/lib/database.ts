@@ -5,6 +5,7 @@ import type { LeadLifecycleStatus } from './leads';
 import type { AppointmentInput, AppointmentRecord, PerformanceSettingsInput, PerformanceSnapshot, PropertyInput, PropertyRecord, SaleInput, SaleRecord } from './operations';
 import { supabaseCompanyId, supabaseRequest } from './supabase';
 import { moneyValue } from './property-matching';
+import { importPhone } from './lead-import';
 
 // Exact identifiers written by the retired demo bootstrap. Preserve the records
 // for review, but never count them as real sales.
@@ -41,13 +42,15 @@ export async function listLeads(limit = 10000): Promise<LeadProfile[]> {
 export async function importLeads(inputs: LeadInput[]) {
   if (inputs.length === 0) return { imported: 0, skipped: 0, leads: [] as LeadProfile[] };
   const existing = await supabaseRequest<Record<string, unknown>[]>(`leads?company_id=eq.${supabaseCompanyId()}&select=phone,email`, { allRows: true });
-  const knownPhones = new Set(existing.map((row) => normalizePhone(String(row.phone || ''))).filter(Boolean));
+  const knownPhones = new Set(existing.map((row) => importPhone(String(row.phone || ''))).filter(Boolean));
   const knownEmails = new Set(existing.map((row) => String(row.email || '').toLowerCase()).filter(Boolean));
-  const unique = inputs.filter((input, index, all) => {
-    const phone = normalizePhone(input.phone);
+  const unique = inputs.filter((input) => {
+    const phone = importPhone(input.phone);
     const email = input.email?.toLowerCase() || '';
     if ((phone && knownPhones.has(phone)) || (email && knownEmails.has(email))) return false;
-    return all.findIndex((candidate) => (phone && normalizePhone(candidate.phone) === phone) || (email && candidate.email?.toLowerCase() === email)) === index;
+    if (phone) knownPhones.add(phone);
+    if (email) knownEmails.add(email);
+    return true;
   });
   const records = unique.map((input) => {
     const lifecycleStatus = input.lifecycleStatus || 'Novo';
@@ -127,13 +130,14 @@ export async function listAppointments(): Promise<AppointmentRecord[]> {
 
 export async function createAppointment(input: AppointmentInput): Promise<AppointmentRecord> {
   const [leads, properties] = await Promise.all([listLeads(), listProperties()]);
-  const lead = leads.find((item) => item.name.toLowerCase() === input.name.toLowerCase());
-  const property = properties.find((item) => item.title.toLowerCase() === input.property.toLowerCase());
+  const lead = leads.find((item) => input.leadId ? item.id === input.leadId : item.name.toLowerCase() === input.name.toLowerCase());
+  const property = properties.find((item) => input.propertyId ? item.id === input.propertyId : item.title.toLowerCase() === input.property.toLowerCase());
   if (!lead) throw new Error('Selecione um lead cadastrado para agendar a visita.');
+  if (input.propertyId && (!property || property.status === 'Vendido' || property.status === 'Alugado')) throw new Error('Selecione um imóvel disponível para agendar a visita.');
   const rows = await supabaseRequest<Record<string, unknown>[]>('appointments', {
     method: 'POST', prefer: 'return=representation',
     body: { company_id: supabaseCompanyId(), lead_id: lead.id, property_id: property?.id || null,
-      scheduled_at: `${input.date}T${input.time}:00-03:00`, assigned_to: input.broker, status: input.status, notes: `${input.name} · ${input.property}` },
+      scheduled_at: `${input.date}T${input.time}:00-03:00`, assigned_to: input.broker, status: input.status, notes: `${lead.name} · ${property?.title || input.property}` },
   });
   return mapAppointment(rows[0], new Map([[lead.id, lead.name]]), new Map(property ? [[property.id, property.title]] : []));
 }
@@ -230,7 +234,10 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
   await sql`INSERT INTO site_performance_months (company_id, month, company_goal, leads_received, converted_leads, recovered_leads)
     VALUES (${companyId}, ${month}, 0, 0, 0, 0) ON CONFLICT (company_id, month) DO NOTHING`;
   const settingsRows = await sql`SELECT company_goal, leads_received, converted_leads, recovered_leads FROM site_performance_months WHERE company_id=${companyId} AND month=${month}`;
-  const goalRows = await sql`SELECT broker, goal, leads_received, converted_leads, recovered_leads, visits FROM site_broker_goals WHERE company_id=${companyId} AND month=${month} ORDER BY broker`;
+  const [goalRows, brokerRows] = await Promise.all([
+    sql`SELECT broker, goal, leads_received, converted_leads, recovered_leads, visits FROM site_broker_goals WHERE company_id=${companyId} AND month=${month} ORDER BY broker`,
+    supabaseRequest<Array<{ name: string }>>(`broker_accounts?company_id=eq.${encodeURIComponent(companyId)}&role=eq.broker&active=eq.true&select=name&order=created_at.asc`, { allRows: true }),
+  ]);
   const saleRows = await sql`SELECT id, sale_date, broker, property, client, amount, deal_type, created_at FROM site_sales
     WHERE company_id=${companyId} AND TO_CHAR(sale_date, 'YYYY-MM')=${month}
       AND NOT (COALESCE(reference_key, '') = ANY(${demoSaleKeys}::text[])) ORDER BY sale_date DESC, created_at DESC`;
@@ -253,17 +260,22 @@ export async function getPerformance(month: string): Promise<PerformanceSnapshot
     dataMode: 'live', month, companyGoal: Number(settings.company_goal), totalSold, salesCount: completedSales.length,
     averageTicket: completedSales.length ? totalSold / completedSales.length : 0, leadsReceived, convertedLeads,
     recoveredLeads: Number(settings.recovered_leads), conversionRate: leadsReceived ? (convertedLeads / leadsReceived) * 100 : 0,
-    brokers: goalRows.map((goal) => {
-      const brokerSales = completedSales.filter((sale) => sale.broker === String(goal.broker));
+    brokers: Array.from(new Set([
+      ...brokerRows.map((broker) => String(broker.name)),
+      ...goalRows.map((goal) => String(goal.broker)),
+    ])).map((brokerName) => {
+      const goal = goalRows.find((item) => String(item.broker) === brokerName);
+      const broker = goal || { broker: brokerName, goal: 0, leads_received: 0, converted_leads: 0, recovered_leads: 0, visits: 0 };
+      const brokerSales = completedSales.filter((sale) => sale.broker === String(broker.broker));
       const sold = brokerSales.reduce((total, sale) => total + sale.amount, 0);
-      const target = Number(goal.goal);
-      const brokerLeads = Number(goal.leads_received);
-      const brokerConverted = Number(goal.converted_leads);
+      const target = Number(broker.goal);
+      const brokerLeads = Number(broker.leads_received);
+      const brokerConverted = Number(broker.converted_leads);
       return {
-        broker: String(goal.broker), goal: target, sold, salesCount: brokerSales.length, progress: target ? (sold / target) * 100 : 0,
-        leadsReceived: brokerLeads, convertedLeads: brokerConverted, recoveredLeads: Number(goal.recovered_leads), visits: Number(goal.visits),
+        broker: String(broker.broker), goal: target, sold, salesCount: brokerSales.length, progress: target ? (sold / target) * 100 : 0,
+        leadsReceived: brokerLeads, convertedLeads: brokerConverted, recoveredLeads: Number(broker.recovered_leads), visits: Number(broker.visits),
         conversionRate: brokerLeads ? (brokerConverted / brokerLeads) * 100 : 0,
-        history: historyRows.filter((row) => String(row.broker) === String(goal.broker)).map((row) => ({ month: String(row.month), sold: Number(row.sold) })),
+        history: historyRows.filter((row) => String(row.broker) === String(broker.broker)).map((row) => ({ month: String(row.month), sold: Number(row.sold) })),
       };
     }).sort((a, b) => b.sold - a.sold),
     history: Array.from(new Set(historyRows.map((row) => String(row.month)))).map((historyMonth) => ({

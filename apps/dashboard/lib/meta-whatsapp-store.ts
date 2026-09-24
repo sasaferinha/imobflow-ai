@@ -33,12 +33,13 @@ export async function saveIncomingWhatsAppMessage(
           mimeType: input.media.mimeType,
           accessToken: input.accessToken,
           apiVersion: input.apiVersion,
+          kind: input.media.kind,
         }),
       ];
     } catch {
       content =
         input.text.slice(0, 3900) +
-        "\n[Foto indisponível: não foi possível receber a mídia.]";
+        (input.media.kind === 'audio' ? "\n[Áudio indisponível: não foi possível baixar o arquivo. Peça ao cliente para reenviar.]" : "\n[Foto indisponível: não foi possível receber a mídia.]");
     }
     try {
       await db(
@@ -59,7 +60,8 @@ export async function saveIncomingWhatsAppMessage(
     conversationId: result.conversationId,
     incomingExternalMessageId: input.externalMessageId,
     message: input.text,
-    hasImage: Boolean(input.media),
+    hasImage: Boolean(input.media && input.media.kind !== 'audio'),
+    hasAudio: input.media?.kind === 'audio',
     recipientPhone: input.phone,
     phoneNumberId: input.phoneNumberId,
     accessToken: input.accessToken,

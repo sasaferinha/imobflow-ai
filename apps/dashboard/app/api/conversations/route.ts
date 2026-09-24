@@ -1,7 +1,7 @@
 import { protectedRoute } from '@/lib/accounts';
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
-import { createConversationMessage, listConversationMessages } from '@/lib/conversations';
+import { createConversationMessage, listConversationData } from '@/lib/conversations';
 import { hasSameOrigin } from '@/lib/request-security';
 
 export const runtime = 'nodejs';
@@ -10,8 +10,11 @@ export const dynamic = 'force-dynamic';
 async function handleGET(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   try {
-    return NextResponse.json({ data: await listConversationMessages() }, { headers: { 'Cache-Control': 'no-store' } });
-  } catch {
+    const params = new URL(request.url).searchParams;
+    const { messages, attendance, nextCursor } = await listConversationData({ leadId: params.get('leadId') || undefined, before: params.get('before') || undefined });
+    return NextResponse.json({ data: messages, attendance, nextCursor }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'invalid_conversation_page') return NextResponse.json({ error: 'Página de conversa inválida.' }, { status: 400 });
     console.error('conversation_list_failed');
     return NextResponse.json({ error: 'Não foi possível carregar as conversas.' }, { status: 500 });
   }
@@ -32,8 +35,8 @@ async function handlePOST(request: NextRequest) {
     const templateName=typeof body.templateName==='string'&&/^[a-z0-9_]{1,100}$/.test(body.templateName)?body.templateName:undefined;
     return NextResponse.json({ data: await createConversationMessage({ leadId, content, images, propertyId, requestId, templateName }) }, { status: 201 });
   } catch (error) {
-    console.error('conversation_create_failed');
     const message = error instanceof Error ? error.message : '';
+    console.error('conversation_create_failed', message.slice(0, 500));
     if(message.includes('claim_required'))return NextResponse.json({error:'Assuma o atendimento antes de enviar.'},{status:409});
     if(message.includes('template_required'))return NextResponse.json({error:'Fora da janela de 24 horas. Configure um modelo aprovado pela Meta.'},{status:409});
     if (message.includes('não encontrado nesta imobiliária') || message.includes('não está mais disponível')) {

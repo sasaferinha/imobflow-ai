@@ -1,0 +1,17 @@
+/* Only the frame changes. All panel components and their visual styles are shared. */
+html:has(.public-product-demo) { scroll-behavior: auto; }
+.public-product-demo { background: var(--canvas); }
+.public-demo-notice { display: flex; gap: 12px; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--line); background: #f5f8fd; color: #566175; font: 13px/1.5 var(--native-font); }
+.public-demo-notice strong { font-weight: 600; color: #0062d6; }
+.public-demo-loading { padding: 48px; color: var(--muted); }
+.public-product-demo .app-shell { min-height: 740px; }
+.public-product-demo .app-shell .sidebar { position: relative; top: auto; height: auto; min-height: 740px; }
+.public-product-demo .app-shell.app-shell .conversation-demo .inbox-layout { height: 700px; }
+.public-product-demo .app-shell :is(button, input, select, textarea, summary, a):focus-visible { outline: 2px solid #0066df; outline-offset: 3px; }
+@media (max-width: 600px) {
+  .public-demo-notice { padding: 12px; align-items: flex-start; flex-direction: column; gap: 3px; font-size: 12px; }
+  .public-product-demo .app-shell .sidebar { min-height: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .public-product-demo *, .public-product-demo *::before, .public-product-demo *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

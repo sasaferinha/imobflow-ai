@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+require('./test-dashboard-periods.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -13,12 +14,17 @@ class BroadcastChannel {
   postMessage(data) { for (const channel of channels) if (channel !== this && !channel.closed) channel.onmessage?.({data}); }
   close() { this.closed = true; }
 }
-const browser = Object.assign(windowEvents, { BroadcastChannel, setInterval: fn => { timers.set(++timerId, fn); return timerId; }, clearInterval: id => timers.delete(id) });
+const browser = Object.assign(windowEvents, { location: { pathname: '/painel' }, BroadcastChannel, setInterval: fn => { timers.set(++timerId, fn); return timerId; }, clearInterval: id => timers.delete(id) });
 const doc = Object.assign(documentEvents, { visibilityState:'visible' });
+const transportModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../lib/dashboard-transport.ts'),'utf8'), {
+  compilerOptions:{ module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022 }
+}).outputText, { exports:transportModule.exports,module:transportModule,window:browser,Response });
 const moduleExports = { exports:{} };
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../lib/dashboard-sync.ts'),'utf8'), {
   compilerOptions:{ module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022 }
-}).outputText, { exports:moduleExports.exports,module:moduleExports,window:browser,document:doc,BroadcastChannel,CustomEvent,AbortController });
+}).outputText, { exports:moduleExports.exports,module:moduleExports,window:browser,document:doc,BroadcastChannel,CustomEvent,AbortController,
+  require: name => { assert.equal(name, './dashboard-transport'); return transportModule.exports; } });
 const { subscribeDashboardSync, announceDashboardChange } = moduleExports.exports;
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const tick = () => { for(const fn of timers.values()) fn(); };
@@ -53,4 +59,17 @@ const tick = () => { for(const fn of timers.values()) fn(); };
   await flush(); assert.equal(values.length,2,'another account tab invalidates and refetches server state');
   unsub(); otherTab.close();
   console.log('PASS cross-tab notifications reload server data without broadcasting customer data');
+
+  browser.location.pathname = '/demonstracao';
+  const previousChannels = channels.length;
+  let demoReads = 0;
+  const stopDemo = subscribeDashboardSync({ entities: ['leads'], load: async () => ++demoReads, apply() {} });
+  await flush();
+  announceDashboardChange('leads');
+  await flush();
+  assert.equal(channels.length, previousChannels, 'public demonstration must neither subscribe nor publish to the real dashboard channel');
+  assert.equal(demoReads, 2, 'local demonstration refresh remains functional');
+  stopDemo();
+  browser.location.pathname = '/painel';
+  console.log('PASS public demo keeps local updates without cross-tab account communication');
 })().catch(error => { console.error(error); process.exitCode=1; });

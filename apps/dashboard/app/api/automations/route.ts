@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { automationSnapshot, completeAutomationResult, prepareMatchMessage, runAutomations, setAutomationActive } from '@/lib/automations';
 import { isFlowId } from '@/lib/automation-rules';
+import { currentAccount } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -23,6 +24,9 @@ async function handlePOST(request: NextRequest) {
   try { raw = await request.json(); } catch { return NextResponse.json({ error: 'Solicitação inválida.' }, { status: 400 }); }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return NextResponse.json({ error: 'Solicitação inválida.' }, { status: 400 });
   const body = raw as Record<string, unknown>;
+  if ((body.action === 'toggle' || body.action === 'run') && currentAccount()?.role !== 'owner') {
+    return NextResponse.json({ error: 'Somente o administrador pode alterar ou executar automações.' }, { status: 403 });
+  }
   try {
     if (body.action === 'prepare-message' && typeof body.id === 'string' && /^[0-9a-f-]{36}$/i.test(body.id)) {
       const draft = await prepareMatchMessage(body.id);
