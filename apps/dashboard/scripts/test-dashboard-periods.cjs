@@ -31,12 +31,12 @@ const api=compile(source+'\nexport { Overview, GoalsManagement, BrokerProfileMod
   return {default:()=>null};
 });
 const snapshot={month:'2026-09',companyGoal:1000,totalSold:200,salesCount:1,brokers:[],sales:[],history:[],conversionRate:0,averageTicket:200};
-const props={notify(){},canEditGoals:true,properties:[],refreshProperties:async()=>{},brokerName:'Teste',company:'Empresa',close(){}};
+const props={notify(){},canEditGoals:true,properties:[],leads:[],refreshProperties:async()=>{},brokerName:'Teste',company:'Empresa',close(){}};
 const visit=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(Infinity).flatMap(visit)];
 function render(name, values) { state=values;index=0;return api[name](props); }
 for(const name of ['Overview','GoalsManagement','BrokerProfileModal']) {
   const overview=name==='Overview';
-  const values=()=>overview?['2026-09',0,snapshot,null,'Venda',false,false,null]:name==='GoalsManagement'?['2026-09',0,snapshot,false,false,null]:['2026-09',0,snapshot,false,null];
+  const values=()=>overview?['2026-09',0,snapshot,null,'Venda',false,'',false,null]:name==='GoalsManagement'?['2026-09',0,snapshot,false,false,null]:['2026-09',0,snapshot,false,null];
   const tree=render(name,values());
   const picker=visit(tree).find(node=>node.type==='input'&&node.props.type==='month');
   assert.ok(picker,name+' renders a month picker');
@@ -48,7 +48,7 @@ for(const name of ['Overview','GoalsManagement','BrokerProfileModal']) {
   const notice=visit(pending).find(node=>node.type===api.PeriodLoadNotice);
   assert.ok(notice,name+' hides old month data immediately');
   assert.equal(notice.props.loading,true);
-  const failed=values();failed[0]='2026-10';failed[overview?7:name==='GoalsManagement'?5:4]='Falha de conexão';
+  const failed=values();failed[0]='2026-10';failed[overview?8:name==='GoalsManagement'?5:4]='Falha de conexão';
   const failureTree=render(name,failed);
   const failureNotice=visit(failureTree).find(node=>node.type===api.PeriodLoadNotice);
   assert.ok(failureNotice,name+' must not label stale data as updated after failure');

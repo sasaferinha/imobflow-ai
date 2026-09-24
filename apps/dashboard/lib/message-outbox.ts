@@ -1,5 +1,6 @@
 import { supabaseServiceRequest } from "./supabase";
 import { loadMetaWhatsAppConnectionForCompany } from "./meta-whatsapp-connections";
+import type { PropertyImageAttachment } from './property-whatsapp-media';
 
 const MAX_SEND_ATTEMPTS = 3;
 const BASE_RETRY_MS = 30_000;
@@ -20,6 +21,7 @@ export function retryableDelivery(status: number, code: number | null) {
 }
 
 export async function sendQueuedMessage(companyId: string, id: string, deadline = Date.now() + 45000) {
+  if (Date.now() + 24000 > deadline) return; // Do not acquire a lease without a safe send/receipt budget.
   const claimed = await db<boolean>("rpc/claim_outbox_message_v2", {
     method: "POST",
     body: { p_company_id: companyId, p_id: id },
@@ -38,6 +40,7 @@ export async function sendQueuedMessage(companyId: string, id: string, deadline 
       Array<{
         conversation_id: string;
         attempts: number;
+        property_image?: PropertyImageAttachment | null;
         template_payload: {
           name: string;
           language: string;
@@ -45,7 +48,7 @@ export async function sendQueuedMessage(companyId: string, id: string, deadline 
         } | null;
       }>
     >(
-      `message_outbox?${filter}&select=conversation_id,attempts,template_payload&limit=1`,
+      `message_outbox?${filter}&select=conversation_id,attempts,template_payload,property_image&limit=1`,
     );
     attempts = outbox.attempts;
 
@@ -76,7 +79,11 @@ export async function sendQueuedMessage(companyId: string, id: string, deadline 
       errorCode = 190;
     } else {
       const tpl = outbox.template_payload;
-      const payload = tpl
+      // Loading/converting/uploading is safe to retry: only the /messages POST
+      // sends to a recipient and receives the provider-attempt marker below.
+      const imageId = outbox.property_image
+        ? await (await import('./property-whatsapp-media')).uploadPropertyWhatsAppImage(companyId, outbox.property_image, connection, deadline) : null;
+      const payload = imageId ? { type: 'image', image: { id: imageId, caption: message.content.slice(0, 1024) } } : tpl
         ? {
             type: "template",
             template: {

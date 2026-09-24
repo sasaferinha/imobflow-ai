@@ -3,9 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { createConversationMessage, listConversationData } from '@/lib/conversations';
 import { hasSameOrigin } from '@/lib/request-security';
+import { hideConversationMessage, messageVisibilityError } from '@/lib/conversation-visibility';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 async function handleGET(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
@@ -21,6 +23,7 @@ async function handleGET(request: NextRequest) {
 }
 
 async function handlePOST(request: NextRequest) {
+  const deadline = Date.now() + 50000;
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
@@ -33,12 +36,14 @@ async function handlePOST(request: NextRequest) {
     if(!/^[0-9a-f-]{36}$/i.test(requestId))return NextResponse.json({error:'Identificador de envio inválido.'},{status:400});
     if (!/^[0-9a-f-]{36}$/i.test(leadId) || !content) return NextResponse.json({ error: 'Mensagem inválida.' }, { status: 400 });
     const templateName=typeof body.templateName==='string'&&/^[a-z0-9_]{1,100}$/.test(body.templateName)?body.templateName:undefined;
-    return NextResponse.json({ data: await createConversationMessage({ leadId, content, images, propertyId, requestId, templateName }) }, { status: 201 });
+    return NextResponse.json({ data: await createConversationMessage({ leadId, content, images, propertyId, requestId, templateName }, deadline) }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     console.error('conversation_create_failed', message.slice(0, 500));
     if(message.includes('claim_required'))return NextResponse.json({error:'Assuma o atendimento antes de enviar.'},{status:409});
     if(message.includes('template_required'))return NextResponse.json({error:'Fora da janela de 24 horas. Configure um modelo aprovado pela Meta.'},{status:409});
+    if (message.includes('property_unavailable')) return NextResponse.json({ error: 'Este imóvel não está mais disponível para envio.' }, { status: 409 });
+    if (message.includes('Cadastre novamente a foto')) return NextResponse.json({ error: message }, { status: 409 });
     if (message.includes('não encontrado nesta imobiliária') || message.includes('não está mais disponível')) {
       return NextResponse.json({ error: message }, { status: 409 });
     }
@@ -48,3 +53,16 @@ async function handlePOST(request: NextRequest) {
 
 export const GET = protectedRoute(handleGET);
 export const POST = protectedRoute(handlePOST);
+
+export const DELETE = protectedRoute(async (request: NextRequest) => {
+  if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
+  const messageId = new URL(request.url).searchParams.get('id') || '';
+  try {
+    await hideConversationMessage(messageId);
+    return NextResponse.json({ data: { id: messageId, hidden: true } });
+  } catch (error) {
+    const failure = messageVisibilityError(error);
+    return NextResponse.json({ error: failure.error }, { status: failure.status });
+  }
+});

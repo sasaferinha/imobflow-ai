@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { protectedRoute } from '@/lib/accounts';
 import { hasSameOrigin, hasSafeRequestSize } from '@/lib/request-security';
-import { listSharedDemoThreads, saveSharedDemoAction } from '@/lib/shared-demo-conversations';
+import { hideSharedDemoMessage, listSharedDemoThreads, saveSharedDemoAction } from '@/lib/shared-demo-conversations';
+import { messageVisibilityError } from '@/lib/conversation-visibility';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,5 +35,16 @@ export const POST = protectedRoute(async (request: NextRequest) => {
   } catch (error) {
     console.error('demo_save_failed', error);
     return NextResponse.json({ error: 'Não foi possível salvar o atendimento de demonstração. Tente novamente.' }, { status: 503 });
+  }
+});
+
+export const DELETE = protectedRoute(async (request: NextRequest) => {
+  if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
+  const params = new URL(request.url).searchParams;
+  try {
+    return NextResponse.json({ data: await hideSharedDemoMessage(params.get('contactId') || '', params.get('id') || '') });
+  } catch (error) {
+    const failure = messageVisibilityError(error);
+    return NextResponse.json({ error: failure.error }, { status: failure.status });
   }
 });

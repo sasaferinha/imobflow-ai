@@ -12,8 +12,11 @@ async function handleDELETE(request: NextRequest, context: { params: Promise<{ i
   if (currentAccount()?.role !== 'owner') return NextResponse.json({ error: 'Somente o administrador pode excluir negócios.' }, { status: 403 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
-    return await deleteSale((await context.params).id)
-      ? NextResponse.json({ ok: true })
+    const id = (await context.params).id;
+    if (!/^(legacy:)?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) return NextResponse.json({ error:'Negócio inválido.' }, { status:400 });
+    const result = await deleteSale(id);
+    return result
+      ? NextResponse.json(result)
       : NextResponse.json({ error: 'Venda não encontrada.' }, { status: 404 });
   } catch (error) {
     console.error('sale_delete_failed', error);

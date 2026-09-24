@@ -12,8 +12,8 @@ let lastPropertyPayload;
 async function sql(parts, ...values) {
   const query = parts.join('?'); calls.push(query);
   if (query.includes('SELECT company_goal')) return [{ company_goal: 200000, leads_received: 2, converted_leads: 1, recovered_leads: 0 }];
-  if (query.includes('SELECT broker, goal,')) return [{ broker: 'Corretor', goal: 200000, leads_received: 2, converted_leads: 1, recovered_leads: 0, visits: 0 }];
-  if (query.includes('SELECT id, sale_date')) return [sale, { ...sale, id: 'rent', amount: 2500, deal_type: 'Aluguel' }];
+  if (query.includes('SELECT broker, goal')) return [{ broker: 'Corretor', goal: 200000, leads_received: 999, converted_leads: 999, recovered_leads: 999, visits: 999 }];
+  if (query.includes('SELECT id,sale_date')) return [sale, { ...sale, id: 'rent', amount: 2500, deal_type: 'Aluguel' }];
   if (query.includes('WITH recent_months')) { assert.equal(query.split("deal_type='Venda'").length - 1, 2); return [{ month: '2026-09', broker: 'Corretor', sold: 100000 }]; }
   if (query.includes('INSERT INTO site_sales (company_id, sale_date')) { assert.ok(query.includes('deal_type')); return [{ ...sale, amount: values[5], deal_type: values[6] }]; }
   return [];
@@ -21,9 +21,12 @@ async function sql(parts, ...values) {
 async function supabaseRequest(path, options = {}) {
   calls.push('SUPABASE ' + (options.method || 'GET') + ' ' + path);
   if (path.startsWith('broker_accounts?')) {
-    assert.ok(path.includes('company_id=eq.company&role=eq.broker&active=eq.true'));
-    return [{ name: 'Novo corretor' }];
+    assert.ok(path.includes('company_id=eq.company'));
+    return [{ id:'broker', name:'Corretor',active:true },{ id:'new',name: 'Novo corretor',active:true }];
   }
+  if (path.startsWith('broker_name_history?') || path.startsWith('property_deals?') || path.startsWith('cancelled_legacy_sales?')) return [];
+  if (path === 'rpc/performance_crm_month') return { metrics:[{broker_id:null,leads_received:2,converted_leads:1,recovered_leads:0,visits:0,cohort_converted:1}],trackingStartedAt:date };
+  if (path === 'rpc/record_property_deal') return {...sale,amount:options.body.p_amount,deal_type:options.body.p_deal_type};
   if (options.method === 'POST') { lastPropertyPayload = options.body; return [savedProperty]; }
   if (options.method === 'PATCH') return [savedProperty];
   if (path.startsWith('appointments?')) return [{ id: 'a1', scheduled_at: '2026-09-09T01:30:00Z', created_at: date }];
@@ -36,7 +39,7 @@ function loadPure(file) {
   const code = ts.transpileModule(fs.readFileSync(require('node:path').join(__dirname, '../lib/', file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const mod = { exports: {} }; vm.runInNewContext(code, { module: mod, exports: mod.exports, Date }); return mod.exports;
 }
-vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, process: { env: { DATABASE_URL: 'mock-only' } }, require: (name) => name === '@neondatabase/serverless' ? { neon: () => sql } : name === './supabase' ? { supabaseCompanyId: () => 'company', supabaseRequest } : name === './property-matching' ? loadPure('property-matching.ts') : name === './leads' ? loadPure('leads.ts') : {}, Date, console });
+vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, process: { env: { DATABASE_URL: 'mock-only' } }, require: (name) => name === '@neondatabase/serverless' ? { neon: () => sql } : name === './supabase' ? { supabaseCompanyId: () => 'company', supabaseRequest } : name === './tenant-context' ? { currentAccount:()=>({brokerId:'actor'}) } : name === './performance-metrics' ? loadPure('performance-metrics.ts') : name === './property-matching' ? loadPure('property-matching.ts') : name === './leads' ? loadPure('leads.ts') : {}, Date, console });
 (async () => {
   const api = fakeModule.exports;
   const report = await api.getPerformance('2026-09');
@@ -45,6 +48,7 @@ vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, pr
   assert.equal(report.totalSold, 100000);
   assert.equal(report.salesCount, 1);
   assert.equal(report.averageTicket, 100000);
+  assert.equal(report.convertedLeads,1,'Neon manually editable counters must be ignored');
   assert.equal(report.brokers[0].sold, 100000);
   assert.equal(report.brokers[0].salesCount, 1);
   assert.equal(report.brokers.find(item => item.broker === 'Novo corretor').goal, 0);

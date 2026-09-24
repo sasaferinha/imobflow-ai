@@ -80,6 +80,7 @@ async function request(resource, options = {}) {
     './tenant-context': { currentAccount: () => null },
     './whatsapp-media': { isWhatsAppMediaPath: () => false, isWhatsAppAudioPath: () => false },
     './message-delivery': { deliveryError: () => 'Falha' }, './message-outbox': {},
+    './message-visibility': load('lib/message-visibility.ts', {}),
   });
   await context.run(id(1), async () => {
     const initial = await api.listConversationData(); assert.equal(initial.messages.length, 200);

@@ -801,3 +801,8 @@ body { -webkit-font-smoothing: antialiased; }
 .release-notice { display: flex; align-items: center; gap: 16px; }
 .release-notice button { flex-shrink: 0; border: 0; border-radius: 10px; padding: 10px 14px; background: #007aff; color: white; font: inherit; cursor: pointer; }
 .sync-notice { bottom: 98px; }
+.bubble.message-hidden { opacity: .75; font-style: italic; }
+.message-visibility-actions { margin-top: 8px; }
+.message-visibility-actions button { background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; padding: 5px 9px; margin: 3px 6px 0 0; font: inherit; font-size: 11px; cursor: pointer; }
+.message-visibility-actions button:disabled { opacity: .55; cursor: wait; }
+.message-visibility-actions p { margin: 5px 0; font-size: 12px; line-height: 1.5; max-width: 420px; }

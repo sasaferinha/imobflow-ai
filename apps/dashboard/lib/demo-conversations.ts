@@ -1,6 +1,6 @@
 import type { ConversationAttendanceSummary } from './conversations';
 
-export type DemoMessage = { id: string; side: 'incoming' | 'outgoing'; text: string; time: string; images?: string[]; audios?: string[]; propertyTitle?: string; deliveryStatus?: 'pending'|'sent'|'delivered'|'read'|'failed'; deliveryError?:string; sender?:string;canRetry?:boolean;attempts?:number;nextAttemptAt?:string;attendanceMode?:ConversationAttendanceSummary['attendanceMode'];assignedBrokerId?:string|null };
+export type DemoMessage = { id: string; side: 'incoming' | 'outgoing'; text: string; time: string; images?: string[]; audios?: string[]; propertyTitle?: string; deliveryStatus?: 'pending'|'sent'|'delivered'|'read'|'failed'; deliveryError?:string; sender?:string;canRetry?:boolean;attempts?:number;nextAttemptAt?:string;hidden?:boolean;canHide?:boolean;attendanceMode?:ConversationAttendanceSummary['attendanceMode'];assignedBrokerId?:string|null };
 export type DemoContact = {
   id: string; name: string; initials: string; tone: number; category: string; style: string;
   goal: string; propertyType: string; region: string; budget: string; rooms: string;
@@ -127,8 +127,8 @@ export type DemoConversationState = {
 export type DemoConversationAction =
   | { type: 'select'; id: string }
   | { type: 'draft'; id: string; text: string }
-  | { type: 'send'; id: string; messageId: string; time: string; text?: string }
-  | { type: 'share-property'; id: string; messageId: string; time: string; text: string; images: string[]; propertyTitle: string }
+  | { type: 'send'; id: string; messageId: string; time: string; text?: string; message?: DemoMessage }
+  | { type: 'share-property'; id: string; messageId: string; time: string; text: string; images: string[]; propertyTitle: string; message?: DemoMessage }
   | { type: 'assign'; id: string; assignedTo: string }
   | { type: 'sync'; contacts: Array<{ id: string; unread?: number }> }
   | { type: 'hydrate'; merge?: boolean; contacts: Array<{ id: string; messages: DemoMessage[]; assignedTo?: string | null; assignedBrokerId?: string | null; revision?: number; attendance?: ConversationAttendanceSummary | null }> };
@@ -145,11 +145,14 @@ export function demoConversationReducer(state: DemoConversationState, action: De
     for (const contact of action.contacts) {
       const current = threads[contact.id] || { messages: [], draft: '', unread: 0, humanMode: false };
       if (contact.revision !== undefined && (current.revision || 0) > contact.revision) continue;
-      const messages = action.merge ? [...new Map([...current.messages, ...contact.messages].map(message => [message.id, message])).values()].sort((a, b) => {
+      // A poll started before a successful removal must never restore hidden text.
+      const previousById = new Map(current.messages.map(message => [message.id, message]));
+      const incomingMessages = contact.messages.map(message => previousById.get(message.id)?.hidden ? { ...message, ...previousById.get(message.id)! } : message);
+      const messages = action.merge ? [...new Map([...current.messages, ...incomingMessages].map(message => [message.id, message])).values()].sort((a, b) => {
         const left = (a as DemoMessage & { createdAt?: string }).createdAt;
         const right = (b as DemoMessage & { createdAt?: string }).createdAt;
         return left && right ? left.localeCompare(right) || a.id.localeCompare(b.id) : left ? -1 : right ? 1 : 0;
-      }) : contact.messages;
+      }) : incomingMessages;
       threads[contact.id] = { ...current, messages,
         ...(contact.attendance === undefined ? {} : { attendance: contact.attendance }),
         ...(contact.revision === undefined ? {} : { revision: contact.revision, assignedTo: contact.assignedTo || undefined,
@@ -178,9 +181,9 @@ export function demoConversationReducer(state: DemoConversationState, action: De
   const updated = action.type === 'select' ? { ...thread, unread: 0 }
     : action.type === 'draft' ? { ...thread, draft: action.text }
     : action.type === 'assign' ? { ...thread, humanMode: true, assignedTo: action.assignedTo }
-    : action.type === 'share-property' ? { ...thread, messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: action.text, time: action.time, images: action.images, propertyTitle: action.propertyTitle }] }
+    : action.type === 'share-property' ? { ...thread, messages: [...thread.messages, action.message || { id: action.messageId, side: 'outgoing' as const, text: action.text, time: action.time, images: action.images, propertyTitle: action.propertyTitle }] }
     : { ...thread, draft: thread.draft.trim() === (action.text ?? thread.draft).trim() ? '' : thread.draft,
-      messages: [...thread.messages, { id: action.messageId, side: 'outgoing' as const, text: (action.text ?? thread.draft).trim(), time: action.time }] };
+      messages: [...thread.messages, action.message || { id: action.messageId, side: 'outgoing' as const, text: (action.text ?? thread.draft).trim(), time: action.time }] };
   return { selectedId: action.type === 'select' ? action.id : state.selectedId, threads: { ...state.threads, [action.id]: updated } };
 }
 

@@ -34,12 +34,22 @@ function Photo({ src }: { src: string }) {
 export function ConversationMessageBubble({
   message,
   demo,
+  onHide,
 }: {
   message: DemoMessage;
   demo: boolean;
+  onHide?: (messageId: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  async function hide() {
+    if (!onHide || busy) return;
+    setBusy(true); setNotice('');
+    try { await onHide(message.id); setConfirming(false); }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Não foi possível remover a mensagem.'); }
+    finally { setBusy(false); }
+  }
   async function retry() {
     setBusy(true);
     try {
@@ -66,7 +76,7 @@ export function ConversationMessageBubble({
   };
   return (
     <div
-      className={`bubble ${message.side}`}
+      className={`bubble ${message.side}${message.hidden ? ' message-hidden' : ''}`}
       data-delivery={message.deliveryStatus}
     >
       {message.images?.length ? (
@@ -99,6 +109,13 @@ export function ConversationMessageBubble({
         </button>
       )}
       {notice && <p role="status">{notice}</p>}
+      {!message.hidden && message.canHide && onHide && <div className="message-visibility-actions">
+        {confirming ? <div role="group" aria-label="Confirmar remoção da mensagem">
+          <p>{demo ? 'Remover da demonstração compartilhada da equipe?' : 'Remover do painel de toda a equipe? Isso não apaga a mensagem no WhatsApp nem cancela respostas automáticas. Os registros técnicos são preservados.'}</p>
+          <button type="button" disabled={busy} onClick={() => void hide()}>{busy ? 'Removendo…' : 'Confirmar remoção'}</button>
+          <button type="button" disabled={busy} onClick={() => setConfirming(false)}>Cancelar</button>
+        </div> : <button type="button" aria-label="Remover mensagem do painel" onClick={() => setConfirming(true)}>Remover do painel</button>}
+      </div>}
     </div>
   );
 }
