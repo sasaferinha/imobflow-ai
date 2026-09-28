@@ -3,7 +3,7 @@ export type FacebookSdk = {
   login: (callback: (response: { authResponse?: { code?: string } }) => void, options: Record<string, unknown>) => void;
 };
 
-export type SignupAssets = { phoneNumberId: string; wabaId: string };
+export type SignupAssets = { phoneNumberId: string; wabaId: string; businessAppOnboarding?: boolean };
 
 // Meta replaces the initial buffering facade with the real SDK. Never retain
 // that facade: its login() only queues calls in a buffer that may be abandoned.
@@ -27,7 +27,7 @@ export function parseMetaSignupEvent(event: Pick<MessageEvent, 'origin' | 'data'
     const phoneNumberId = message.data?.phone_number_id;
     const wabaId = message.data?.waba_id;
     if (typeof phoneNumberId !== 'string' || !/^\d{5,30}$/.test(phoneNumberId) || typeof wabaId !== 'string' || !/^\d{5,30}$/.test(wabaId)) return { event: 'error' };
-    return { event: 'finish', assets: { phoneNumberId, wabaId } };
+    return { event: 'finish', assets: { phoneNumberId, wabaId, ...(message.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' ? { businessAppOnboarding: true } : {}) } };
   } catch { return null; }
 }
 

@@ -30,7 +30,7 @@ export const POST = protectedRoute(async (request: NextRequest) => {
   const body = await request.json().catch(() => null) as { code?: unknown; phoneNumberId?: unknown; wabaId?: unknown; pin?: unknown } | null;
   if (!body || typeof body.code !== 'string' || body.code.length < 20 || body.code.length > 4096 ||
       typeof body.phoneNumberId !== 'string' || !META_PHONE_ID.test(body.phoneNumberId) ||
-      typeof body.wabaId !== 'string' || !META_PHONE_ID.test(body.wabaId) || typeof body.pin !== 'string' || !/^\d{6}$/.test(body.pin)) {
+      typeof body.wabaId !== 'string' || !META_PHONE_ID.test(body.wabaId) || (body.pin !== undefined && body.pin !== '' && (typeof body.pin !== 'string' || !/^\d{6}$/.test(body.pin)))) {
     return NextResponse.json({ error: 'Confira o PIN de 6 dígitos e conclua a seleção do número na Meta.' }, { status: 400 });
   }
   try {
@@ -39,7 +39,8 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     const accessToken = await exchangeMetaSignupCode(body.code, appId, process.env.META_APP_SECRET!.trim());
     await verifyMetaBusinessPhone(body.wabaId, body.phoneNumberId, accessToken);
     const verification = await verifyMetaPhone(body.phoneNumberId, accessToken);
-    await activateMetaBusinessPhone(body.wabaId, body.phoneNumberId, accessToken, body.pin, verification.businessAppConnected === true);
+    // Only Meta's server response can authorize bypassing registration/PIN.
+    await activateMetaBusinessPhone(body.wabaId, body.phoneNumberId, accessToken, typeof body.pin === 'string' ? body.pin : '', verification.businessAppConnected === true);
     await saveMetaWhatsAppConnection(companyId, { phoneNumberId: body.phoneNumberId, accessToken, apiVersion: META_GRAPH_VERSION, enabled: true });
     return NextResponse.json({ ok: true, data: { configured: true, phoneNumberId: body.phoneNumberId, apiVersion: META_GRAPH_VERSION, enabled: true, hasAccessToken: true, verification: 'verified', ...verification, messageTestRequired: true } }, { headers: noStore });
   } catch (error) {

@@ -104,6 +104,19 @@ async function run() {
   noSecrets(response); assert.equal(response.headers['Cache-Control'], 'no-store');
   console.log('PASS code exchange, phone ownership/access, registration PIN, subscription, tenant save and token redaction');
 
+  for (const missingPin of [undefined, '']) {
+    reset({ payload: { access_token: token } }, { payload: { data: [{ id: phone }] } }, { payload: { ...phoneResponse.payload, is_on_biz_app: true } }, success);
+    response = await embedded.POST(req({ ...signup, pin: missingPin, businessAppOnboarding: true }));
+    assert.equal(response.status, 200); assert.equal(saved.length, 1); noSecrets(response);
+    assert.ok(!requests.some(item => item.url.pathname.endsWith('/register')));
+    assert.equal(requests.at(-1).url.pathname, `/v26.0/${waba}/subscribed_apps`);
+  }
+  reset({ payload: { access_token: token } }, { payload: { data: [{ id: phone }] } }, { payload: { ...phoneResponse.payload, is_on_biz_app: false } });
+  response = await embedded.POST(req({ ...signup, pin: '', businessAppOnboarding: true }));
+  assert.equal(response.body.code, 'invalid_pin'); assert.equal(saved.length, 0);
+  assert.ok(!requests.some(item => item.options.method === 'POST'));
+  console.log('PASS coexistence saves without PIN only when Meta confirms it; forged browser flags rejected');
+
   reset({ payload: { access_token: token } }, { payload: { data: [{ id: phone }] } }, phoneResponse, { ok: false, payload: { error: { code: 100, message: secret + token } } });
   response = await embedded.POST(req(signup));
   assert.equal(response.body.code, 'registration_failed'); assert.equal(saved.length, 0); assert.equal(requests.length, 4); noSecrets(response);
@@ -146,6 +159,8 @@ async function run() {
   });
   const event = (origin = 'https://www.facebook.com', type = 'FINISH') => ({ origin, data: JSON.stringify({ type: 'WA_EMBEDDED_SIGNUP', event: type, data: { phone_number_id: phone, waba_id: waba } }) });
   assert.equal(client.parseMetaSignupEvent(event('https://www.facebook.com.attacker.invalid')), null);
+  assert.equal(client.parseMetaSignupEvent(event(undefined, 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING')).assets.businessAppOnboarding, true);
+  assert.equal(client.parseMetaSignupEvent(event()).assets.businessAppOnboarding, undefined);
   assert.equal(client.parseMetaSignupEvent({ origin: 'https://www.facebook.com', data: '{broken' }), null);
   const sdk = { login: callback => { loginCallback = callback; } };
   const begin = () => client.beginMetaSignup(sdk, 'config', { complete: data => completed.push(data), error: message => errors.push(message) });

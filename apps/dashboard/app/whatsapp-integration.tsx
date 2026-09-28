@@ -126,7 +126,12 @@ export default function WhatsAppIntegration({ canEdit, onOpenConversations }: { 
     setFeedback({ kind: 'info', message: 'Na janela da Meta, escolha a conta WhatsApp da sua empresa, confirme o número e permita o acesso.' });
     cleanupSignup.current?.();
     cleanupSignup.current = beginMetaSignup(sdk.current, embedded.configId, {
-      complete: data => { if (!mounted.current) return; pendingSignup.current = data; setPhase('idle'); setConnectOpen(true); setFeedback({ kind: 'info', message: 'Autorização recebida. Informe o PIN de proteção para concluir a ativação.' }); },
+      complete: data => {
+        if (!mounted.current) return;
+        if (data.businessAppOnboarding) { void finishSignup(data); return; }
+        pendingSignup.current = data; setPhase('idle'); setConnectOpen(true);
+        setFeedback({ kind: 'info', message: 'Autorização recebida. Informe o PIN de proteção para concluir a ativação.' });
+      },
       error: message => { if (mounted.current) { setFeedback({ kind: 'error', message }); setPhase('idle'); setPin(''); } },
     }, true);
   }
