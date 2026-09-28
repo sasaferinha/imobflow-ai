@@ -12,6 +12,7 @@ import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
 import { ConversationMessageBubble } from './conversation-message';
 import { ConversationSettings } from './conversation-settings';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
+import { inboxByLead, compareInboxActivity, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
 
 const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
   id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
@@ -83,7 +84,7 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, currentBrokerId, isAdministrator = false, leads = [], properties = [], demonstration = false, ready = true }: {
+function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, currentBrokerId, isAdministrator = false, leads = [], properties = [], inbox = [], demonstration = false, ready: parentReady = true }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
   notify: (message: string) => void; openAgenda: () => void;
   persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string }>;
@@ -95,6 +96,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   leads?: LeadProfile[]; properties?: PropertyRecord[];
   demonstration?: boolean;
   ready?: boolean;
+  inbox?: ConversationInboxItem[];
 }) {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -105,6 +107,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const profileToggleRef = useRef<HTMLButtonElement>(null);
   const [propertyPickerOpen, setPropertyPickerOpen] = useState(false);
   const [loadingProperties, setLoadingProperties] = useState(false);
+  const summaries = useMemo(() => inboxByLead(inbox), [inbox]);
   const contacts = useMemo<ConversationContact[]>(() => {
     return leads.map((lead, index) => ({
       id: `lead-${lead.id}`, name: lead.name, initials: initials(lead.name), tone: index % 4,
@@ -123,7 +126,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const composerRef = useRef<HTMLInputElement>(null);
   const thread = selected ? state.threads[selected.id] || emptyThread : emptyThread;
   const lead = selected?.sourceLead;
-  const [historyPage, setHistoryPage] = useState<{ leadId: string; cursor: string | null; ready: boolean }>({ leadId: '', cursor: null, ready: false });
+  const [historyPage, setHistoryPage] = useState<{ leadId: string; cursor: string | null; ready: boolean; positions?: ConversationReadPosition[] }>({ leadId: '', cursor: null, ready: false });
   const [loadingOlder, setLoadingOlder] = useState(false);
   const selectedLeadRef = useRef(lead?.id);
   useEffect(() => { selectedLeadRef.current = lead?.id; }, [lead?.id]);
@@ -146,16 +149,21 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     });
     const unsubscribe = subscribeDashboardSync({ entities: ['conversations'], interval: 10000,
       load: async signal => {
+        // Capture the read boundary BEFORE loading messages. Arrivals during/after the read remain unread.
+        const inboxResponse = await fetch(`/api/conversations/inbox?leadId=${encodeURIComponent(id)}`, {signal,cache:'no-store'});
+        if (!inboxResponse.ok) throw new Error('Não foi possível carregar o estado de leitura.');
+        const snapshot = await inboxResponse.json() as {data:ConversationInboxItem[]};
         const response = await fetch(`/api/conversations?leadId=${encodeURIComponent(id)}`, { signal, cache: 'no-store' });
         if (!response.ok) throw new Error('Não foi possível carregar o histórico.');
-        return await response.json() as { data: ConversationMessage[]; attendance: ConversationAttendanceSummary[]; nextCursor?: string | null };
+        const result = await response.json() as { data: ConversationMessage[]; attendance: ConversationAttendanceSummary[]; nextCursor?: string | null };
+        return {...result, positions:snapshot.data.map(item=>({conversationId:item.conversationId,position:item.incomingCount}))};
       },
       apply: result => {
         const messages = result.data.filter(message => message.leadId === id);
         const gap = Boolean(newestSeen.current && messages.length && !messages.some(message => message.id === newestSeen.current));
         newestSeen.current = messages.at(-1)?.id;
         dispatch({ type: 'hydrate', merge: true, contacts: [{ id: `lead-${id}`, messages, attendance: result.attendance?.find(item => item.leadId === id) || null }] });
-        setHistoryPage(current => ({ leadId: id, cursor: !gap && current.leadId === id && current.ready ? current.cursor : result.nextCursor || null, ready: true }));
+        setHistoryPage(current => ({ leadId: id, cursor: !gap && current.leadId === id && current.ready ? current.cursor : result.nextCursor || null, ready: true, positions:result.positions }));
       },
       onError: () => setHistoryPage(current => ({ ...current, ready: false })),
     });
@@ -181,13 +189,53 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     bodyRef.current.scrollTop = preserveScroll.current === null ? bodyRef.current.scrollHeight : bodyRef.current.scrollHeight - preserveScroll.current;
     preserveScroll.current = null;
   }, [selected?.id, thread.messages.length]);
-  ready = ready && (!lead || demonstration || historyPage.leadId === lead.id && historyPage.ready);
+  const ready = parentReady && (!lead || demonstration || historyPage.leadId === lead.id && historyPage.ready);
+  const acknowledged = useRef(new Map<string, number>());
+  useEffect(() => {
+    if (demonstration || !ready || !lead?.id || !historyPage.ready || historyPage.leadId !== lead.id || !historyPage.positions?.length) return;
+    let active = true;
+    let sending = false;
+    const positions = historyPage.positions.filter(item => item.position > (acknowledged.current.get(item.conversationId) ?? -1));
+    if (!positions.length) return;
+    const controller = new AbortController();
+    const markRead = async () => {
+      if (!active || sending || document.visibilityState !== 'visible' || !document.hasFocus()) return;
+      if (positions.every(item => item.position <= (acknowledged.current.get(item.conversationId) ?? -1))) return;
+      // Do not mark a new arrival read while the user is browsing older history.
+      const body = bodyRef.current;
+      if (body && body.scrollHeight - body.scrollTop - body.clientHeight > 80) return;
+      sending = true;
+      try {
+        const response = await fetch('/api/conversations/inbox', {method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({leadId:lead.id,positions})});
+        if (!response.ok) return;
+        for (const item of positions) acknowledged.current.set(item.conversationId,Math.max(item.position,acknowledged.current.get(item.conversationId) || 0));
+        announceDashboardChange('conversation-inbox');
+      } catch { /* A failed acknowledgement is retried on the next history refresh. */ }
+      finally { sending = false; }
+    };
+    const onVisible = () => { void markRead(); };
+    const body = bodyRef.current;
+    onVisible();
+    window.addEventListener('focus',onVisible);
+    document.addEventListener('visibilitychange',onVisible);
+    body?.addEventListener('scroll',onVisible);
+    return () => { active=false;controller.abort();window.removeEventListener('focus',onVisible);document.removeEventListener('visibilitychange',onVisible);body?.removeEventListener('scroll',onVisible); };
+  }, [demonstration,ready,lead?.id,historyPage]);
   if(!ready&&!selected)return <section className="panel empty-live-data" role="status"><h2>Sincronizando conversas</h2><p>Aguarde a confirmação do carregamento. Em caso de falha, os controles permanecerão desabilitados.</p></section>;
   if (!selected || !lead) return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data"><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
   const leadId = lead.id;
   const filtered = contacts.filter((contact) => {
     const current = state.threads[contact.id] || emptyThread;
-    return (!onlyUnread || current.unread > 0) && normalize(`${contact.name} ${contact.style} ${contact.region}`).includes(normalize(search));
+    const unread = demonstration ? current.unread : summaries.get(contact.sourceLead!.id)?.unread || 0;
+    return (!onlyUnread || unread > 0) && normalize(`${contact.name} ${contact.style} ${contact.region}`).includes(normalize(search));
+  }).sort((left,right) => {
+    const latest = (contact: ConversationContact) => {
+      const last = state.threads[contact.id]?.messages.at(-1) as (ConversationMessage | undefined);
+      const summary = demonstration ? undefined : summaries.get(contact.sourceLead!.id);
+      const local = {lastMessageAt:last?.createdAt,lastMessageId:last?.id};
+      return compareInboxActivity(local,summary) < 0 ? local : summary || local;
+    };
+    return compareInboxActivity(latest(left),latest(right));
   });
   const stage = lead?.lifecycleStatus || selected.stage;
   const temperature = contactTemperature(selected);
@@ -286,6 +334,9 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
         {filtered.map((contact) => {
           const current = state.threads[contact.id] || emptyThread;
           const last = current.messages[current.messages.length - 1];
+          const summary = demonstration ? undefined : summaries.get(contact.sourceLead!.id);
+          const unread = demonstration ? current.unread : summary?.unread || 0;
+          const preview = summary && compareInboxActivity(summary,{lastMessageAt:(last as ConversationMessage | undefined)?.createdAt,lastMessageId:last?.id}) <= 0 ? summary : undefined;
           const currentOwnership = current.attendance ?? current.messages.find(message => message.attendanceMode);
           const currentAttendance = describeConversationAttendance({
             snapshot: { ...currentOwnership, assignedTo: current.attendance ? current.attendance.assignedTo : contact.sourceLead?.assignedTo },
@@ -294,8 +345,8 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
           const contactBroker = (demonstration ? current.assignedTo : currentAttendance.owner)?.trim();
           return <button type="button" className={`contact-row ${selected.id === contact.id ? 'selected' : ''}`} aria-pressed={selected.id === contact.id} onClick={() => dispatch({ type: 'select', id: contact.id })} key={contact.id}>
             <span className={`lead-avatar avatar-${contact.tone}`}>{contact.initials}</span>
-            <span><strong>{contact.name}</strong><small>{last?.text || 'Ainda sem mensagens'}</small><small className="conversation-contact-broker" title={contactBroker ? `Corretor responsável: ${contactBroker}` : 'Sem corretor responsável'}>{contactBroker ? `Corretor: ${contactBroker}` : 'Sem corretor responsável'}</small>{!demonstration && <ConversationAttendanceBadge attendance={currentAttendance}/>}</span>
-            <time>{last?.time || ''}</time>{current.unread > 0 && <b aria-label={`${current.unread} mensagens não lidas`}>{current.unread}</b>}
+            <span><strong>{contact.name}</strong><small>{preview?.lastMessageText || last?.text || 'Ainda sem mensagens'}</small><small className="conversation-contact-broker" title={contactBroker ? `Corretor responsável: ${contactBroker}` : 'Sem corretor responsável'}>{contactBroker ? `Corretor: ${contactBroker}` : 'Sem corretor responsável'}</small>{!demonstration && <ConversationAttendanceBadge attendance={currentAttendance}/>}</span>
+            <time>{preview ? new Date(preview.lastMessageAt).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}) : last?.time || ''}</time>{unread > 0 && <b aria-label={`${unread} mensagens não lidas`}>{unread > 99 ? '99+' : unread}</b>}
           </button>;
         })}
         {!filtered.length && <p className="empty-filter">Nenhuma conversa encontrada. Ajuste a busca ou selecione “Todas”.</p>}

@@ -10,6 +10,7 @@ import AppointmentTimeField from './appointment-time-field';
 import AppointmentRecordPicker from './appointment-record-picker';
 import { createLiveConversationState, demoConversationReducer } from '@/lib/demo-conversations';
 import type { ConversationAttendanceSummary, ConversationMessage } from '@/lib/conversations';
+import type { ConversationInboxItem } from '@/lib/conversation-inbox';
 import PasswordModal from './password-modal';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import ReleaseNotice from './release-notice';
@@ -209,6 +210,17 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   const [selectedLead, setSelectedLead] = useState<DashboardLead | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
   const [conversationsReady,setConversationsReady]=useState(false);
+  const [inbox, setInbox] = useState<ConversationInboxItem[]>([]);
+  const unreadMessages = inbox.reduce((total, item) => total + item.unread, 0);
+
+  useEffect(() => subscribeDashboardSync({
+    entities: ['conversation-inbox', 'conversations'], interval: 5000,
+    load: async signal => {
+      const response = await fetch('/api/conversations/inbox', {cache:'no-store',signal});
+      if (!response.ok) throw new Error('inbox_unavailable');
+      return (await response.json() as {data:ConversationInboxItem[]}).data;
+    }, apply: setInbox,
+  }), []);
 
   useEffect(() => {
     if (!publicDemo) return;
@@ -589,7 +601,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
         <nav className="nav-list" aria-label="Navegação principal">
           {navItems.filter((item) => !['goals','imports'].includes(item.id) || account?.role === 'owner').map((item) => (
             <button type="button" key={item.id} className={`nav-item ${view === item.id ? 'active' : ''}`} onClick={() => openView(item.id)} aria-label={item.label} title={item.label} aria-current={view === item.id ? 'page' : undefined}>
-              <span className="nav-icon"><NavigationIcon view={item.id} /></span><span className="nav-label">{item.label}</span>{item.badge && <b>{item.badge}</b>}
+              <span className="nav-icon"><NavigationIcon view={item.id} /></span><span className="nav-label">{item.label}</span>{item.id === 'conversations' && unreadMessages > 0 ? <b className="conversation-unread-badge" aria-label={`${unreadMessages} mensagens não lidas`}>{unreadMessages > 99 ? '99+' : unreadMessages}</b> : item.badge && <b>{item.badge}</b>}
             </button>
           ))}
           {account?.role === 'owner' && <button type="button" className="nav-item" onClick={() => { setUtilityModal('team'); setProfileOpen(false); }} aria-label="Gerenciar corretores" title="Gerenciar corretores"><span className="nav-icon" aria-hidden="true">◉</span><span className="nav-label">Corretores</span></button>}
@@ -619,7 +631,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
         {view === 'overview' && <Overview notify={notify} canEditGoals={account?.role === 'owner'} properties={properties} refreshProperties={refreshProperties} />}
         {view === 'imports' && account?.role === 'owner' && <ClientImport publicDemo={publicDemo} onOpportunities={() => setView('opportunities')} onImported={(leads) => { const decorated = leads.map((lead,index) => decorateLead(lead,index)); setCapturedLeads(current => [...decorated, ...current.filter(lead => !decorated.some(item => item.id === lead.id))]); if (decorated[0]) setSelectedLead(decorated[0]); }} />}
         {view === 'goals' && account?.role === 'owner' && <GoalsManagement notify={notify} />}
-        {view === 'conversations' && <ConversationCenter currentBrokerId={account?.brokerId} isAdministrator={account?.role === 'owner'} ready={conversationsReady&&!syncFailed} state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} claimLead={claimLead} currentBrokerName={profile.name} leads={capturedLeads} properties={properties} />}
+        {view === 'conversations' && <ConversationCenter inbox={inbox} currentBrokerId={account?.brokerId} isAdministrator={account?.role === 'owner'} ready={conversationsReady&&!syncFailed} state={conversationState} dispatch={conversationDispatch} notify={notify} openAgenda={() => openView('agenda')} persistMessage={persistConversationMessage} refreshProperties={refreshProperties} claimLead={claimLead} currentBrokerName={profile.name} leads={capturedLeads} properties={properties} />}
         {view === 'leads' && <><LeadIntelligenceCenter leads={capturedLeads} mode={leadMode} onMode={setLeadMode} onImport={() => setView('imports')} /><LeadFilterBar leads={capturedLeads} active={leadFilters} onChange={setLeadFilters} />{selectedLead ? <Leads leads={visibleLeads} selected={selectedLead} onSelect={setSelectedLead} search={leadSearch} setSearch={setLeadSearch} onContinue={openLeadConversation} notify={notify} onUpdate={updateLead} /> : <section className="panel empty-live-data"><h2>Nenhum lead cadastrado</h2><p>Importe a carteira da imobiliária ou receba um novo contato pelo formulário do site.</p>{account?.role === 'owner' && <button type="button" className="primary-button" onClick={() => setView('imports')}>Importar clientes</button>}</section>}</>}
         {view === 'properties' && <Properties properties={properties} search={propertySearch} setSearch={setPropertySearch} add={openNewProperty} onOpen={setSelectedProperty} onShare={openPropertyShare} />}
         {view === 'agenda' && <Agenda items={appointments} setItems={setAppointments} notify={notify} leads={capturedLeads} properties={properties} brokerName={profile.name} />}

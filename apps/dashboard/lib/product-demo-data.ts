@@ -200,6 +200,7 @@ export function createProductDemoTransport(): typeof fetch {
     switch (url.pathname) {
       case '/api/leads': return response({ data: leads });
       case '/api/conversations': return response({ data: messages, attendance });
+      case '/api/conversations/inbox': return response({ data: [] });
       case '/api/conversations/demo': return response({ data: sharedThreads });
       case '/api/conversations/settings': return response({ data: settings });
       case '/api/properties': return response({ data: properties });

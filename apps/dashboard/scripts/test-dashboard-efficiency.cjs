@@ -35,6 +35,7 @@ const visit=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
     for(const subscription of subscriptions) await subscription.load(new AbortController().signal);
     assert.equal(calls.some(call=>call.url==='/api/conversations'),view==='conversations',`${view}: message polling only in Conversations`);
     assert.equal(calls.some(call=>call.url==='/api/appointments'),view==='agenda',`${view}: agenda polling only in Agenda`);
+    assert.equal(calls.filter(call=>call.url==='/api/conversations/inbox').length,1,'Lightweight unread summary works on every screen');
     const leads=subscriptions.find(sub=>sub.entities.includes('leads'));
     assert.equal(leads.interval,['leads','conversations'].includes(view)?15000:60000);
   }
@@ -44,10 +45,17 @@ const visit=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
   const stored=state.find(value=>Array.isArray(value)&&value[0]?.id==='lead-a');
   assert.equal(stored.length,2);assert.equal(stored[0].name,'First');
   const messages={data:[{id:'m1',leadId:'lead-a',text:'Message'}],attendance:[{leadId:'lead-b',attendanceMode:'human'}]};
-  subscriptions.filter(sub=>sub.entities.includes('conversations'))[1].apply(messages);
+  subscriptions.filter(sub=>sub.entities.includes('leads'))[1].apply(messages);
   assert.equal(actions[0].merge,true);
   assert.equal(actions[0].contacts.length,2,'Attendance without recent messages is preserved');
   assert.equal(actions[0].contacts[0].messages[0].id,'m1');
+  subscriptions.find(sub=>sub.entities.includes('conversation-inbox')).apply([{unread:2},{unread:3}]);
+  index=0;
+  let tree=dashboard({account:{name:'Owner',company:'Test',role:'owner'},initialView:'conversations'});
+  assert.equal(visit(tree).find(node=>node.props?.className==='conversation-unread-badge').props.children,5);
+  subscriptions.find(sub=>sub.entities.includes('conversation-inbox')).apply([]);
+  index=0;tree=dashboard({account:{name:'Owner',company:'Test',role:'owner'},initialView:'conversations'});
+  assert.ok(!visit(tree).some(node=>node.props?.className==='conversation-unread-badge'),'Zero unread hides badge');
   console.log('PASS actual dashboard effects: no background message/agenda polling, independent lead refresh, linear dedup and preserved hydration');
 
   // Verify the destructive UI needs confirmation and does not optimistically hide failed deletions.
