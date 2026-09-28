@@ -149,8 +149,18 @@ async function run(){
   actor.role='broker';
   assert.equal((await brokers.PATCH(req({active:false},'PATCH'),params)).status,403);
   assert.equal((await brokers.POST(req({currentPassword:'current-password'}),params)).status,403);
+  assert.equal((await brokers.DELETE(req({confirm:true},'DELETE'),params)).status,403);
   assert.equal(calls.length,0);
   actor.role='owner';
+  assert.equal((await brokers.DELETE(req({confirm:true},'DELETE',false),params)).status,403);
+  assert.equal((await brokers.DELETE(req({},'DELETE'),params)).status,400);
+  assert.equal((await brokers.DELETE(req({confirm:true,companyId:'foreign',p_actor_id:'forged'},'DELETE'),params)).status,200);
+  assert.equal(calls.at(-1).route,'rpc/archive_company_broker');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).options.body)),{p_actor_id:actor.brokerId,p_broker_id:'22222222-2222-4222-8222-222222222222'});
+  await teamRoutes.GET();
+  assert.ok(calls.some(call=>call.route.includes(`company_id=eq.${actor.companyId}&archived_at=is.null`)));
+  database=async()=>{throw Error('foreign broker');};
+  assert.equal((await brokers.DELETE(req({confirm:true},'DELETE'),params)).status,409);
   assert.equal((await brokers.PATCH(req({active:false},'PATCH',false),params)).status,403);
   assert.equal((await brokers.PATCH(req({active:'false'},'PATCH'),params)).status,400);
   database=async(route,options)=>{calls.push({route,options});return [{id:'target',active:false}];};
@@ -159,7 +169,7 @@ async function run(){
   database=async(route)=>route.includes('select=password_hash')?[{password_hash:'hash'}]:[];
   assert.equal((await brokers.POST(req({currentPassword:'wrong'}),params)).status,403);
   assert.equal((await brokers.POST(req({currentPassword:'current-password'}),params)).status,404);
-  console.log('PASS admin-only deactivation/recovery, same-origin, actor binding and foreign/missing target denial');
+  console.log('PASS admin-only archival/deactivation/recovery, confirmation, same-origin, actor binding, hidden archives and foreign/missing target denial');
 
   let wroteGoals=false;
   const performance=load('app/api/performance/route.ts',{...deps,'@/lib/admin-auth':{isAdminRequest:()=>true},'@/lib/database':{updatePerformanceSettings:async()=>{wroteGoals=true;return {};}}});

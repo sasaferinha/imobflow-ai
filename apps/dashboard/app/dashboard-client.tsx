@@ -3,16 +3,13 @@ import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 /* eslint-disable @next/next/no-img-element -- previews use locally compressed data URLs */
 
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+import dynamic from 'next/dynamic';
 import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
-import ConversationCenter from './conversation-center';
 import AppointmentTimeField from './appointment-time-field';
 import AppointmentRecordPicker from './appointment-record-picker';
-import WhatsAppIntegration from './whatsapp-integration';
 import { createLiveConversationState, demoConversationReducer } from '@/lib/demo-conversations';
 import type { ConversationAttendanceSummary, ConversationMessage } from '@/lib/conversations';
-import TeamModal from './team-modal';
-import ClientImport from './client-import';
 import PasswordModal from './password-modal';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import ReleaseNotice from './release-notice';
@@ -21,6 +18,11 @@ import type { Opportunity } from '@/lib/opportunities';
 import { businessCalendarDate, isCalendarMonth } from '@/lib/calendar-date';
 
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
+const loadingSection = () => <p role="status">Carregando…</p>;
+const ConversationCenter = dynamic(() => import('./conversation-center'), { loading: loadingSection });
+const WhatsAppIntegration = dynamic(() => import('./whatsapp-integration'), { loading: loadingSection });
+const TeamModal = dynamic(() => import('./team-modal'), { loading: loadingSection });
+const ClientImport = dynamic(() => import('./client-import'), { loading: loadingSection });
 
 type View = 'imports' | 'overview' | 'goals' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'opportunities' | 'integrations';
 type Property = PropertyRecord;
@@ -238,31 +240,51 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
     }, apply: setNotifications }), []);
 
 
+  const frequentLeadSync = view === 'leads' || view === 'conversations';
   useEffect(() => subscribeDashboardSync({
-    entities: ['leads', 'conversations'], interval: 15000,
+    entities: ['leads', 'conversations'], interval: frequentLeadSync ? 15000 : 60000,
     load: async signal => {
-      const [leadResponse, messageResponse] = await Promise.all([
-        fetch('/api/leads', { cache: 'no-store', signal }),
-        fetch('/api/conversations', { cache: 'no-store', signal }),
-      ]);
-      if (!leadResponse.ok || !messageResponse.ok) throw new Error('Não foi possível atualizar os atendimentos.');
-      const conversations = await messageResponse.json() as { data: ConversationMessage[]; attendance?: ConversationAttendanceSummary[] };
-      return { leads: (await leadResponse.json() as { data: LeadProfile[] }).data,
-        messages: conversations.data, attendance: conversations.attendance || [] };
+      const response = await fetch('/api/leads', { cache: 'no-store', signal });
+      if (!response.ok) throw new Error('Não foi possível atualizar os leads.');
+      return (await response.json() as { data: LeadProfile[] }).data;
     },
-    apply: ({ leads: remoteLeads, messages, attendance }) => {
-      const combined = remoteLeads.filter((lead, index, all) => all.findIndex((item) => item.id === lead.id) === index).map(decorateLead);
+    apply: remoteLeads => {
+      const seen = new Set<string>();
+      const combined = remoteLeads.filter(lead => {
+        if (seen.has(lead.id)) return false;
+        seen.add(lead.id); return true;
+      }).map(decorateLead);
       setCapturedLeads(combined);
       setSelectedLead(current => combined.find(lead => lead.id === current?.id) || combined[0] || null);
-      const grouped = new Map<string, ConversationMessage[]>();
-      for (const message of messages) grouped.set(message.leadId, [...(grouped.get(message.leadId) || []), message]);
-      const attendanceByLead = new Map(attendance.map(summary => [summary.leadId, summary]));
-      conversationDispatch({ type: 'hydrate', merge: true, contacts: combined.map(lead => ({ id: `lead-${lead.id}`, messages: grouped.get(lead.id) || [], attendance: attendanceByLead.get(lead.id) || null })) });
       setSyncFailed(false);
-      setConversationsReady(true);
     },
     onError: () => setSyncFailed(true),
-  }), []);
+  }), [frequentLeadSync]);
+
+  const showingConversations = view === 'conversations';
+  useEffect(() => {
+    if (!showingConversations) return;
+    return subscribeDashboardSync({
+      entities: ['leads', 'conversations'], interval: 15000,
+      load: async signal => {
+        const response = await fetch('/api/conversations', { cache: 'no-store', signal });
+        if (!response.ok) throw new Error('Não foi possível atualizar os atendimentos.');
+        return await response.json() as { data: ConversationMessage[]; attendance?: ConversationAttendanceSummary[] };
+      },
+      apply: ({ data: messages, attendance = [] }) => {
+        const grouped = new Map<string, ConversationMessage[]>();
+        for (const message of messages) {
+          const group = grouped.get(message.leadId);
+          if (group) group.push(message); else grouped.set(message.leadId, [message]);
+        }
+        const attendanceByLead = new Map(attendance.map(summary => [summary.leadId, summary]));
+        const ids = new Set([...grouped.keys(), ...attendanceByLead.keys()]);
+        conversationDispatch({ type: 'hydrate', merge: true, contacts: [...ids].map(id => ({ id: `lead-${id}`, messages: grouped.get(id) || [], attendance: attendanceByLead.get(id) || null })) });
+        setConversationsReady(true);
+      },
+      onError: () => setConversationsReady(false),
+    });
+  }, [showingConversations]);
 
   useEffect(() => subscribeDashboardSync({
     entities: ['properties'], interval: 30000,
@@ -274,15 +296,19 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
     apply: items => { setProperties(items); setSelectedProperty(current => current ? items.find(item => item.id === current.id) || null : null); },
   }), []);
 
-  useEffect(() => subscribeDashboardSync({
-    entities: ['appointments'], interval: 30000,
-    load: async signal => {
-      const response = await fetch('/api/appointments', { cache: 'no-store', signal });
-      if (!response.ok) throw new Error('Falha ao atualizar agenda.');
-      return (await response.json() as { data: AppointmentRecord[] }).data;
-    },
-    apply: setAppointments,
-  }), []);
+  const showingAgenda = view === 'agenda';
+  useEffect(() => {
+    if (!showingAgenda) return;
+    return subscribeDashboardSync({
+      entities: ['appointments'], interval: 30000,
+      load: async signal => {
+        const response = await fetch('/api/appointments', { cache: 'no-store', signal });
+        if (!response.ok) throw new Error('Falha ao atualizar agenda.');
+        return (await response.json() as { data: AppointmentRecord[] }).data;
+      },
+      apply: setAppointments,
+    });
+  }, [showingAgenda]);
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {

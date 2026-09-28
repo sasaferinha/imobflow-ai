@@ -18,7 +18,7 @@ async function getBrokers() {
   if (!account) return NextResponse.json({ error: 'Apenas o administrador da empresa pode gerenciar corretores.' }, { status: 403 });
   try {
     const [brokers, company, publicRows] = await Promise.all([
-      supabaseRequest<Broker[]>(`broker_accounts?company_id=eq.${encodeURIComponent(account.companyId)}&select=id,name,email,role,active,created_at&order=created_at.asc`),
+      supabaseRequest<Broker[]>(`broker_accounts?company_id=eq.${encodeURIComponent(account.companyId)}&archived_at=is.null&select=id,name,email,role,active,created_at&order=created_at.asc`),
       supabaseRequest<Array<{ seat_limit: number }>>(`account_companies?company_id=eq.${encodeURIComponent(account.companyId)}&select=seat_limit&limit=1`),
       supabaseRequest<Array<{ slug: string }>>(`companies?id=eq.${encodeURIComponent(account.companyId)}&select=slug&limit=1`),
     ]);

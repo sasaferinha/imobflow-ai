@@ -31,7 +31,11 @@ async function request(resource, options = {}) {
     assert.ok(!options.allRows, 'Message history must never use an unbounded read');
     assert.ok(Number(params.get('limit')) <= 201);
   }
-  if (table === 'message_outbox') assert.ok(params.has('id'));
+  if (table === 'message_outbox') {
+    assert.ok(params.has('id'));
+    assert.ok(!options.allRows, 'Queue enrichment must not paginate unnecessarily');
+    assert.ok(Number(params.get('limit')) <= 200);
+  }
   if (table === 'message_delivery_events') assert.ok(params.has('external_message_id'));
   calls.push({ table, params });
   const values = [], predicates = [];
@@ -85,6 +89,8 @@ async function request(resource, options = {}) {
     const initial = await api.listConversationData(); assert.equal(initial.messages.length, 200);
     assert.equal(initial.messages.at(-1).deliveryStatus, 'read');
     assert.ok(calls.filter(call => call.table === 'message_delivery_events').every(call => call.params.toString().length < 7000), 'Long provider IDs stay within bounded request URLs');
+    const queuedIds = calls.find(call => call.table === 'message_outbox').params.get('id');
+    assert.equal(queuedIds.slice(4,-1).split(',').length,60,'Only outgoing messages query the delivery queue');
     let cursor, seen = new Set();
     do {
       const page = await api.listConversationData({ leadId: id(201), before: cursor });
@@ -97,6 +103,9 @@ async function request(resource, options = {}) {
     await assert.rejects(() => api.listConversationData({ leadId: id(201), before: 'injected' }), /invalid_conversation_page/);
     await assert.rejects(() => api.listConversationData({ leadId: 'bad-id' }), /invalid_conversation_page/);
   });
+  calls.length = 0;
+  await context.run(id(2), () => api.listConversationData({leadId:id(202)}));
+  assert.ok(!calls.some(call => ['message_outbox','message_delivery_events'].includes(call.table)), 'Incoming-only pages need no delivery enrichment');
   await Promise.all(Array.from({ length: 30 }, (_, i) => context.run(id(i+1), async () => {
     const result = await api.listConversationData({ leadId: id(201+i) });
     assert.ok(result.messages.length > 0); assert.ok(result.messages.every(message => message.leadId === id(201+i)));

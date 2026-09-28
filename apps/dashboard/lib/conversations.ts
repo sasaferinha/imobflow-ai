@@ -65,10 +65,12 @@ export async function listConversationData(input: { leadId?: string; before?: st
   const nextCursor = rows.length > pageSize && oldest ? `${oldest.created_at}|${oldest.id}` : null;
   const messages = page.reverse();
   // Only enrich messages actually shown, never scan the company's delivery history.
-  const externalIds = messages.map(row => row.external_message_id).filter((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9._=+/-]+$/.test(id));
+  const outgoing = messages.filter(row => row.direction !== 'incoming' && row.direction !== 'Entrada');
+  const externalIds = outgoing.map(row => row.external_message_id).filter((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9._=+/-]+$/.test(id));
   const readEvents = async () => {
     const result: Array<{external_message_id:string;status:DeliveryStatus;error_code:number|null}> = [];
     const ids = [...new Set(externalIds)];
+    const batches: string[][] = [];
     // Provider IDs may be long; keep each REST URL below common proxy limits.
     for (let offset = 0; offset < ids.length;) {
       const batch: string[] = [];
@@ -79,13 +81,19 @@ export async function listConversationData(input: { leadId?: string; before?: st
       }
       // Schema caps provider IDs at 500 characters, so a nonempty batch always fits.
       if (!batch.length) throw new Error('Identificador de mensagem inválido.');
-      result.push(...await supabaseRequest<typeof result>(`message_delivery_events?company_id=eq.${companyId}&external_message_id=in.${encodeURIComponent(`(${batch.map(id => `"${id}"`).join(',')})`)}&select=external_message_id,status,error_code&limit=${batch.length * 4}`));
+      batches.push(batch);
+    }
+    // Bounded parallelism avoids serial network waits without flooding the database.
+    for (let offset = 0; offset < batches.length; offset += 4) {
+      const pages = await Promise.all(batches.slice(offset, offset + 4).map(batch =>
+        supabaseRequest<typeof result>(`message_delivery_events?company_id=eq.${companyId}&external_message_id=in.${encodeURIComponent(`(${batch.map(id => `"${id}"`).join(',')})`)}&select=external_message_id,status,error_code&limit=${batch.length * 4}`)));
+      for (const page of pages) result.push(...page);
     }
     return result;
   };
   const [events, queue] = await Promise.all([
     readEvents(),
-    messages.length ? supabaseRequest<Array<{id:string;state:string;attempts:number;next_attempt_at:string}>>(`message_outbox?company_id=eq.${companyId}&id=in.(${messages.map(row => String(row.id)).join(',')})&select=id,state,attempts,next_attempt_at`,{allRows:true}) : [],
+    outgoing.length ? supabaseRequest<Array<{id:string;state:string;attempts:number;next_attempt_at:string}>>(`message_outbox?company_id=eq.${companyId}&id=in.(${outgoing.map(row => String(row.id)).join(',')})&select=id,state,attempts,next_attempt_at&limit=${outgoing.length}`) : [],
   ]);
   const rank:Record<DeliveryStatus,number>={pending:0,sent:1,failed:2,delivered:3,read:4};
   const eventsById=new Map<string,typeof events[number]>();

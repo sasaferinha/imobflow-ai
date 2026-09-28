@@ -121,8 +121,12 @@ function mapProperty(row: Record<string, unknown>): PropertyRecord {
 
 export async function listAppointments(): Promise<AppointmentRecord[]> {
   const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?company_id=eq.${supabaseCompanyId()}&select=*&order=scheduled_at.asc`, { allRows: true });
-  const leads = await listLeads();
-  const properties = await listProperties();
+  if (!rows.length) return [];
+  // Names only: do not download property photos or full lead profiles for agenda labels.
+  const [leads, properties] = await Promise.all([
+    supabaseRequest<Array<{id: string; name: string}>>(`leads?company_id=eq.${supabaseCompanyId()}&select=id,name`, { allRows: true }),
+    supabaseRequest<Array<{id: string; title: string}>>(`properties?company_id=eq.${supabaseCompanyId()}&select=id,title`, { allRows: true }),
+  ]);
   const leadNames = new Map(leads.map((lead) => [lead.id, lead.name]));
   const propertyNames = new Map(properties.map((property) => [property.id, property.title]));
   return rows.map((row) => mapAppointment(row, leadNames, propertyNames));

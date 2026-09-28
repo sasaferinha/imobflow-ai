@@ -20,12 +20,15 @@ async function run(){
     await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260910090000_account_recovery_and_staff.sql'),'utf8'));
     await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260910110000_basic_three_brokers.sql'),'utf8'));
     await db.exec(fs.readFileSync(path.join(root,'supabase/tests/account_recovery_and_staff.sql'),'utf8'));
+    await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260928180000_archive_brokers.sql'),'utf8'));
+    await db.exec(fs.readFileSync(path.join(root,'supabase/tests/broker_archive.sql'),'utf8'));
     assert.equal((await db.query('SELECT count(*)::int AS total FROM companies')).rows[0].total,0);
     const baseline=fs.readFileSync(path.join(root,'neon/migrations/20260910090000_runtime_schema_baseline.sql'),'utf8');
     await db.exec(baseline);
     await db.exec(baseline);
     assert.equal((await db.query('SELECT count(*)::int AS total FROM imobflow_schema_migrations')).rows[0].total,1);
     console.log('PASS PostgreSQL migration syntax and recovery/expiry/reuse/password/email invalidation/seat/tenant tests; fixtures rolled back');
+    console.log('PASS broker archival: tenant/owner guards, revoked sessions/reset links, preserved history, idempotency and blocked reactivation');
     console.log('PASS Neon baseline on an empty database and repeated application');
     console.log('Isolated PGlite test only: live schema, concurrency between independent connections, backups and deployed endpoints remain separate checks.');
   } finally {await db.close();}

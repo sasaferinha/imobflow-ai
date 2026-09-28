@@ -17,6 +17,11 @@ async function handle(request:NextRequest,{params}:{params:Promise<{id:string}>}
     const raw=await request.text();
     if(Buffer.byteLength(raw)>2048) return NextResponse.json({error:'Dados acima do limite.'},{status:413});
     const body=JSON.parse(raw) as Record<string,unknown>;
+    if (request.method==='DELETE') {
+      if(body.confirm!==true) return NextResponse.json({error:'Confirme a exclusão do corretor.'},{status:400});
+      await supabaseRequest('rpc/archive_company_broker',{method:'POST',body:{p_actor_id:actor.brokerId,p_broker_id:id}});
+      return NextResponse.json({ok:true});
+    }
     if (request.method==='PATCH') {
       if(typeof body.active!=='boolean') return NextResponse.json({error:'Informe o estado do acesso.'},{status:400});
       const rows=await supabaseRequest<unknown[]>('rpc/set_company_broker_active',{method:'POST',body:{p_actor_id:actor.brokerId,p_broker_id:id,p_active:body.active}});
@@ -29,7 +34,8 @@ async function handle(request:NextRequest,{params}:{params:Promise<{id:string}>}
     const [target]=await supabaseRequest<RecoveryAccount[]>(`broker_accounts?id=eq.${id}&company_id=eq.${actor.companyId}&role=eq.broker&active=eq.true&select=id,company_id,email,password_hash,active,role,auth_version&limit=1`);
     if(!target) return NextResponse.json({error:'Corretor ativo não encontrado nesta empresa.'},{status:404});
     return NextResponse.json({url:await issuePasswordLink(target,{id:actor.brokerId,password_hash:owner.password_hash,auth_version:owner.auth_version}),expiresInMinutes:30},{headers:{'Cache-Control':'private, no-store'}});
-  } catch { return NextResponse.json({error:'Não foi possível alterar este acesso. Confira o corretor e o limite de três vagas ativas.'},{status:409}); }
+  } catch { return NextResponse.json({error:'Não foi possível alterar este acesso. Confira se o corretor ainda está na equipe e o limite de vagas do plano.'},{status:409}); }
 }
 export const PATCH=protectedRoute(handle);
 export const POST=protectedRoute(handle);
+export const DELETE=protectedRoute(handle);

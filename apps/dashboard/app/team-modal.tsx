@@ -97,6 +97,18 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
     setResetUrl(result.url);
   }
 
+  async function removeBroker(person: Broker) {
+    if (!window.confirm(`Excluir ${person.name} da equipe? O acesso será encerrado e o corretor sairá desta lista. Leads, mensagens e negócios serão preservados. Esta ação não pode ser desfeita pelo painel.`)) return;
+    setChanging(person.id); setError('');
+    const response = await fetch(`/api/brokers/${person.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) }).catch(() => null);
+    const result = await response?.json().catch(() => ({})) as { ok?: boolean; error?: string } | undefined;
+    setChanging(null);
+    if (!response?.ok || !result?.ok) { setError(result?.error || 'Não foi possível excluir o corretor.'); return; }
+    setTeam(current => current.filter(item => item.id !== person.id));
+    setRecovery(null); setResetUrl('');
+    notify('Corretor excluído da equipe. Acesso encerrado e histórico preservado.');
+  }
+
   async function saveAdministratorEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -139,7 +151,7 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
             {team.map((person) => (
               <li key={person.id}>
                 <span>{person.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span>
-                <div><strong>{person.name}</strong><small>{person.role === 'owner' ? 'Administrador' : 'Corretor'}{person.email ? ` · ${person.email}` : ''}</small>{person.role==='broker'&&<div className={styles.staffActions}><button type="button" disabled={!!changing||saving} onClick={()=>toggleAccess(person)}>{changing===person.id?'Aguarde…':person.active?'Desativar':'Reativar'}</button>{person.active&&<button type="button" disabled={!!changing||saving} onClick={()=>{setRecovery(person);setResetUrl('');setError('');}}>Recuperar senha</button>}</div>}</div>
+                <div><strong>{person.name}</strong><small>{person.role === 'owner' ? 'Administrador' : 'Corretor'}{person.email ? ` · ${person.email}` : ''}</small>{person.role==='broker'&&<div className={styles.staffActions}><button type="button" disabled={!!changing||saving} onClick={()=>toggleAccess(person)}>{changing===person.id?'Aguarde…':person.active?'Desativar':'Reativar'}</button>{person.active&&<button type="button" disabled={!!changing||saving} onClick={()=>{setRecovery(person);setResetUrl('');setError('');}}>Recuperar senha</button>}<button type="button" className={styles.deleteButton} disabled={!!changing||saving} onClick={()=>removeBroker(person)}>Excluir</button></div>}</div>
                 <em>{person.active ? 'Ativo' : 'Inativo'}</em>
               </li>
             ))}
