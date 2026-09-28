@@ -19,7 +19,7 @@ const token = 'do-not-leak-this-access-token';
 const pin = '827401';
 const env = { META_APP_ID: '123456', META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: '654321', META_APP_SECRET: secret, META_WHATSAPP_WEBHOOK_VERIFY_TOKEN: 'do-not-leak-webhook-secret' };
 let actor = { role: 'owner', companyId: 'tenant-a' };
-let saved = [], requests = [], conflicts = false, queue = [];
+let saved = [], requests = [], conflicts = false, queue = [], availabilityChecks = [];
 let connections = [];
 const fetchStub = async (url, options = {}) => {
   requests.push({ url: new URL(url), options });
@@ -32,7 +32,7 @@ const helper = load('lib/meta-whatsapp-onboarding.ts', {}, { fetch: fetchStub })
 const store = {
   disconnectMetaWhatsAppConnection: async (companyId, phoneNumberId) => { assert.equal(companyId, 'tenant-a'); assert.equal(phoneNumberId, phone); saved.push({ disconnected: true }); },
   loadMetaWhatsAppConnectionForCompany: async companyId => { assert.equal(companyId, 'tenant-a'); return connections; },
-  assertMetaWhatsAppPhoneAvailable: async companyId => { assert.equal(companyId, 'tenant-a'); if (conflicts) throw new Error('phone conflict ' + token); },
+  assertMetaWhatsAppPhoneAvailable: async (companyId, phoneNumberId) => { assert.equal(companyId, 'tenant-a'); availabilityChecks.push(phoneNumberId); if (conflicts) throw new Error('phone conflict ' + token); },
   saveMetaWhatsAppConnection: async (companyId, value) => { saved.push({ companyId, value }); },
 };
 const next = { NextResponse: { json: (body, options = {}) => ({ body, status: options.status || 200, headers: options.headers || {} }) } };
@@ -46,7 +46,7 @@ const embedded = load('app/api/integrations/meta/embedded-signup/route.ts', depe
 const manual = load('app/api/conversations/whatsapp/route.ts', dependencies);
 const req = (body, extra = {}) => ({ json: async () => body, nextUrl: new URL('https://app.example/api/conversations/whatsapp'), ...extra });
 const signup = { phoneNumberId: phone, wabaId: waba, code: 'signup-code-with-more-than-20-characters', pin };
-const reset = (...responses) => { saved = []; requests = []; queue = responses; conflicts = false; };
+const reset = (...responses) => { saved = []; requests = []; queue = responses; conflicts = false; availabilityChecks = []; };
 const phoneResponse = { payload: { id: phone, display_phone_number: '+55 35 99999-1111', verified_name: 'Test office' } };
 const success = { payload: { success: true } };
 const noSecrets = object => {
@@ -79,7 +79,7 @@ async function run() {
   }
   actor.role = 'owner';
   for (const route of [embedded, manual]) assert.equal((await route.POST(req(signup, { safe: false }))).status, 403);
-  for (const body of [null, {}, { ...signup, pin: '123' }, { ...signup, phoneNumberId: 'https://elsewhere' }, { ...signup, wabaId: {} }, { ...signup, code: 'x'.repeat(4097) }]) assert.equal((await embedded.POST(req(body))).status, 400);
+  for (const body of [null, {}, { ...signup, pin: '123' }, { ...signup, phoneNumberId: 'https://elsewhere' }, { ...signup, phoneNumberId: undefined }, { ...signup, phoneNumberId: null, businessAppOnboarding: true }, { ...signup, businessAppOnboarding: 'true' }, { ...signup, wabaId: {} }, { ...signup, code: 'x'.repeat(4097) }]) assert.equal((await embedded.POST(req(body))).status, 400);
   assert.equal((await manual.POST(req(null))).status, 400);
   assert.equal((await embedded.POST(req(null, { json: async () => { throw new Error('bad json'); } }))).status, 400);
   assert.equal(requests.length, 0); assert.equal(saved.length, 0);
@@ -113,9 +113,57 @@ async function run() {
   }
   reset({ payload: { access_token: token } }, { payload: { data: [{ id: phone }] } }, { payload: { ...phoneResponse.payload, is_on_biz_app: false } });
   response = await embedded.POST(req({ ...signup, pin: '', businessAppOnboarding: true }));
-  assert.equal(response.body.code, 'invalid_pin'); assert.equal(saved.length, 0);
+  assert.equal(response.body.code, 'coexistence_not_confirmed'); assert.equal(saved.length, 0);
   assert.ok(!requests.some(item => item.options.method === 'POST'));
   console.log('PASS coexistence saves without PIN only when Meta confirms it; forged browser flags rejected');
+
+  const coexistenceSignup = { wabaId: waba, code: signup.code, businessAppOnboarding: true, companyId: 'tenant-b' };
+  const coexistencePhone = { payload: { ...phoneResponse.payload, is_on_biz_app: true } };
+  reset({ payload: { access_token: token } }, { payload: { data: [{ id: phone }] } }, coexistencePhone, success);
+  response = await embedded.POST(req(coexistenceSignup));
+  assert.equal(response.status, 200); assert.equal(response.body.data.phoneNumberId, phone);
+  assert.deepEqual(availabilityChecks, [phone]); assert.equal(saved[0].companyId, 'tenant-a');
+  assert.equal(saved[0].value.phoneNumberId, phone); assert.equal(saved[0].value.accessToken, token);
+  assert.deepEqual(requests.map(item => item.url.pathname), ['/v26.0/oauth/access_token', `/v26.0/${waba}/phone_numbers`, `/v26.0/${phone}`, `/v26.0/${waba}/subscribed_apps`]);
+  assert.ok(!requests.some(item => item.url.pathname.endsWith('/register'))); noSecrets(response);
+  reset({ payload: { access_token: token } }, { payload: { data: [{ id: phone }] } }); conflicts = true;
+  response = await embedded.POST(req(coexistenceSignup));
+  assert.equal(response.status, 503); assert.equal(saved.length, 0); assert.deepEqual(availabilityChecks, [phone]);
+  assert.ok(!requests.some(item => item.options.method === 'POST')); noSecrets(response);
+  for (const isOnBizApp of [false, undefined]) {
+    reset({ payload: { access_token: token } }, { payload: { data: [{ id: phone }] } }, { payload: { ...phoneResponse.payload, is_on_biz_app: isOnBizApp } });
+    response = await embedded.POST(req({ ...coexistenceSignup, pin }));
+    assert.equal(response.body.code, 'coexistence_not_confirmed'); assert.equal(saved.length, 0);
+    assert.ok(!requests.some(item => item.options.method === 'POST')); noSecrets(response);
+  }
+  console.log('PASS WABA-only coexistence discovers authenticated phone, checks tenant ownership and never registers a phone');
+
+  for (const pages of [
+    [{ payload: { data: [{ id: phone }, { id: '123456789012346' }] } }],
+    [{ payload: { data: [{ id: phone }], paging: { next: 'https://attacker.invalid', cursors: { after: 'next-page' } } } }, { payload: { data: [{ id: '123456789012346' }] } }],
+  ]) {
+    reset({ payload: { access_token: token } }, ...pages);
+    response = await embedded.POST(req(coexistenceSignup));
+    assert.equal(response.body.code, 'phone_selection_required'); assert.equal(saved.length, 0);
+    assert.ok(!requests.some(item => item.options.method === 'POST')); noSecrets(response);
+    assert.ok(requests.every(item => item.url.origin === 'https://graph.facebook.com'));
+  }
+  for (const pages of [
+    [{ payload: { data: [] } }],
+    [{ payload: { data: [{ id: 'not-a-phone' }] } }],
+    [{ payload: { data: null } }],
+    [{ payload: { data: [{ id: phone }], paging: { next: 'https://attacker.invalid' } } }],
+    [{ payload: { data: [{ id: phone }], paging: { next: 'https://attacker.invalid', cursors: { after: 'repeated' } } } }, { payload: { data: [], paging: { next: 'https://attacker.invalid', cursors: { after: 'repeated' } } } }],
+  ]) {
+    reset({ payload: { access_token: token } }, ...pages);
+    response = await embedded.POST(req(coexistenceSignup));
+    assert.equal(response.body.code, 'phone_discovery_failed'); assert.equal(saved.length, 0);
+    assert.ok(!requests.some(item => item.options.method === 'POST')); noSecrets(response);
+  }
+  reset({ payload: { data: [{ id: phone }], paging: { next: 'https://attacker.invalid', cursors: { after: 'next-page' } } } }, { payload: { data: [{ id: phone }] } });
+  assert.equal(await helper.discoverMetaBusinessPhone(waba, token), phone);
+  assert.equal(requests[1].url.origin, 'https://graph.facebook.com'); assert.equal(requests[1].url.searchParams.get('after'), 'next-page');
+  console.log('PASS multiple phones, missing/malformed phones and incomplete listings fail closed; fixed-origin pagination and duplicate IDs');
 
   reset({ payload: { access_token: token } }, { payload: { data: [{ id: phone }] } }, phoneResponse, { ok: false, payload: { error: { code: 100, message: secret + token } } });
   response = await embedded.POST(req(signup));
@@ -158,6 +206,8 @@ async function run() {
     setTimeout: callback => { timer = callback; return 1; }, clearTimeout: () => { timer = undefined; },
   });
   const event = (origin = 'https://www.facebook.com', type = 'FINISH') => ({ origin, data: JSON.stringify({ type: 'WA_EMBEDDED_SIGNUP', event: type, data: { phone_number_id: phone, waba_id: waba } }) });
+  // Exact documented coexistence payload: Meta does not include phone_number_id.
+  const coexistenceEvent = { origin: 'https://www.facebook.com', data: JSON.stringify({ data: { waba_id: waba }, type: 'WA_EMBEDDED_SIGNUP', event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING', version: 3 }) };
   assert.equal(client.parseMetaSignupEvent(event('https://www.facebook.com.attacker.invalid')), null);
   assert.equal(client.parseMetaSignupEvent(event(undefined, 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING')).assets.businessAppOnboarding, true);
   assert.equal(client.parseMetaSignupEvent(event()).assets.businessAppOnboarding, undefined);
@@ -172,5 +222,26 @@ async function run() {
   const cleanup = begin(); cleanup(); loginCallback({ authResponse: { code: 'unmounted' } }); assert.equal(completed.length, 2); assert.ok(removed >= 5);
   begin(); loginCallback({}); assert.equal(errors.length, 3); assert.equal(listener, undefined);
   console.log('PASS SDK origin validation, both callback orders, once-only save, cancel, timeout, unmount and popup denial');
+  const parsedCoexistence = client.parseMetaSignupEvent(coexistenceEvent);
+  assert.equal(parsedCoexistence.event, 'finish'); assert.equal(parsedCoexistence.assets.wabaId, waba);
+  assert.equal(parsedCoexistence.assets.businessAppOnboarding, true); assert.equal(parsedCoexistence.assets.phoneNumberId, undefined);
+  assert.equal(client.parseMetaSignupEvent({ ...coexistenceEvent, data: JSON.parse(coexistenceEvent.data) }).event, 'finish');
+  assert.equal(client.parseMetaSignupEvent({ ...coexistenceEvent, data: { type: 'WA_EMBEDDED_SIGNUP', event: 'FINISH', data: { waba_id: waba } } }).event, 'error');
+  for (const badPhone of ['', 'https://attacker.invalid', 123456]) {
+    assert.equal(client.parseMetaSignupEvent({ ...coexistenceEvent, data: { ...JSON.parse(coexistenceEvent.data), data: { waba_id: waba, phone_number_id: badPhone } } }).event, 'error');
+  }
+  for (const assetsFirst of [true, false]) {
+    const count = completed.length;
+    begin();
+    const finishListener = listener;
+    const callback = loginCallback;
+    if (assetsFirst) { listener(coexistenceEvent); assert.equal(completed.length, count); callback({ authResponse: { code: 'coexistence-code' } }); }
+    else { callback({ authResponse: { code: 'coexistence-code' } }); assert.equal(completed.length, count); listener(coexistenceEvent); }
+    assert.equal(completed.length, count + 1); assert.equal(completed.at(-1).wabaId, waba);
+    assert.equal(completed.at(-1).businessAppOnboarding, true); assert.equal(completed.at(-1).phoneNumberId, undefined);
+    finishListener(coexistenceEvent); callback({ authResponse: { code: 'duplicate-code' } });
+    assert.equal(completed.length, count + 1); assert.equal(listener, undefined); assert.equal(timer, undefined);
+  }
+  console.log('PASS official WABA-only payload, object/string events, standard-flow validation and exactly-once callbacks in either order');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

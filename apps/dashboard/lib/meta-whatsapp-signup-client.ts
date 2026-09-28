@@ -3,7 +3,9 @@ export type FacebookSdk = {
   login: (callback: (response: { authResponse?: { code?: string } }) => void, options: Record<string, unknown>) => void;
 };
 
-export type SignupAssets = { phoneNumberId: string; wabaId: string; businessAppOnboarding?: boolean };
+export type SignupAssets =
+  | { phoneNumberId: string; wabaId: string; businessAppOnboarding?: false }
+  | { phoneNumberId?: string; wabaId: string; businessAppOnboarding: true };
 
 // Meta replaces the initial buffering facade with the real SDK. Never retain
 // that facade: its login() only queues calls in a buffer that may be abandoned.
@@ -26,8 +28,13 @@ export function parseMetaSignupEvent(event: Pick<MessageEvent, 'origin' | 'data'
     if (!['FINISH', 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'].includes(message.event)) return null;
     const phoneNumberId = message.data?.phone_number_id;
     const wabaId = message.data?.waba_id;
-    if (typeof phoneNumberId !== 'string' || !/^\d{5,30}$/.test(phoneNumberId) || typeof wabaId !== 'string' || !/^\d{5,30}$/.test(wabaId)) return { event: 'error' };
-    return { event: 'finish', assets: { phoneNumberId, wabaId, ...(message.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' ? { businessAppOnboarding: true } : {}) } };
+    if (typeof wabaId !== 'string' || !/^\d{5,30}$/.test(wabaId)) return { event: 'error' };
+    const businessAppOnboarding = message.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
+    // Meta's documented coexistence payload contains only waba_id. Resolve the
+    // phone on the server with the exchanged token, never from an old form ID.
+    if (businessAppOnboarding && phoneNumberId == null) return { event: 'finish', assets: { wabaId, businessAppOnboarding: true } };
+    if (typeof phoneNumberId !== 'string' || !/^\d{5,30}$/.test(phoneNumberId)) return { event: 'error' };
+    return { event: 'finish', assets: businessAppOnboarding ? { phoneNumberId, wabaId, businessAppOnboarding: true } : { phoneNumberId, wabaId } };
   } catch { return null; }
 }
 

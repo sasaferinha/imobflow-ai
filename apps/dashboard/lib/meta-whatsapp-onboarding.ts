@@ -72,6 +72,40 @@ export async function verifyMetaBusinessPhone(wabaId: string, phoneNumberId: str
   throw new WhatsAppSetupError('phone_business_mismatch', 'O número escolhido não pertence à conta WhatsApp autorizada. Faça a conexão novamente e escolha a conta correta.');
 }
 
+export async function discoverMetaBusinessPhone(wabaId: string, accessToken: string): Promise<string> {
+  if (!META_PHONE_ID.test(wabaId)) throw new WhatsAppSetupError('invalid_phone', 'A Meta não retornou a conta WhatsApp autorizada.', 400);
+  const phones = new Set<string>();
+  const cursors = new Set<string>();
+  let after = '';
+  for (let page = 0; page < 10; page++) {
+    const url = graphUrl(`${wabaId}/phone_numbers`);
+    url.search = new URLSearchParams({ fields: 'id', limit: '100', ...(after ? { after } : {}) }).toString();
+    const payload = await graph(url, { headers: bearer(accessToken) }, 'business_access_denied', 'A autorização não dá acesso à conta WhatsApp escolhida. Entre com o administrador dessa conta e tente novamente.');
+    if (!Array.isArray(payload.data)) break;
+    for (const phone of payload.data) {
+      if (!phone || typeof phone !== 'object' || typeof phone.id !== 'string' || !META_PHONE_ID.test(phone.id)) {
+        throw new WhatsAppSetupError('phone_discovery_failed', 'A Meta não confirmou os números desta conta WhatsApp. Peça ao suporte para conferir a conexão.');
+      }
+      phones.add(phone.id);
+    }
+    // Never choose the first phone: an ambiguous account needs explicit selection.
+    if (phones.size > 1) throw new WhatsAppSetupError('phone_selection_required', 'A conta autorizada possui mais de um número. Nenhum foi alterado. Peça ao suporte para selecionar o número correto.');
+    const paging = payload.paging as { next?: unknown; cursors?: { after?: unknown } } | undefined;
+    if (!paging?.next) {
+      const phoneNumberId = phones.values().next().value;
+      if (phoneNumberId) return phoneNumberId;
+      break;
+    }
+    const nextCursor = paging.cursors?.after;
+    if (typeof nextCursor !== 'string' || !nextCursor || nextCursor.length > 2000 || cursors.has(nextCursor)) break;
+    // Rebuild a fixed Graph URL; a response-supplied URL is never requested.
+    cursors.add(nextCursor);
+    after = nextCursor;
+  }
+  // An incomplete listing cannot prove that only one phone was authorized.
+  throw new WhatsAppSetupError('phone_discovery_failed', 'Não foi possível identificar um único número na conta autorizada. Nenhuma configuração foi alterada. Peça ao suporte para conferir a conexão.');
+}
+
 export async function activateMetaBusinessPhone(wabaId: string, phoneNumberId: string, accessToken: string, pin: string, businessAppConnected = false) {
   // Coexistence numbers are already registered by Embedded Signup.
   if (!businessAppConnected) {
