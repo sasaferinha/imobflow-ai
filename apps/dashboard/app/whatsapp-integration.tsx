@@ -3,7 +3,7 @@ import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Script from 'next/script';
-import { beginMetaSignup, type FacebookSdk, type SignupAssets } from '@/lib/meta-whatsapp-signup-client';
+import { beginMetaSignup, initializeMetaSdk, type FacebookSdk, type SignupAssets } from '@/lib/meta-whatsapp-signup-client';
 import './whatsapp-integration.css';
 
 type Connection = {
@@ -84,10 +84,16 @@ export default function WhatsAppIntegration({ canEdit, onOpenConversations }: { 
   }, [embedded?.available, sdkStatus]);
 
   function prepareSdk() {
-    const facebook = (window as Window & { FB?: FacebookSdk }).FB;
-    if (!facebook || !embedded) { setSdkStatus('failed'); return; }
-    facebook.init({ appId: embedded.appId, cookie: true, xfbml: false, version: embedded.apiVersion });
-    sdk.current = facebook; setSdkStatus('ready');
+    if (!mounted.current || !embedded?.available) return;
+    try {
+      const facebook = initializeMetaSdk((window as Window & { FB?: FacebookSdk }).FB, embedded.appId, embedded.apiVersion);
+      if (!facebook) return;
+      sdk.current = facebook; setSdkStatus('ready');
+    } catch {
+      sdk.current = null;
+      setSdkStatus('failed');
+      setFeedback({ kind: 'error', message: 'Não foi possível preparar o login da Meta. Atualize a página e tente novamente.' });
+    }
   }
 
   async function finishSignup(data: SignupAssets & { code: string }) {
@@ -107,7 +113,9 @@ export default function WhatsAppIntegration({ canEdit, onOpenConversations }: { 
 
   function connect() {
     if (busy || !embedded?.available) return;
-    if (!sdk.current) prepareSdk();
+    // Read the current SDK, not a reference to Meta's discarded loader facade.
+    sdk.current = null;
+    prepareSdk();
     if (!sdk.current) {
       setFeedback({ kind: 'error', message: 'A janela da Meta ainda não carregou. Aguarde alguns segundos e tente novamente. Se persistir, atualize a página e desative o bloqueador de conteúdo para esta tela.' });
       return;
@@ -181,7 +189,7 @@ export default function WhatsAppIntegration({ canEdit, onOpenConversations }: { 
           <div className="wa-test-actions"><button type="button" disabled={busy} onClick={() => setConfirmDisconnect(false)}>Cancelar</button><button type="button" disabled={busy} onClick={() => void disconnect()}>{phase === 'disconnecting' ? 'Desvinculando…' : 'Confirmar desvinculação'}</button></div>
         </div>}
       </div>}
-      {connection && <div className="wa-connect-action"><button className="primary-button" type="button" disabled={busy || !embedded?.available} onClick={connect}>{phase === 'authorizing' ? 'Aguardando a Meta…' : connection.configured ? 'Reconectar WhatsApp' : 'Conectar WhatsApp'}<span aria-hidden="true"> ↗</span></button><p>{embedded?.available ? 'Abre a janela oficial da Meta. Sem copiar ID ou token.' : 'Conexão automática ainda indisponível. A configuração da ImobFlow na Meta está pendente.'}</p>{embedded?.available && sdkStatus === 'loading' && <p role="status">Preparando a conexão com a Meta…</p>}{embedded?.available && sdkStatus === 'failed' && <p role="alert">Não foi possível carregar a Meta. Recarregue a página e permita os scripts da Meta.</p>}{phase === 'authorizing' && <button type="button" onClick={() => { cleanupSignup.current?.(); pendingSignup.current = null; setPhase('idle'); setFeedback(null); }}>Cancelar tentativa</button>}</div>}
+      {connection && <div className="wa-connect-action"><button className="primary-button" type="button" disabled={busy || !embedded?.available || sdkStatus !== 'ready'} onClick={connect}>{phase === 'authorizing' ? 'Aguardando a Meta…' : embedded?.available && sdkStatus === 'loading' ? 'Preparando conexão…' : connection.configured ? 'Reconectar WhatsApp' : 'Conectar WhatsApp'}<span aria-hidden="true"> ↗</span></button><p>{embedded?.available ? 'Abre a janela oficial da Meta. Sem copiar ID ou token.' : 'Conexão automática ainda indisponível. A configuração da ImobFlow na Meta está pendente.'}</p>{embedded?.available && sdkStatus === 'loading' && <p role="status">Preparando a conexão com a Meta…</p>}{embedded?.available && sdkStatus === 'failed' && <p role="alert">Não foi possível carregar a Meta. Recarregue a página e permita os scripts da Meta.</p>}{phase === 'authorizing' && <button type="button" onClick={() => { cleanupSignup.current?.(); pendingSignup.current = null; setPhase('idle'); setFeedback(null); }}>Cancelar tentativa</button>}</div>}
       {connection && connectOpen && embedded?.available && <ol className="wa-steps" aria-label="Conectar pela Meta">
         <li><span className="wa-step-number">2</span><div><h3>{connection.configured ? 'Gerencie a autorização' : 'Autorize o WhatsApp'}</h3>
           {embedded?.available ? <>

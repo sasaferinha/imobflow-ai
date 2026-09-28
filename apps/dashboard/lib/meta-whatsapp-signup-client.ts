@@ -5,6 +5,14 @@ export type FacebookSdk = {
 
 export type SignupAssets = { phoneNumberId: string; wabaId: string };
 
+// Meta replaces the initial buffering facade with the real SDK. Never retain
+// that facade: its login() only queues calls in a buffer that may be abandoned.
+export function initializeMetaSdk(candidate: (Partial<FacebookSdk> & { __buffer?: unknown }) | undefined, appId: string, version: string): FacebookSdk | null {
+  if (!candidate || '__buffer' in candidate || typeof candidate.init !== 'function' || typeof candidate.login !== 'function') return null;
+  candidate.init({ appId, cookie: true, xfbml: false, version });
+  return candidate as FacebookSdk;
+}
+
 export function parseMetaSignupEvent(event: Pick<MessageEvent, 'origin' | 'data'>):
   | { event: 'finish'; assets: SignupAssets }
   | { event: 'cancel' | 'error' }
