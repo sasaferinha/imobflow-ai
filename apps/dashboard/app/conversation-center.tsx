@@ -11,6 +11,8 @@ import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard
 import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
 import { ConversationMessageBubble } from './conversation-message';
 import { ConversationSettings } from './conversation-settings';
+import { ConversationWhatsAppHandoff } from './conversation-whatsapp-handoff';
+import { isWhatsAppWindowError } from '@/lib/whatsapp-handoff';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
 import { inboxByLead, compareInboxActivity, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
 
@@ -101,6 +103,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [sendNotice, setSendNotice] = useState('');
+  const [whatsappHandoff, setWhatsAppHandoff] = useState<{ leadId: string; incomingId?: string; text: string } | null>(null);
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [profileOpen, setProfileOpen] = useState(true);
@@ -132,7 +135,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   useEffect(() => { selectedLeadRef.current = lead?.id; }, [lead?.id]);
   useEffect(() => {
     let active = true;
-    queueMicrotask(() => { if (active) setSendNotice(''); });
+    queueMicrotask(() => { if (active) { setSendNotice(''); setWhatsAppHandoff(null); } });
     return () => { active = false; };
   }, [selected?.id]);
   const preserveScroll = useRef<number | null>(null);
@@ -248,6 +251,13 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const isCurrentBroker = demonstration ? Boolean(assignedBroker && normalize(assignedBroker) === normalize(currentBrokerName)) : attendance.isCurrentBroker;
   const canClaim = demonstration ? !isCurrentBroker : attendance.canClaim;
   const canSend = demonstration || attendance.canSend;
+  const latestIncomingId = thread.messages.filter(message => message.side === 'incoming').at(-1)?.id;
+  const lastMessage = thread.messages.at(-1);
+  const rejectedText = whatsappHandoff?.leadId === leadId && whatsappHandoff.incomingId === latestIncomingId
+    ? whatsappHandoff.text
+    : lastMessage?.side === 'outgoing' && lastMessage.deliveryStatus === 'failed' && isWhatsAppWindowError(lastMessage.deliveryError)
+      ? lastMessage.text : undefined;
+  const showWhatsAppHandoff = !demonstration && ready && canSend && rejectedText !== undefined;
   const sourceLabel = demonstration ? 'Perfil fictício para demonstração' : 'Dados do banco de leads';
   // This exact legacy registration note is metadata, not a housing preference.
   // Mixed or unfamiliar text stays visible; never change the stored lead data.
@@ -268,10 +278,13 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     try {
       const saved = await persistMessage({ leadId, content });
       dispatch({ type: 'send', id: selected.id, messageId: saved.id, time: saved.time, text: content });
+      if (selectedLeadRef.current === leadId) setWhatsAppHandoff(null);
       notify(demonstration ? 'Mensagem adicionada à prévia. Nenhum cliente foi contatado.' : 'Mensagem salva no histórico do lead.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível salvar a mensagem.';
+      if (selectedLeadRef.current !== leadId) return;
       setSendNotice(message);
+      if (isWhatsAppWindowError(message)) setWhatsAppHandoff({ leadId, incomingId: latestIncomingId, text: content });
       notify(message);
     } finally {
       savingRef.current = false; setSaving(false);
@@ -288,10 +301,17 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     try {
       const saved = await persistMessage({ leadId, content: text, images: property.images, propertyId: property.id });
       dispatch({ type: 'share-property', id: selected.id, messageId: saved.id, time: saved.time, text, images: demonstration?property.images:[], propertyTitle: property.title });
+      if (selectedLeadRef.current === leadId) setWhatsAppHandoff(null);
       setPropertyPickerOpen(false);
       notify(demonstration ? `${property.title} adicionado apenas à demonstração.` : `${property.title} salvo na conversa com ${selected.name}.`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.');
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar o imóvel na conversa.';
+      if (selectedLeadRef.current !== leadId) return;
+      if (isWhatsAppWindowError(message)) {
+        setWhatsAppHandoff({ leadId, incomingId: latestIncomingId, text });
+        setPropertyPickerOpen(false);
+      }
+      notify(message);
     } finally {
       savingRef.current = false; setSaving(false);
     }
@@ -364,6 +384,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
         <div className="full-chat-body" ref={bodyRef}>{!demonstration && historyPage.leadId === leadId && historyPage.cursor && <button type="button" className="conversation-property-button" disabled={loadingOlder} onClick={() => void loadOlderMessages()}>{loadingOlder ? 'Carregando…' : 'Carregar mensagens anteriores'}</button>}{thread.messages.length ? thread.messages.map(message => <ConversationMessageBubble key={message.id} message={message} demo={demonstration}/>) : <p className="conversation-empty-thread">{ready ? 'Ainda não há mensagens deste lead no painel.' : 'Carregando histórico…'}</p>}</div>
         <details className="conversation-quick-reply" key={selected.id}><summary>Resposta sugerida</summary><div><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div></details>
         {sendNotice && <p className="conversation-send-notice" role="alert">{sendNotice}</p>}
+        {showWhatsAppHandoff && <ConversationWhatsAppHandoff phone={lead.phone || ''} text={thread.draft.trim() || rejectedText || ''} />}
         <form className="full-composer" onSubmit={send}><button type="button" className="conversation-property-button" disabled={loadingProperties || !ready || saving || !canSend} onClick={() => void openPropertyPicker()}>{loadingProperties ? 'Atualizando…' : 'Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => { setSendNotice(''); dispatch({ type: 'draft', id: selected.id, text: event.target.value }); }} aria-label={`Mensagem para ${selected.name}`} placeholder={canSend ? 'Escreva uma resposta…' : attendance.mode === 'closed' ? 'Conversa encerrada' : canClaim ? 'Assuma o atendimento para enviar' : 'Envio disponível ao corretor responsável'} maxLength={4000}/><button className="send-button" type="button" onClick={() => void submitDraft()} disabled={!thread.draft.trim() || !ready || saving || !canSend} aria-label="Adicionar mensagem"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m5 12 7-7 7 7M12 5v14"/></svg></button></form>
       </section>
       <aside id="conversation-client-profile" hidden={!profileOpen} className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>

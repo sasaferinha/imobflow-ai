@@ -94,7 +94,8 @@ function load(file,deps={},globals={},suffix='') {
     '@/lib/dashboard-transport':{dashboardFetch:async(url,options)=>{requests.push({url,options});return {ok:!fail};}},
     '@/lib/demo-conversations':{demoContacts:[]},'@/lib/conversation-inbox':helpers,
     '@/lib/dashboard-sync':{announceDashboardChange:()=>refreshes++},
-    './conversation-message':{},'./conversation-settings':{},
+    './conversation-message':{},'./conversation-settings':{},'./conversation-whatsapp-handoff':{},
+    '@/lib/whatsapp-handoff':load('lib/whatsapp-handoff.ts'),
     './conversation-attendance':{describeConversationAttendance:()=>({canSend:true,owner:null})},
   },{window:events,document:doc,AbortController},'\nexport { ConversationWorkspace };');
   const lead={id:id(30),name:'Fictional',goal:'Compra',propertyType:'Casa',details:'',region:'Centro',lifecycleStatus:'Novo',temperature:'Frio'};

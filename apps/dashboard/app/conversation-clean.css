@@ -1,4 +1,9 @@
 /* Shared by the real inbox and the isolated product demonstration. */
+.conversation-clean .conversation-whatsapp-handoff { flex-shrink: 0; margin: 8px 16px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font-size: 13px; }
+.conversation-clean .conversation-whatsapp-handoff p { margin: 6px 0; }
+.conversation-clean .conversation-whatsapp-handoff small { display: block; color: var(--muted); line-height: 1.5; margin-top: 8px; }
+.conversation-clean .conversation-whatsapp-handoff a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 7px; background: #087443; color: #fff; text-decoration: none; font-weight: 600; }
+.conversation-clean .conversation-whatsapp-handoff a:focus-visible { outline: 2px solid var(--accent, #0066df); outline-offset: 3px; }
 .conversation-tools {
   display: flex;
   flex-wrap: wrap;
