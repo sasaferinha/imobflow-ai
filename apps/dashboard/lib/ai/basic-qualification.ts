@@ -1,6 +1,6 @@
 import { financingAnswer, qualificationQuestion, qualificationSummary, OPTIONAL_PREFERENCES_QUESTION, type InterestProfile } from "./qualification";
 import { naturalPreferences } from './natural-qualification';
-import { confirmsSummary } from './conversation-understanding';
+import { changedPreferences, confirmsSummary, requestedCorrectionField, requestsSummaryCorrection } from './conversation-understanding';
 const normalize = (s: string) =>
   s
     .normalize("NFD")
@@ -28,21 +28,41 @@ export function basicPreferences(
 ): InterestProfile {
   const answer = normalize(message).replace(/[.!]+$/, '');
   const question = qualificationQuestion(current);
+  const correctionField = requestedCorrectionField(message);
+  const fieldOnly = current.correctionRequested && correctionField && /^(?:o |a |os |as |meu |minha )?(?:objetivo|tipo(?: de imovel)?|cidade|bairros?|regiao|regioes|orcamento|valor|preco|limite|quartos?|dormitorios?|vagas?|garagem|pagamento|financiamento)$/.test(answer);
+  // Interpret a field label before location extraction: "garagem" names the
+  // next correction, it is not a neighborhood called Garagem.
+  if (fieldOnly) return { correctionRequested: true, correctionField,
+    ...(current.summaryConfirmed ? { summaryConfirmed: false } : {}) };
   if (question === qualificationSummary(current)) {
     if (confirmsSummary(message)) return { summaryConfirmed: true, correctionRequested: false };
-    if (/^(nao|errado|incorreto|nao esta (?:certo|correto)|(?:esta |isso esta )?errado)$/.test(answer)) return { correctionRequested: true };
+    if (/^(nao|errado|incorreto|nao esta (?:certo|correto)|(?:esta |isso esta )?errado)$/.test(answer)) return { correctionRequested: true, correctionField: null };
   }
   if (question === OPTIONAL_PREFERENCES_QUESTION && /^(nao|nenhuma?|nada|nao sei|ainda nao sei|tanto faz|sem preferencia|nao tenho preferencia|pode seguir|podemos seguir)$/.test(answer)) return { preferencesRecorded: true };
   // An undecided answer is valid at the financing step, not a hypothetical search.
   if (financingAnswer(message, current) === 'Indeciso') return { financingIntent: 'Indeciso' };
   if (message.length > 4000 || /\b(ignore|ignora|instrucoes|instrucao|sistema|talvez|exemplo|suponha)\b/.test(normalize(message))) return {};
-  const natural = naturalPreferences(message, current);
+  // A targeted revision changes only that field; the original profile is never
+  // cleared to ask again. This lets "trocar o bairro" -> "Centro" work offline.
+  const parsingProfile = current.correctionRequested && current.correctionField
+    ? { ...current, [current.correctionField]: undefined }
+    : current;
+  const natural = naturalPreferences(message, parsingProfile);
   // The narrow legacy parser supplies bare prices and lists at their own step.
   // Do not let its free-text location fallback turn unrelated prose into a city.
-  const strict = strictPreferences(message, current);
+  const strict = strictPreferences(message, parsingProfile);
   delete strict.city;
   if (!/[,;]/.test(message)) delete strict.regions;
   const patch = { ...strict, ...natural };
+  if (current.correctionRequested && current.correctionField === 'parkingSpaces') {
+    const counts: Record<string, number> = { zero: 0, um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10 };
+    const bare = answer.replace(/^(?:quero|preciso de|pode ser|apenas|so)\s+/, '');
+    const number = counts[bare] ?? (/^\d{1,2}$/.test(bare) ? Number(bare) : undefined);
+    if (number != null && number <= 30) {
+      delete patch.bedrooms;
+      patch.parkingSpaces = number;
+    }
+  }
   if (question === OPTIONAL_PREFERENCES_QUESTION && message.trim() && !message.includes('?') && !/\b(como|qual|ignore|instrucoes)\b/.test(answer)) {
     patch.preferencesRecorded = true;
     patch.preferenceNotes = message.trim().slice(0, 500);
@@ -53,9 +73,15 @@ export function basicPreferences(
   const financingIntent=financingAnswer(message,{...current,...patch});
   if(financingIntent === 'Sim' && !current.purpose && !patch.purpose) patch.purpose='Venda';
   if(financingIntent)patch.financingIntent=financingIntent;
+  const explicitCorrection = requestsSummaryCorrection(message);
+  if (explicitCorrection && !Object.keys(changedPreferences(patch, current)).length) {
+    return { correctionRequested: true, correctionField: correctionField || null,
+      ...(current.summaryConfirmed ? { summaryConfirmed: false } : {}) };
+  }
   if (Object.keys(patch).length && (current.summaryConfirmed || current.correctionRequested)) {
     patch.summaryConfirmed = false;
     patch.correctionRequested = false;
+    if (current.correctionField) patch.correctionField = null;
   }
   return patch;
 }

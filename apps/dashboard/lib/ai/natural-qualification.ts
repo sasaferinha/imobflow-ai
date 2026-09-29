@@ -15,7 +15,8 @@ function money(value: string, unit?: string) {
 function cleanLocation(value: string) {
   const location = value.trim().replace(/[.!?]+$/, '').trim();
   if (!/^[\p{L}\p{M}][\p{L}\p{M} '\/-]{1,119}$/u.test(location)) return undefined;
-  if (/\b(nao|sei|talvez|qualquer|tanto faz|quero|preciso|prefiro|obrigad[oa]|ola|oi|ok|sim|tudo|bem|entendi|entendeu|voce|voces|pode|como|qual|quanto|comprar|alugar|financiar|financiamento|financiada|financiado|apartamento|quartos?|vagas?|me|ajuda|ajude|consegue|sou|tenho|isso|favor|legal|certo|verdade)\b/.test(normalize(location))) return undefined;
+  if (/\b(nao|sei|talvez|qualquer|tanto faz|quero|preciso|prefiro|obrigad[oa]|ola|oi|ok|sim|tudo|bem|entendi|entendeu|voce|voces|pode|como|qual|quanto|comprar|alugar|financiar|financiamento|financiada|financiado|apartamento|quartos?|vagas?|me|ajuda|ajude|consegue|sou|tenho|isso|favor|legal|certo|verdade|corrigir|mudar|trocar|alterar|orcamento|pagamento)\b/.test(normalize(location))) return undefined;
+  if (/^(?:a |o |as |os )?(?:cidade|bairros?|regiao|regioes)$/.test(normalize(location))) return undefined;
   return location;
 }
 
@@ -44,7 +45,7 @@ export function naturalPreferences(message: string, current: InterestProfile): I
   if(found.length===1)patch.propertyType=found[0][0];
 
   // More than one amount/count is ambiguous: ask again rather than choose one.
-  const amounts = unique([...positive.matchAll(/(?:\bate\s+(?:uns?\s+)?|\b(?:orcamento|limite|valor maximo)(?:\s+(?:e|de|seria))?\s*[:=]?\s*|\b(?:posso|quero|pretendo) (?:pagar|gastar|investir)\s+|\b(?:por volta de|aproximadamente|cerca de|uns?)\s+|r\$\s*)(?:r\$\s*)?([\d.,]+)\s*(milhoes|milhao|mil|k)?\b/g)].map(m=>money(m[1],m[2])).filter((v):v is number=>v!=null));
+  const amounts = unique([...positive.matchAll(/(?:\bate\s+(?:uns?\s+)?|\b(?:orcamento|limite|valor maximo)(?:\s+agora)?(?:\s+(?:e|de|seria|para))?\s*[:=]?\s*|\b(?:posso|quero|pretendo) (?:pagar|gastar|investir)\s+|\b(?:por volta de|aproximadamente|cerca de|uns?)\s+|r\$\s*)(?:r\$\s*)?([\d.,]+)\s*(milhoes|milhao|mil|k)?\b/g)].map(m=>money(m[1],m[2])).filter((v):v is number=>v!=null));
   if(amounts.length===1 && !/\b(entre|a partir|mais de|menos de)\b|\d\s*(?:mil\s*)?(?:a|ou|-)\s*\d/.test(n))patch.budgetMax=amounts[0];
   for(const [key,unit] of [['bedrooms','quartos?|dormitorios?'],['parkingSpaces','vagas?(?: de garagem)?']] as const){
     const candidates=unique([...positive.matchAll(new RegExp(`\\b(${count})\\s+(?:${unit})\\b`,'g'))].map(m=>numericCount(m[1])));
@@ -57,17 +58,20 @@ export function naturalPreferences(message: string, current: InterestProfile): I
   }
 
   // Location labels delimit names; a generic sentence never becomes a city.
+  // Match only affirmative clauses while keeping the original capitalization.
+  // "Não, quero trocar a cidade para X" must not be discarded just for "não".
+  const locationText = text.split(/,(?!\d)|[;!]|\.(?!\d)|\bmas\b/iu).filter(part => !/\b(nao|nem|sem)\b/.test(normalize(part))).join(',');
   const end='(?=,|;|[.!?]|$|\\s+(?:com|no bairro|na regiao|ate|por|e com)\\b)';
-  const cityMatch=text.match(new RegExp(`\\b(?:cidade de|cidade é|cidade e|cidade:|morar em|comprar em|alugar em|procuro em|busco em|(?:casa|apartamento|apto|terreno|imóvel|imovel) em)\\s+(.+?)${end}`,'iu'));
+  const cityMatch=locationText.match(new RegExp(`\\b(?:cidade de|cidade (?:agora )?(?:é|e)|cidade para|cidade:|morar em|comprar em|alugar em|procuro em|busco em|(?:casa|apartamento|apto|terreno|imóvel|imovel) em)\\s+(.+?)${end}`,'iu'));
   // A labeled list can contain commas. Stop only before a different field,
   // otherwise "bairros: Centro, Vila Rica" silently drops the second option.
-  const districtList=text.match(/\b(?:no bairro|nos bairros|na região|na regiao|nas regiões|nas regioes|bairro:|bairros:)\s+(.+?)(?=$|[.!?]|\s+(?:com|até|ate|por|e com)(?![\p{L}\p{M}])|[,;]\s*(?:com|sem|até|ate|orçamento|orcamento|meu orçamento|meu orcamento|limite|valor|r\$|cidade|em|\d+|(?:zero|um|uma|dois|duas|três|tres|quatro|cinco|seis|sete|oito|nove|dez)\s+(?:quartos?|vagas?))(?![\p{L}\p{M}]))/iu);
-  const districtMatch=!districtList && (cityMatch || current.city) ? text.match(new RegExp(`(?:^|,)\\s*(?:no|na)\\s+(.+?)${end}`,'iu')) : null;
-  if(cityMatch && !/\b(nao|nem|sem)\b/.test(n)){const city=cleanLocation(cityMatch[1]);if(city)patch.city=city;}
-  if(districtList && !/\b(nao|nem|sem)\b/.test(n)) {
+  const districtList=locationText.match(/\b(?:no bairro|nos bairros|na região|na regiao|nas regiões|nas regioes|bairros? (?:agora )?(?:para|é|e|são|sao)|bairro:|bairros:)\s+(.+?)(?=$|[.!?]|\s+(?:com|até|ate|por|e com)(?![\p{L}\p{M}])|[,;]\s*(?:com|sem|até|ate|orçamento|orcamento|meu orçamento|meu orcamento|limite|valor|r\$|cidade|em|\d+|(?:zero|um|uma|dois|duas|três|tres|quatro|cinco|seis|sete|oito|nove|dez)\s+(?:quartos?|vagas?))(?![\p{L}\p{M}]))/iu);
+  const districtMatch=!districtList && (cityMatch || current.city) ? locationText.match(new RegExp(`(?:^|,)\\s*(?:no|na)\\s+(.+?)${end}`,'iu')) : null;
+  if(cityMatch){const city=cleanLocation(cityMatch[1]);if(city)patch.city=city;}
+  if(districtList) {
     const regions=districtList[1].split(/[,;/]|\s+(?:e|ou)\s+/iu).map(cleanLocation);
     if(regions.length && regions.every((region): region is string => Boolean(region)))patch.regions=unique(regions);
-  } else if(districtMatch && !/\b(nao|nem|sem)\b/.test(n)){const region=cleanLocation(districtMatch[1]);if(region)patch.regions=[region];}
+  } else if(districtMatch){const region=cleanLocation(districtMatch[1]);if(region)patch.regions=[region];}
   const context={...current,...patch};
   if(context.city && !context.regions?.length && /\b(qualquer bairro|qualquer regiao|sem preferencia(?: de bairro)?|tanto faz o bairro)\b/.test(n)) patch.regions=['Qualquer região'];
   if(current.purpose && current.propertyType && !Object.keys(patch).length){

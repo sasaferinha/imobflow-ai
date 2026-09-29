@@ -5,7 +5,34 @@ const normalized = (text: string) => text.normalize('NFD').replace(/[\u0300-\u03
 export function confirmsSummary(message: string) {
   const text = normalized(message);
   return /^(sim|isso mesmo|isso|correto|certo|esta certo|esta correto|confirmo|perfeito|ok)(?=$|\s*[,;.!])/.test(text)
-    && !/\b(mas|exceto|menos|errado|incorreto|corrigir|corrija|mudar|mude|alterar|altere|trocar|troque|na verdade)\b/.test(text);
+    && !/\b(nao|mas|exceto|menos|errado|incorreto|corrigir|corrija|mudar|mude|alterar|altere|trocar|troque|ajustar|atualizar|na verdade)\b/.test(text);
+}
+
+/** Explicit requests to revise the search, not every sentence containing "não". */
+export function requestsSummaryCorrection(message: string) {
+  const text = normalized(message).replace(/\s+/g, ' ');
+  if (/\b(ignore|ignora|instrucoes|instrucao|sistema|suponha|exemplo)\b/.test(text)) return false;
+  if (/\b(?:nao (?:esta|ta|ficou) (?:certo|correto)|(?:isso|resumo|cadastro|perfil|dados) (?:esta|estao|ta) (?:errad[oa]s?|incorreto))\b/.test(text)) return true;
+  return text.split(/[,;.!?]|\bmas\b/).some(part => {
+    const clause = part.trim();
+    if (/\bnao\s+(?:quero|preciso|gostaria|desejo|prefiro|vou)\b/.test(clause)) return false;
+    return /^(?:(?:eu\s+)?(?:quero|preciso|desejo|prefiro|vou|gostaria de|preciso de|pode|podemos)\s+)?(?:corrigir|corrija|mudar|mude|alterar|altere|trocar|troque|ajustar|ajuste|atualizar|atualize)(?:\s+(?:(?:o|a|os|as|meu|minha|meus|minhas|de|um|uma)\s+)*(?:isso|isto|tudo|dados|informacoes|resumo|cadastro|perfil|preferencias?|busca|objetivo|tipo|imovel|cidade|bairros?|regioes?|regiao|orcamento|valor|quartos?|dormitorios?|vagas?|garagem|pagamento|financiamento)\b|\s*$)/.test(clause)
+      || /\b(?:mudei de ideia|quero outra opcao|na verdade)\b/.test(clause);
+  });
+}
+
+export function requestedCorrectionField(message: string): InterestProfile['correctionField'] {
+  const text = normalized(message);
+  const fields: Array<[NonNullable<InterestProfile['correctionField']>, RegExp]> = [
+    ['purpose', /\b(objetivo|comprar|alugar|compra|aluguel)\b/],
+    ['propertyType', /\b(tipo(?: de imovel)?|casa|apartamento|terreno|galpao)\b/],
+    ['city', /\bcidade\b/], ['regions', /\b(bairros?|regiao|regioes)\b/],
+    ['budgetMax', /\b(orcamento|valor|preco|limite)\b/],
+    ['bedrooms', /\b(quartos?|dormitorios?)\b/], ['parkingSpaces', /\b(vagas?|garagem)\b/],
+    ['financingIntent', /\b(pagamento|financiamento|financiar|vista)\b/],
+  ];
+  const matches = fields.filter(([, pattern]) => pattern.test(text));
+  return matches.length === 1 ? matches[0][0] : null;
 }
 
 export function needsBrokerAnswer(message: string) {

@@ -4,8 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
+const { singleMessageTurns } = require('./attendance-turn-fixture.cjs');
 
 function load(relative, overrides = {}) {
+  overrides = { 'node:timers/promises': { setTimeout: async () => {} }, ...overrides };
   const source = fs.readFileSync(path.join(__dirname, '..', relative), 'utf8');
   const module = { exports: {} };
   const code = ts.transpileModule(source, {
@@ -36,6 +38,7 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 
 function conversation(initialProfile = {}, afterHours = false) {
   let profile = { ...initialProfile };
+  let paused = false;
   let nextIncomingId = 0;
   const replies = [];
   const deliveries = [];
@@ -46,13 +49,21 @@ function conversation(initialProfile = {}, afterHours = false) {
     accessToken: 'fictional-token', apiVersion: 'v26.0',
   };
   const api = load('lib/attendance.ts', {
+    './attendance-turns': singleMessageTurns({
+      canClaim: () => !paused,
+      enqueue: async (event, content, options) => {
+        assert.equal(event.companyId, input.companyId);
+        assert.equal(event.leadId, input.leadId);
+        assert.equal(event.conversationId, input.conversationId);
+        assert.equal(options.profileVersion, '2026-09-12T12:00:00Z');
+        profile = { ...profile, ...plain(options.profilePatch) };
+        paused ||= options.handoff;
+        replies.push(content);
+        return { status: 'queued', messageId: `queued-${replies.length}` };
+      },
+    }),
     './supabase': {
-      supabaseServiceRequest: async (query, options = {}) => {
-        if (query === 'rpc/claim_attendance_reply') return true;
-        if (query === 'conversations?company_id=eq.company-a&id=eq.conversation-a' && options.method === 'PATCH') {
-          assert.equal(options.body.bot_paused, true);
-          return null;
-        }
+      supabaseServiceRequest: async (query) => {
         if (query === 'leads?company_id=eq.company-a&id=eq.lead-a&select=interest_profile,goal,property_type,region,budget_max,updated_at&limit=1') {
           return [{
             interest_profile: profile,
@@ -63,20 +74,8 @@ function conversation(initialProfile = {}, afterHours = false) {
             updated_at: '2026-09-12T12:00:00Z',
           }];
         }
-        if (query === 'rpc/merge_attendance_profile') {
-          assert.equal(options.body.p_company_id, input.companyId);
-          assert.equal(options.body.p_lead_id, input.leadId);
-          profile = { ...profile, ...plain(options.body.p_profile) };
-          return true;
-        }
         if (query === 'companies?id=eq.company-a&select=id,slug&limit=1') {
           return [{ id: 'company-a', slug: 'imobiliaria-a' }];
-        }
-        if (query === 'rpc/enqueue_conversation_message') {
-          assert.equal(options.body.p_company_id, input.companyId);
-          assert.equal(options.body.p_conversation_id, input.conversationId);
-          replies.push(options.body.p_content);
-          return `queued-${replies.length}`;
         }
         failures.push(query);
         throw new Error('Unexpected database operation: ' + query);
@@ -118,7 +117,7 @@ function conversation(initialProfile = {}, afterHours = false) {
   }
   assert.ok(natural.clarificationReply({}).startsWith(OPENING_QUESTION));
   const opening = conversation();
-  assert.equal(await opening.receive('Oi'), `Olá! Sou o assistente da imobiliária. Vou te ajudar a encontrar um imóvel. ${OPENING_QUESTION}`);
+  assert.equal(await opening.receive('Oi'), `Olá! Sou o assistente da imobiliária. Vou te ajudar a encontrar um imóvel.\n\n${OPENING_QUESTION}`);
   assert.ok((await opening.receive('não entendi')).includes(OPENING_QUESTION));
   assert.deepEqual(opening.profile, {});
 

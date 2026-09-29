@@ -4,7 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
+const { singleMessageTurns } = require('./attendance-turn-fixture.cjs');
 function load(file, mocks = {}) {
+  mocks = { 'node:timers/promises': { setTimeout: async () => {} }, ...mocks };
   const module = { exports: {} };
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -18,7 +20,7 @@ const { businessTime, defaultBusinessHours } = load('lib/business-hours.ts');
 const { QUALIFICATION_COMPLETE_MESSAGE } = load('lib/ai/qualification.ts');
 async function scenario(date, settings, closed) {
   let profile = {}, saveAllowed = true;
-  const sent = [], claims = new Set();
+  const sent = [];
   let paused = false;
   const api = load('lib/attendance.ts', {
     './ai/openai-provider': { configuredAIProvider: () => null },
@@ -27,24 +29,25 @@ async function scenario(date, settings, closed) {
     } },
     './business-hours': { businessTime: (_, config) => businessTime(new Date(date), config) },
     './message-outbox': { sendQueuedMessage: async () => {} },
-    './supabase': { supabaseServiceRequest: async (query, options = {}) => {
-      if (query === 'rpc/claim_attendance_reply') {
-        if (claims.has(options.body.p_key)) return false;
-        claims.add(options.body.p_key); return true;
-      }
+    './attendance-turns': singleMessageTurns({
+      canClaim: () => !paused,
+      enqueue: async (input, content, options) => {
+        assert.equal(input.companyId, 'company-test');
+        assert.equal(input.leadId, 'lead-test');
+        assert.equal(input.conversationId, 'conversation-test');
+        assert.equal(options.profileVersion, 'v1');
+        if (!saveAllowed) return { status: 'superseded' };
+        profile = { ...profile, ...options.profilePatch };
+        paused ||= options.handoff;
+        sent.push(content);
+        return { status: 'queued', messageId: 'test-outbox-id' };
+      },
+    }),
+    './supabase': { supabaseServiceRequest: async (query) => {
       if (query.startsWith('leads?')) {
         assert.match(query, /company_id=eq.company-test&id=eq.lead-test/);
         return [{ interest_profile: profile, goal: '', property_type: '', region: '', budget_max: 0, updated_at: 'v1' }];
       }
-      if (query === 'rpc/merge_attendance_profile') {
-        assert.equal(options.body.p_company_id, 'company-test');
-        if (saveAllowed) profile = { ...profile, ...options.body.p_profile };
-        return saveAllowed;
-      }
-      if (query === 'rpc/enqueue_conversation_message') {
-        sent.push(options.body.p_content); return 'test-outbox-id';
-      }
-      if (query.startsWith('conversations?')) { paused = options.body.bot_paused; return null; }
       assert.fail('Unexpected operation: ' + query);
     } },
   });
@@ -61,7 +64,10 @@ async function scenario(date, settings, closed) {
   assert.match(sent.at(-1), /Está certo\?$/);
   // A rejected save must not produce a successful completion notice.
   saveAllowed = false;
+  const beforeFailedSave = sent.length;
   await api.respondToIncomingMessage({ ...input, message: 'sim', incomingExternalMessageId: 'failed-save' });
+  assert.equal(sent.length, beforeFailedSave, 'a CAS conflict defers without sending a fallback or success message');
+  assert.equal(profile.summaryConfirmed, undefined, 'a rejected atomic enqueue cannot save confirmation');
   assert.doesNotMatch(sent.at(-1), /cadastro foi concluído|Muito obrigado pelas informações/);
   saveAllowed = true;
   const confirmation = { ...input, message: 'sim', incomingExternalMessageId: 'confirmed' };

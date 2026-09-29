@@ -8,6 +8,8 @@ export type DeliveryStatus =
   | "read"
   | "failed";
 export function deliveryError(code: number | null) {
+  if (code === -29001)
+    return "Resposta automática cancelada antes do envio porque a conversa foi atualizada.";
   if (code === 0)
     return "Envio cancelado porque o responsável pelo atendimento mudou.";
   if (code === 130497)

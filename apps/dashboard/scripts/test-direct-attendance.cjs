@@ -1,6 +1,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const vm=require('node:vm');const ts=require('typescript');
+const {singleMessageTurns}=require('./attendance-turn-fixture.cjs');
 function load(relative, overrides={}) {
+ overrides={'node:timers/promises':{setTimeout:async()=>{}},...overrides};
  const source=fs.readFileSync(path.join(__dirname,'..',relative),'utf8');
  const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  const module={exports:{}};
@@ -9,21 +11,23 @@ function load(relative, overrides={}) {
  return module.exports;
 }
 (async()=>{
- let calls=[],sent=[];
+ let calls=[],sent=[],queuedTurns=[];
  const supabaseServiceRequest=async(path,options={})=>{
    calls.push({path,options});
-   if(path==='rpc/claim_attendance_reply') return true;
-   if(path==='rpc/enqueue_conversation_message') {sent.push({text:{body:options.body.p_content}});return 'queued';}
-   if(path==='rpc/merge_attendance_profile')return true;
    if(path.startsWith('leads?')) return [{interest_profile:{},goal:'Não informado',property_type:'Não informado',region:'Não informado',budget_max:null,updated_at:'2026-09-10T12:00:00Z'}];
    if(path.startsWith('messages?')) return [];
-   if(path==='rpc/finish_attendance_reply') return null;
    throw new Error('Unexpected '+path);
  };
  const originalFetch=global.fetch;
  global.fetch=async(_url,options)=>{sent.push(JSON.parse(options.body));return {ok:true,json:async()=>({messages:[{id:'wamid.accepted'}]})}};
  try {
    const api=load('lib/attendance.ts',{
+     './attendance-turns':singleMessageTurns({enqueue:async(input,content,options)=>{
+       queuedTurns.push({input,content,options});sent.push({text:{body:content}});
+       assert.equal(options.profileVersion,'2026-09-10T12:00:00Z');
+       assert.equal(options.profilePatch.propertyType,'Apartamento');
+       return {status:'queued',messageId:'queued'};
+     }}),
      './supabase':{supabaseServiceRequest},
      './conversation-settings':{readBusinessHours:async()=>load('lib/business-hours.ts').defaultBusinessHours},
      './message-outbox':{sendQueuedMessage:async()=>{}},
@@ -34,17 +38,22 @@ function load(relative, overrides={}) {
    assert.equal(api.attendanceTime(new Date('2026-09-10T20:59:00Z')).afterHours,false);
    assert.equal(api.attendanceTime(new Date('2026-09-10T21:00:00Z')).afterHours,true);
    assert.equal(sent.length,1);assert.match(sent[0].text.body,/Quer comprar ou alugar/);
-   assert.equal(calls.filter(c=>c.path==='rpc/enqueue_conversation_message').length,1);
+   assert.equal(queuedTurns.length,1);
+   assert.equal(calls.filter(c=>c.path.startsWith('leads?')).length,1,'one lead snapshot per turn');
    console.log('PASS chatbot queues a deterministic reply without n8n or OpenAI');
    // Exercise the actual reply/enqueue path, preserving each answer as the DB does.
    let profile={}, completionSends=[], deliveryCalls=0;
    const completion=load('lib/attendance.ts',{
+     './attendance-turns':singleMessageTurns({enqueue:async(input,content,options)=>{
+       assert.equal(input.companyId,'company-a');assert.equal(input.leadId,'lead-a');
+       assert.equal(options.profileVersion,'2026-09-10T12:00:00Z');
+       profile={...profile,...options.profilePatch};completionSends.push(content);
+       return {status:'queued',messageId:'completion-queued'};
+     }}),
      './supabase':{supabaseServiceRequest:async(path,options={})=>{
-       if(path==='rpc/claim_attendance_reply')return true;
        if(path.startsWith('leads?'))return [{interest_profile:profile,goal:'Não informado',property_type:'Não informado',region:'Não informado',budget_max:null,updated_at:'2026-09-10T12:00:00Z'}];
        if(path==='rpc/merge_attendance_profile'){profile={...profile,...options.body.p_profile};return true;}
        if(path==='companies?id=eq.company-a&select=id,slug&limit=1')return [{id:'company-a',slug:'imobiliaria-a'}];
-       if(path==='rpc/enqueue_conversation_message'){completionSends.push(options.body.p_content);return 'completion-queued';}
        assert.fail('Unexpected completion operation '+path);
      }},
      './conversation-settings':{readBusinessHours:async()=>load('lib/business-hours.ts').defaultBusinessHours},
@@ -105,26 +114,24 @@ function load(relative, overrides={}) {
    assert.equal(profile.city,undefined,'unclear reply must not contaminate the profile');
    console.log('PASS full qualification queues and sends exact completion text, including zero spaces and later greetings');
    sent=[]; calls=[]; const noClaim=load('lib/attendance.ts',{
-     './supabase':{supabaseServiceRequest:async path=>path==='rpc/claim_attendance_reply'?false:assert.fail('duplicate continued')},
+     './attendance-turns':singleMessageTurns({canClaim:()=>false,enqueue:async()=>assert.fail('duplicate queued')}),
+     './supabase':{supabaseServiceRequest:async()=>assert.fail('duplicate continued')},
      './conversation-settings':{readBusinessHours:async()=>load('lib/business-hours.ts').defaultBusinessHours},
      './message-outbox':{sendQueuedMessage:async()=>assert.fail('duplicate sent')},
      './ai/openai-provider':{configuredAIProvider:()=>null},'./ai/qualification':load('lib/ai/qualification.ts')});
    await noClaim.respondToIncomingMessage({companyId:'00000000-0000-4000-8000-000000000001',leadId:'00000000-0000-4000-8000-000000000002',conversationId:'00000000-0000-4000-8000-000000000003',incomingExternalMessageId:'wamid.in',message:'oi',hasImage:false,recipientPhone:'5535999999999',phoneNumberId:'123456789',accessToken:'secret',apiVersion:'v26.0',occurredAt:new Date().toISOString()});
    assert.equal(sent.length,0);console.log('PASS duplicate inbound event cannot send a second chatbot reply');
-   // A prior away reply must not consume a later, distinct human-handoff request.
-   let paused=0,queued=0; const claimedKeys=new Set();
+   // Handoff is atomically attached to this distinct turn, not an away-message key.
+   let paused=0,queued=0;
    const handoff=load('lib/attendance.ts',{
-     './supabase':{supabaseServiceRequest:async(path,options={})=>{
-       if(path==='rpc/claim_attendance_reply') {
-         const key=options.body.p_key;
-         if(key.startsWith('after-hours:') || claimedKeys.has(key))return false;
-         claimedKeys.add(key);return true;
-       }
-       if(path==='rpc/enqueue_conversation_message'){queued++;return 'handoff-message';}
-       if(path.startsWith('conversations?') && options.method==='PATCH') {
-         assert.equal(options.body.bot_paused,true);
-         assert.match(path,/company_id=eq.company-a&id=eq.conversation-a/);paused++;return null;
-       }
+     './attendance-turns':singleMessageTurns({enqueue:async(input,content,options)=>{
+       assert.equal(input.companyId,'company-a');assert.equal(input.conversationId,'conversation-a');
+       assert.match(content,/próximo horário comercial/,'outside-hours handoff does not promise immediate availability');
+       assert.equal(options.handoff,true);paused++;queued++;
+       return {status:'queued',messageId:'handoff-message'};
+     }}),
+     './supabase':{supabaseServiceRequest:async(path)=>{
+       if(path.startsWith('leads?'))return [{interest_profile:{},goal:'Não informado',property_type:'Não informado',region:'Não informado',budget_max:null,updated_at:'v1'}];
        assert.fail('Unexpected handoff operation '+path);
      }},
      './conversation-settings':{readBusinessHours:async()=>({...load('lib/business-hours.ts').defaultBusinessHours,timeZone:'UTC',holidays:[new Date().toISOString().slice(0,10)]})},
@@ -132,12 +139,12 @@ function load(relative, overrides={}) {
    });
    const handoffInput={companyId:'company-a',leadId:'lead-a',conversationId:'conversation-a',incomingExternalMessageId:'wamid.handoff',message:'Quero falar com um corretor',hasImage:false,recipientPhone:'5535999999999',phoneNumberId:'123456789',accessToken:'secret',apiVersion:'v26.0',occurredAt:new Date().toISOString()};
    await handoff.respondToIncomingMessage(handoffInput);
-   assert.equal(paused,1,'human request must pause bot even after an away reply');
+   assert.equal(paused,1,'human request must pause bot even outside business hours');
    assert.equal(queued,1);
    await handoff.respondToIncomingMessage(handoffInput);
    assert.equal(paused,1,'replayed event must not pause a subsequently resumed bot');
    assert.equal(queued,1,'handoff must not duplicate its reply');
-   console.log('PASS after-hours handoff is independent of away-message deduplication and remains idempotent');
+   console.log('PASS after-hours handoff pauses atomically and remains idempotent');
    const {manualWhatsAppDraft}=load('lib/opportunities.ts',{'./tenant-context':{},'./supabase':{},'./property-matching':load('lib/property-matching.ts')});
    const draft=manualWhatsAppDraft({phone:'(35) 99999-9999',name:'João Silva',title:'Residencial X',district:'Centro',city:'Lavras',price:570000,bedrooms:3,purpose:'Venda'});
    assert.match(draft.url,/wa\.me\/5535999999999/);assert.match(decodeURIComponent(draft.url),/R\$ 570\.000/);assert.match(draft.message,/João/);
@@ -171,8 +178,13 @@ function load(relative, overrides={}) {
    const fullProfile={purpose:'Venda',propertyType:'Casa',city:'Lavras',regions:['Centro'],budgetMax:400000,bedrooms:2,parkingSpaces:2,financingIntent:'Sim'};
    let mixedProfile={...fullProfile}, mixedPaused=false, mixedReplies=[], historyInput, modelHandoff=false;
    const understanding=load('lib/attendance.ts',{
+     './attendance-turns':singleMessageTurns({canClaim:()=>!mixedPaused,enqueue:async(input,content,options)=>{
+       assert.equal(input.companyId,'company-a');assert.equal(input.conversationId,'conversation-a');
+       assert.equal(options.profileVersion,'v1');
+       mixedProfile={...mixedProfile,...options.profilePatch};mixedReplies.push(content);mixedPaused||=options.handoff;
+       return {status:'queued',messageId:'mixed-queued'};
+     }}),
      './supabase':{supabaseServiceRequest:async(p,o={})=>{
-       if(p==='rpc/claim_attendance_reply')return !mixedPaused;
        if(p.startsWith('leads?'))return [{interest_profile:mixedProfile,goal:'Comprar',property_type:'Casa',region:'Centro',budget_max:400000,updated_at:'v1'}];
        if(p.startsWith('messages?')){
          assert.ok(p.includes('company_id=eq.company-a&conversation_id=eq.conversation-a'),'history is tenant and conversation scoped');
@@ -180,8 +192,6 @@ function load(relative, overrides={}) {
          return [{direction:'outgoing',content:'Está certo?',external_message_id:'old-bot'}, {direction:'incoming',content:'Dois quartos',external_message_id:'old-client'}];
        }
        if(p==='rpc/merge_attendance_profile'){mixedProfile={...mixedProfile,...o.body.p_profile};return true;}
-       if(p==='rpc/enqueue_conversation_message'){mixedReplies.push(o.body.p_content);return 'mixed-queued';}
-       if(p.startsWith('conversations?')){assert.equal(o.body.bot_paused,true);mixedPaused=true;return null;}
        throw new Error('Unexpected mixed operation '+p);
      }},
      './ai/openai-provider':{configuredAIProvider:()=>({extractLeadProfile:async(input)=>{
