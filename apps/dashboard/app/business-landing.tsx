@@ -4,6 +4,8 @@ import { useEffect, useRef } from 'react';
 import s from './business-landing.module.css';
 import ProductPreview from './product-preview';
 
+const WHATSAPP_CONTACT_URL = 'https://wa.me/5535991652306';
+
 function Brand({small=false}:{small?:boolean}) {
   return <span className={`${s.brand} ${small?s.smallBrand:''}`}><svg viewBox="0 0 32 44" width="30" height="41" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 41V24l8-4v21M11 20V7l12-5v39M23 16h6v25"/></svg><span><strong>ImobFlow</strong>{!small&&<span>GESTÃO IMOBILIÁRIA</span>}</span></span>;
 }
@@ -39,7 +41,7 @@ export default function BusinessLanding(){
 
     <section id="como-funciona" className={s.how} data-reveal><div><p className={s.eyebrow}>COMO FUNCIONA</p><h2>Uma rotina mais simples.<br/><span>Em três passos.</span></h2></div><ol>{[['Configure sua imobiliária','Cadastre a equipe, os imóveis e conecte o WhatsApp da empresa.'],['Organize o atendimento','Receba os leads, reúna as preferências e acompanhe os responsáveis.'],['Acompanhe e melhore','Veja oportunidades, metas e resultados para orientar os próximos passos.']].map(([title,copy],i)=><li key={title}><span>0{i+1}</span><div><h3>{title}</h3><p>{copy}</p></div></li>)}</ol></section>
 
-    <section className={s.closing} data-reveal><p className={s.eyebrow}>MAIS FOCO NO QUE IMPORTA</p><h2>Sua equipe cuida das relações.<br/><span>A ImobFlow ajuda com a rotina.</span></h2><a className={s.primary} href="mailto:imobflow.ai@gmail.com?subject=Quero%20conhecer%20a%20ImobFlow">Conversar sobre minha imobiliária <Arrow/></a><p className={s.contactNote}>Fale com a equipe em <a href="mailto:imobflow.ai@gmail.com">imobflow.ai@gmail.com</a></p></section>
+    <section className={s.closing} data-reveal><p className={s.eyebrow}>MAIS FOCO NO QUE IMPORTA</p><h2>Sua equipe cuida das relações.<br/><span>A ImobFlow ajuda com a rotina.</span></h2><a className={s.primary} href={WHATSAPP_CONTACT_URL} target="_blank" rel="noopener noreferrer" aria-label="Conversar sobre minha imobiliária pelo WhatsApp (abre em nova aba)">Conversar sobre minha imobiliária <Arrow/></a><p className={s.contactNote}>Fale com a equipe pelo WhatsApp: <a href={WHATSAPP_CONTACT_URL} target="_blank" rel="noopener noreferrer">(35) 99165-2306</a></p></section>
     <footer className={s.footer}><a href="#" aria-label="ImobFlow — início"><Brand small/></a><span>Organização e automação para imobiliárias.</span><div><a href="/privacidade">Privacidade</a><a href="/painel">Acessar painel <Arrow/></a></div></footer>
   </main>;
 }
