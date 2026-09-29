@@ -14,8 +14,10 @@ const nextConfig: NextConfig = {
     return [{ source: '/:path*', headers: [
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      { key: 'X-Frame-Options', value: 'DENY' },
     ] }, { source: '/demonstracao', headers: [
+      // Keep this exception after the default: only the isolated demo is embeddable.
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
       { key: 'Content-Security-Policy', value: "connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'" },
       { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
     ] }];

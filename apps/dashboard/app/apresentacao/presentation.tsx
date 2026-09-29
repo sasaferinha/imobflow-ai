@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { startPresentationHandshake } from '@/lib/presentation-handshake';
 import { chapters, cleanCopies, isChapter, storageKey, type ChapterId, type Copy } from './content';
 import s from './presentation.module.css';
 
@@ -10,6 +11,7 @@ export default function Presentation() {
   const frame = useRef<HTMLIFrameElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
+  const handshake = useRef<ReturnType<typeof startPresentationHandshake> | null>(null);
   const [active, setActive] = useState<ChapterId>('overview');
   const [copies, setCopies] = useState<Partial<Record<ChapterId, Copy>>>({});
   const [editing, setEditing] = useState(false);
@@ -17,6 +19,8 @@ export default function Presentation() {
   const [shown, setShown] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [width, setWidth] = useState(0);
   const [status, setStatus] = useState('');
   const index = chapters.findIndex(chapter => chapter.id === active);
@@ -32,25 +36,47 @@ export default function Presentation() {
   }
 
   useEffect(() => {
+    initialized.current = false;
+    const bridge = startPresentationHandshake({
+      host: window,
+      getFrameWindow: () => frame.current?.contentWindow ?? null,
+      isView: isChapter,
+      onReady: view => {
+        if (!isChapter(view)) return;
+        setReady(true);
+        setLoadFailed(false);
+        if (!initialized.current) { initialized.current = true; navigate('overview'); return; }
+        setActive(view);
+        setEditing(false);
+      },
+      onTimeout: () => setLoadFailed(true),
+    });
+    handshake.current = bridge;
+    return () => { bridge.dispose(); handshake.current = null; };
+  }, [attempt]);
+
+  function retryPanel() {
+    setReady(false);
+    setLoadFailed(false);
+    setActive('overview');
+    setEditing(false);
+    setAttempt(value => value + 1);
+  }
+
+  useEffect(() => {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
       try { setCopies(cleanCopies(JSON.parse(localStorage.getItem(storageKey) ?? '{}'))); } catch { setStatus('Os textos salvos não puderam ser carregados. Usando o roteiro original.'); }
     });
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
-    if (stage.current) observer.observe(stage.current);
-    const receive = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || event.source !== frame.current?.contentWindow) return;
-      if (event.data?.type !== 'imobflow-demo-active' || !isChapter(event.data.view)) return;
-      setReady(true);
-      if (!initialized.current) { initialized.current = true; navigate('overview'); return; }
-      setActive(event.data.view);
-      setEditing(false);
-    };
+    const measure = () => { if (stage.current) setWidth(stage.current.getBoundingClientRect().width); };
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    if (stage.current) observer?.observe(stage.current);
+    measure();
+    window.addEventListener('resize', measure);
     const syncFullscreen = () => setFullscreen(document.fullscreenElement === root.current);
-    window.addEventListener('message', receive);
     document.addEventListener('fullscreenchange', syncFullscreen);
-    return () => { active = false; observer.disconnect(); window.removeEventListener('message', receive); document.removeEventListener('fullscreenchange', syncFullscreen); };
+    return () => { active = false; observer?.disconnect(); window.removeEventListener('resize', measure); document.removeEventListener('fullscreenchange', syncFullscreen); };
   }, []);
 
   async function toggleFullscreen() {
@@ -80,8 +106,12 @@ export default function Presentation() {
       <section className={s.product} aria-label="Explore o painel de administrador">
         <div className={s.toolbar}><span><i aria-hidden="true"/> Painel de administrador</span><span>Dados fictícios · sem envios reais</span></div>
         <div ref={stage} className={s.stage}>
-          {!ready && <p className={s.loading} role="status">Carregando o painel…</p>}
-          <iframe ref={frame} src="/demonstracao" title="Painel de administrador demonstrativo da ImobFlow" sandbox="allow-scripts allow-same-origin" allow="camera 'none'; microphone 'none'; geolocation 'none'" className={s.frame} style={{ width: panelWidth, height: `${100 / scale}%`, transform: `scale(${scale})` }} />
+          {!ready && <div className={s.loading} role="status">
+            <p>{loadFailed ? 'Não foi possível carregar o painel demonstrativo.' : 'Carregando o painel…'}</p>
+            {loadFailed && <><p className={s.loadingHelp}>A demonstração não respondeu. Tente novamente ou abra o painel em outra aba.</p><div className={s.loadingActions}><button type="button" onClick={retryPanel}>Tentar novamente</button><a href="/demonstracao" target="_blank" rel="noopener noreferrer">Abrir demonstração ↗</a></div></>}
+            <noscript>Ative o JavaScript do navegador para explorar a demonstração.</noscript>
+          </div>}
+          <iframe key={attempt} ref={frame} src="/demonstracao" onLoad={() => handshake.current?.request()} title="Painel de administrador demonstrativo da ImobFlow" sandbox="allow-scripts allow-same-origin" allow="camera 'none'; microphone 'none'; geolocation 'none'" className={s.frame} style={{ width: panelWidth, height: `${100 / scale}%`, transform: `scale(${scale})` }} />
         </div>
       </section>
       {shown && <aside id="presentation-copy" className={s.explanation} aria-label="Explicação da área selecionada">

@@ -14,6 +14,9 @@ Rota pública: `/apresentacao`. Usa o painel de administrador existente em um if
 - Conteúdo: `apps/dashboard/app/apresentacao/content.ts`.
 - Interface: `apps/dashboard/app/apresentacao/presentation.tsx` e módulo CSS.
 - Mensagens entre iframe e página exigem origem e janela de origem correspondentes. Somente áreas conhecidas são aceitas.
+- A página pede o estado ao iframe no carregamento e repete a solicitação a cada 750 ms, até receber uma resposta válida. Isso recupera avisos perdidos quando o painel fica pronto antes da página. Após 15 segundos sem resposta, oferece **Tentar novamente** e **Abrir demonstração**, em vez de um carregamento infinito. Uma resposta tardia também recupera a apresentação.
+- Os cabeçalhos são definidos pelo Next: somente `/demonstracao` permite incorporação pela mesma origem (`SAMEORIGIN` e `frame-ancestors 'self'`). As demais rotas mantêm `DENY`. O CSP da demonstração continua bloqueando conexões, formulários e iframes internos; não duplicar `X-Frame-Options` no `vercel.json`.
 - O evento de área ativa inclui o modal Corretores apenas em modo demonstrativo; o painel de produção mantém seu comportamento.
-- Verificação local: `.codex-build/test-presentation.cjs` (Playwright/Edge), usando `PRESENTATION_ORIGIN` para escolher a origem. Testa dez áreas, navegação bidirecional, edição/persistência/restauração, tela cheia, ocultar/mostrar, rejeição de mensagens de outra janela, celular, teclado, redução de movimento e ausência de chamadas às APIs.
+- Regressão automatizada: `pnpm run test:presentation`, incluída em `build:production`. Exercita a troca de mensagens, carregamento fora de ordem, timeout, resposta tardia, cleanup, retry e cabeçalhos de incorporação sem acessar produção.
+- Validação visual no navegador: abrir `/apresentacao`, confirmar que o painel aparece, navegar por **Próxima área** e pelos menus internos, ocultar/mostrar a explicação e verificar também uma largura de celular. A navegação e os textos editados devem continuar funcionando.
 - O teste de isolamento existente `scripts/test-product-demo.cjs` também deve passar.

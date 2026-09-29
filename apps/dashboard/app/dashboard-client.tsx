@@ -224,8 +224,13 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
 
   useEffect(() => {
     if (!publicDemo) return;
+    const announce = () => window.parent.postMessage({ type: 'imobflow-demo-active', view: utilityModal === 'team' ? 'team' : view }, window.location.origin);
     const receive = (event: MessageEvent) => {
       if (event.source !== window.parent || event.origin !== window.location.origin) return;
+      if (event.data?.type === 'imobflow-demo-status-request') {
+        announce();
+        return;
+      }
       if (event.data?.type === 'imobflow-demo-view' && event.data.view === 'team') {
         setUtilityModal('team');
         return;
@@ -236,11 +241,8 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
       }
     };
     window.addEventListener('message', receive);
+    announce();
     return () => window.removeEventListener('message', receive);
-  }, [publicDemo]);
-
-  useEffect(() => {
-    if (publicDemo) window.parent.postMessage({ type: 'imobflow-demo-active', view: utilityModal === 'team' ? 'team' : view }, window.location.origin);
   }, [publicDemo, view, utilityModal]);
 
   useEffect(() => subscribeDashboardSync({ entities: ['opportunities'], interval: 30000,

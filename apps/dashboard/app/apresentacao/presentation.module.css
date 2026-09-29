@@ -17,7 +17,11 @@
 .toolbar i { width:6px; height:6px; border-radius:50%; background:#0062df; }
 .stage { flex:1; min-height:0; position:relative; overflow:hidden; }
 .frame { border:0; display:block; transform-origin:top left; background:#fff; }
-.loading { position:absolute; z-index:1; inset:0; margin:0; display:grid; place-items:center; background:white; color:#536279; font-size:14px; }
+.loading { position:absolute; z-index:1; inset:0; margin:0; padding:24px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:white; color:#536279; font-size:14px; text-align:center; }
+.loading p { margin:0; }
+.loadingHelp { max-width:390px; line-height:1.6; }
+.loadingActions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:16px; }
+.loadingActions a { color:#075bcc; font-size:13px; text-underline-offset:3px; }
 .explanation { width:clamp(370px,36vw,600px); flex-shrink:0; overflow:auto; padding:24px clamp(16px,2vw,36px) 16px; display:flex; flex-direction:column; background:#fff; border-radius:12px; }
 .sectionHeading { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:36px; font-size:12px; font-weight:500; letter-spacing:-.01em; color:#626971; }
 .sectionHeading button { border:0; background:transparent; color:#075bcc; padding:4px; white-space:nowrap; }
