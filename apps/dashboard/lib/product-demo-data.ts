@@ -8,12 +8,13 @@ import type { SharedDemoThread } from './shared-demo-conversations';
 
 // Public fictional examples. This module never reads an account, cookie or API.
 export const productDemoAccount = {
-  brokerId: '00000000-0000-4000-8000-000000000101',
-  name: 'Marina Alves',
+  brokerId: '00000000-0000-4000-8000-000000000100',
+  name: 'Administrador',
   company: 'Imobiliária Exemplo',
   role: 'owner' as const,
 };
 
+const firstBrokerId = '00000000-0000-4000-8000-000000000101';
 const secondBrokerId = '00000000-0000-4000-8000-000000000102';
 const readOnlyMessage = 'Esta é uma demonstração com dados fictícios. Alterações e envios estão disponíveis no painel da sua imobiliária.';
 
@@ -98,7 +99,7 @@ export function createProductDemoTransport(): typeof fetch {
   }];
   const attendance: ConversationAttendanceSummary[] = leads.map((lead, index) => ({
     leadId: lead.id, attendanceMode: index === 2 ? 'closed' : 'human', assignedTo: lead.assignedTo,
-    assignedBrokerId: index === 1 ? secondBrokerId : productDemoAccount.brokerId,
+    assignedBrokerId: index === 1 ? secondBrokerId : firstBrokerId,
   }));
   const dialogues: Array<Array<[ConversationMessage['side'], string]>> = [
     [
@@ -141,7 +142,8 @@ export function createProductDemoTransport(): typeof fetch {
     awayMessage: 'Recebemos suas informações. Nossa equipe continua o atendimento no próximo horário comercial.',
   };
   const team = [
-    { id: productDemoAccount.brokerId, name: productDemoAccount.name, role: 'owner', email: 'marina@example.invalid', active: true, created_at: timestamp },
+    { id: productDemoAccount.brokerId, name: productDemoAccount.name, role: 'owner', email: 'admin@example.invalid', active: true, created_at: timestamp },
+    { id: firstBrokerId, name: 'Marina Alves', role: 'broker', email: 'marina@example.invalid', active: true, created_at: timestamp },
     { id: secondBrokerId, name: 'Rafael Costa', role: 'broker', email: 'rafael@example.invalid', active: true, created_at: timestamp },
   ];
   const sharedThreads: SharedDemoThread[] = demoContacts.map(contact => ({
@@ -163,7 +165,7 @@ export function createProductDemoTransport(): typeof fetch {
       salesCount: active ? 1 : 0, averageTicket: active ? 480000 : 0,
       leadsReceived: active ? 3 : 0, convertedLeads: active ? 1 : 0, recoveredLeads: 0,
       conversionRate: active ? 100 / 3 : 0, history,
-      brokers: team.map((broker, index) => ({
+      brokers: team.filter(broker => broker.role === 'broker').map((broker, index) => ({
         broker: broker.name, goal: 500000, sold: active && index === 0 ? 480000 : 0,
         salesCount: active && index === 0 ? 1 : 0, progress: active && index === 0 ? 96 : 0,
         leadsReceived: active ? index === 0 ? 2 : 1 : 0, convertedLeads: active && index === 0 ? 1 : 0,

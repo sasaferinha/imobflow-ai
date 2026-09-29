@@ -181,7 +181,7 @@ function announcePropertyChange() {
   announceDashboardChange('properties');
 }
 
-export default function DashboardClient({ account, publicDemo = false, initialView = 'overview' }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View }) {
+export default function DashboardClient({ account, publicDemo = false, initialView = 'overview', initialDarkMode = false }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View; initialDarkMode?: boolean }) {
   const [view, setView] = useState<View>(initialView);
   const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createLiveConversationState);
   const [leadSearch, setLeadSearch] = useState('');
@@ -203,7 +203,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   const [profileOpen, setProfileOpen] = useState(false);
   const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | 'team' | 'password' | null>(null);
   const [profile, setProfile] = useState({ name: account?.name || 'Corretor', company: account?.company || 'Imobiliária' });
-  const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: false });
+  const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: publicDemo && initialDarkMode });
   const [notifications, setNotifications] = useState<Opportunity[]>([]);
   const [focusedOpportunity, setFocusedOpportunity] = useState<string>();
   const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>([]);

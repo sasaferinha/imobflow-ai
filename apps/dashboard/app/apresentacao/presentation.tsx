@@ -108,10 +108,10 @@ export default function Presentation() {
         <div ref={stage} className={s.stage}>
           {!ready && <div className={s.loading} role="status">
             <p>{loadFailed ? 'Não foi possível carregar o painel demonstrativo.' : 'Carregando o painel…'}</p>
-            {loadFailed && <><p className={s.loadingHelp}>A demonstração não respondeu. Tente novamente ou abra o painel em outra aba.</p><div className={s.loadingActions}><button type="button" onClick={retryPanel}>Tentar novamente</button><a href="/demonstracao" target="_blank" rel="noopener noreferrer">Abrir demonstração ↗</a></div></>}
+            {loadFailed && <><p className={s.loadingHelp}>A demonstração não respondeu. Tente novamente ou abra o painel em outra aba.</p><div className={s.loadingActions}><button type="button" onClick={retryPanel}>Tentar novamente</button><a href="/demonstracao?mode=admin" target="_blank" rel="noopener noreferrer">Abrir demonstração ↗</a></div></>}
             <noscript>Ative o JavaScript do navegador para explorar a demonstração.</noscript>
           </div>}
-          <iframe key={attempt} ref={frame} src="/demonstracao" onLoad={() => handshake.current?.request()} title="Painel de administrador demonstrativo da ImobFlow" sandbox="allow-scripts allow-same-origin" allow="camera 'none'; microphone 'none'; geolocation 'none'" className={s.frame} style={{ width: panelWidth, height: `${100 / scale}%`, transform: `scale(${scale})` }} />
+          <iframe key={attempt} ref={frame} src="/demonstracao?mode=admin" onLoad={() => handshake.current?.request()} title="Painel de administrador demonstrativo da ImobFlow" sandbox="allow-scripts allow-same-origin" allow="camera 'none'; microphone 'none'; geolocation 'none'" className={s.frame} style={{ width: panelWidth, height: `${100 / scale}%`, transform: `scale(${scale})` }} />
         </div>
       </section>
       {shown && <aside id="presentation-copy" className={s.explanation} aria-label="Explicação da área selecionada">

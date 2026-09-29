@@ -325,7 +325,7 @@ test('parent integration requests real readiness on load and remounts the iframe
     && node.tagName.getText(parent) === 'iframe');
   assert.equal(frame.length, 1);
   const attribute = name => frame[0].attributes.properties.find(node => ts.isJsxAttribute(node) && node.name.text === name);
-  assert.equal(attribute('src').initializer.text, '/demonstracao');
+  assert.equal(attribute('src').initializer.text, '/demonstracao?mode=admin');
   assert.equal(attribute('key').initializer.expression.getText(parent), 'attempt');
   assert.match(attribute('onLoad').initializer.expression.getText(parent), /handshake\.current\?\.request\(\)/);
   assert.doesNotMatch(attribute('onLoad').getText(parent), /setReady|setLoadFailed/,

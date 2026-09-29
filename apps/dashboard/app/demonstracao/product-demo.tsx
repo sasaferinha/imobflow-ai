@@ -8,10 +8,16 @@ import './product-demo.css';
 
 export default function ProductDemo() {
   const [ready, setReady] = useState(false);
+  const [adminPresentation, setAdminPresentation] = useState(false);
+  const [embedded, setEmbedded] = useState(false);
   const [notice, setNotice] = useState('Explore o painel. Os dados são fictícios e as alterações não são salvas.');
   useEffect(() => {
     const uninstall = installProductDemoTransport(createProductDemoTransport());
-    const timer = window.setTimeout(() => setReady(true), 0);
+    const timer = window.setTimeout(() => {
+      setAdminPresentation(new URLSearchParams(window.location.search).get('mode') === 'admin');
+      setEmbedded(window.parent !== window);
+      setReady(true);
+    }, 0);
     // Height follows the actual panel so the landing keeps one natural page scroll.
     const resize = new ResizeObserver(() => {
       const height = document.querySelector('.public-product-demo')?.getBoundingClientRect().height;
@@ -30,8 +36,8 @@ export default function ProductDemo() {
     return () => { uninstall(); clearTimeout(timer); resize.disconnect(); document.removeEventListener('click', blockNavigation, true); };
   }, []);
 
-  return <div className="public-product-demo">
-    <div className="public-demo-notice" role="status"><strong>Demonstração</strong><span>{notice}</span></div>
-    {ready ? <DashboardClient publicDemo account={productDemoAccount} initialView="conversations" /> : <p className="public-demo-loading">Carregando o painel demonstrativo…</p>}
+  return <div className={`public-product-demo${adminPresentation ? ' admin-presentation-demo' : ''}${adminPresentation && embedded ? ' embedded-admin-demo' : ''}`}>
+    <div className="public-demo-notice" role="status"><strong>Demonstração · Administrador</strong><span>{notice}</span></div>
+    {ready ? <DashboardClient publicDemo account={productDemoAccount} initialView={adminPresentation ? 'overview' : 'conversations'} initialDarkMode={adminPresentation} /> : <p className="public-demo-loading">Carregando o painel demonstrativo…</p>}
   </div>;
 }

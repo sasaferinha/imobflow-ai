@@ -2,6 +2,10 @@
 
 Rota pública: `/apresentacao`. Usa o painel de administrador existente em um iframe de `/demonstracao`, com dados fictícios e o transporte isolado já utilizado pela demonstração pública. Não conecta contas nem envia mensagens reais.
 
+A apresentação abre `/demonstracao?mode=admin`: o mesmo `DashboardClient` de `/painel`, com conta fictícia `owner` chamada Administrador, visão geral inicial e tema escuro (alternável pelo botão do painel). Marina e Rafael são corretores separados, com seus próprios atendimentos e resultados. Nenhuma sessão ou preferência privada é lida. O parâmetro seleciona apenas a aparência da demonstração, nunca permissões de uma conta real.
+
+O modo de apresentação não aplica os ajustes de altura/barra lateral usados na prévia da landing page; herda o layout administrativo compartilhado. O aviso de dados fictícios permanece no contorno da apresentação e também na demonstração aberta em outra aba.
+
 ## Como apresentar
 
 1. Abra a página e selecione **Tela cheia**.
