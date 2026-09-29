@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "build:production": "pnpm run test:presentation && pnpm run test && pnpm run test:bot-turns && node scripts/test-account-sql.cjs && node scripts/test-whatsapp-handoff.cjs && node scripts/test-conversation-inbox.cjs && node scripts/test-dashboard-efficiency.cjs && node scripts/test-conversation-pagination.cjs && node scripts/test-reactivation-leads.cjs && node scripts/test-attendance-24h.cjs && node scripts/test-pilot-conversations.cjs && node scripts/test-dashboard-sync.cjs && next build && node scripts/check-openai-live.cjs --if-requested",
+    "build:production": "pnpm run test:appointments && pnpm run test:presentation && pnpm run test && pnpm run test:bot-turns && node scripts/test-account-sql.cjs && node scripts/test-whatsapp-handoff.cjs && node scripts/test-conversation-inbox.cjs && node scripts/test-dashboard-efficiency.cjs && node scripts/test-conversation-pagination.cjs && node scripts/test-reactivation-leads.cjs && node scripts/test-attendance-24h.cjs && node scripts/test-pilot-conversations.cjs && node scripts/test-dashboard-sync.cjs && next build && node scripts/check-openai-live.cjs --if-requested",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "node scripts/test-product-demo.cjs && node scripts/test-security.cjs && node scripts/test-account-access.cjs && node scripts/test-demo-conversations.cjs && node scripts/test-match-workflow.cjs && node scripts/test-automations.cjs && node scripts/test-property-deals.cjs && node scripts/test-meta-whatsapp.cjs && node scripts/test-core-opportunities.cjs && node scripts/test-direct-attendance.cjs && node scripts/test-financing-prequalification.cjs && node scripts/test-financing-opening.cjs && node scripts/test-tenant-isolation-sql.cjs && node scripts/test-tenant-isolation-api.cjs && node scripts/test-whatsapp-connection-isolation.cjs && node scripts/test-conversation-attendance.cjs && node scripts/test-message-recovery.cjs && node scripts/test-whatsapp-onboarding.cjs && node scripts/test-meta-sdk-readiness.cjs",
@@ -17,7 +17,8 @@
     "test:core": "node scripts/test-core-opportunities.cjs && node scripts/test-direct-attendance.cjs",
     "test:bot-turns": "node scripts/test-bot-dialogue.cjs && node scripts/test-attendance-turns.cjs && node scripts/test-attendance-batches.cjs",
     "test:pilot": "node scripts/test-pilot-conversations.cjs && node scripts/test-core-opportunities.cjs",
-    "test:presentation": "node scripts/test-presentation-handshake.cjs && node scripts/test-presentation-headers.cjs"
+    "test:presentation": "node scripts/test-presentation-handshake.cjs && node scripts/test-presentation-headers.cjs",
+    "test:appointments": "node scripts/test-appointment-picker.cjs && node scripts/test-appointment-selection.cjs && node scripts/test-appointment-form-layout.cjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
