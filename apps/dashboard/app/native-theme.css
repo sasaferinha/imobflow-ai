@@ -438,6 +438,9 @@ body { -webkit-font-smoothing: antialiased; }
 .app-shell.app-shell .lead-picker { margin-bottom: 18px; }
 .app-shell.app-shell .picker-search { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--secondary); color: var(--muted); }
 .app-shell.app-shell .picker-search input { min-height: 40px !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+/* The property search is one field: show focus on its neutral outer border, not a blue ring inside it. */
+.app-shell.app-shell .conversation-property-picker .picker-search input:focus-visible { outline: none; }
+.app-shell.app-shell .conversation-property-picker .picker-search:focus-within { border-color: var(--muted); }
 .app-shell.app-shell .picker-categories { display: flex; gap: 7px; margin: 10px 0; overflow-x: auto; }
 .app-shell.app-shell .picker-categories button { flex: 0 0 auto; min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 17px; background: var(--paper); color: var(--muted); font-size: 13px; }
 .app-shell.app-shell .picker-categories button[aria-pressed='true'] { border-color: #bfd7fb; background: #eaf3ff; color: var(--accent-text); }
