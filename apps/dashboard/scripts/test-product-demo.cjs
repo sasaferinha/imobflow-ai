@@ -33,7 +33,7 @@ function load(name) {
 
 async function run() {
   const { dashboardFetch, installProductDemoTransport } = load('dashboard-transport');
-  const { createProductDemoTransport } = load('product-demo-data');
+  const { createProductDemoTransport, productDemoAccount } = load('product-demo-data');
   const fixture = createProductDemoTransport();
 
   const options = { method: 'POST', body: '{"content":"normal operation"}' };
@@ -63,6 +63,20 @@ async function run() {
   const properties = await json('/api/properties');
   const performance = await json('/api/performance');
   const opportunities = await json('/api/opportunities');
+  const team = await json('/api/brokers');
+  const conversationData = await (await dashboardFetch('/api/conversations')).json();
+  assert.equal(productDemoAccount.role, 'owner', 'the presentation must enter as administrator');
+  assert.equal(productDemoAccount.name, 'Administrador');
+  assert.equal(team.filter(person => person.role === 'owner').length, 1);
+  assert.equal(team.find(person => person.role === 'owner').id, productDemoAccount.brokerId);
+  assert.equal(team.filter(person => person.role === 'broker').length, 2);
+  assert.ok(!performance.brokers.some(broker => broker.broker === productDemoAccount.name), 'the administrator must not impersonate a salesperson');
+  for (const assignment of conversationData.attendance) {
+    const broker = team.find(person => person.id === assignment.assignedBrokerId);
+    assert.equal(broker?.role, 'broker');
+    assert.equal(broker.name, assignment.assignedTo);
+    assert.notEqual(broker.id, productDemoAccount.brokerId);
+  }
   assert.equal(leads.length, 3);
   assert.equal(performance.brokers.length, 2);
   assert.equal(performance.leadsReceived, leads.length);

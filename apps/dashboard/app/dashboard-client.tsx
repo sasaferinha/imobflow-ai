@@ -181,7 +181,7 @@ function announcePropertyChange() {
   announceDashboardChange('properties');
 }
 
-export default function DashboardClient({ account, publicDemo = false, initialView = 'overview' }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View }) {
+export default function DashboardClient({ account, publicDemo = false, initialView = 'overview', initialDarkMode = false }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View; initialDarkMode?: boolean }) {
   const [view, setView] = useState<View>(initialView);
   const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createLiveConversationState);
   const [leadSearch, setLeadSearch] = useState('');
@@ -203,7 +203,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   const [profileOpen, setProfileOpen] = useState(false);
   const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | 'team' | 'password' | null>(null);
   const [profile, setProfile] = useState({ name: account?.name || 'Corretor', company: account?.company || 'Imobiliária' });
-  const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: false });
+  const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: publicDemo && initialDarkMode });
   const [notifications, setNotifications] = useState<Opportunity[]>([]);
   const [focusedOpportunity, setFocusedOpportunity] = useState<string>();
   const [capturedLeads, setCapturedLeads] = useState<DashboardLead[]>([]);
@@ -224,8 +224,13 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
 
   useEffect(() => {
     if (!publicDemo) return;
+    const announce = () => window.parent.postMessage({ type: 'imobflow-demo-active', view: utilityModal === 'team' ? 'team' : view }, window.location.origin);
     const receive = (event: MessageEvent) => {
       if (event.source !== window.parent || event.origin !== window.location.origin) return;
+      if (event.data?.type === 'imobflow-demo-status-request') {
+        announce();
+        return;
+      }
       if (event.data?.type === 'imobflow-demo-view' && event.data.view === 'team') {
         setUtilityModal('team');
         return;
@@ -236,11 +241,8 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
       }
     };
     window.addEventListener('message', receive);
+    announce();
     return () => window.removeEventListener('message', receive);
-  }, [publicDemo]);
-
-  useEffect(() => {
-    if (publicDemo) window.parent.postMessage({ type: 'imobflow-demo-active', view: utilityModal === 'team' ? 'team' : view }, window.location.origin);
   }, [publicDemo, view, utilityModal]);
 
   useEffect(() => subscribeDashboardSync({ entities: ['opportunities'], interval: 30000,

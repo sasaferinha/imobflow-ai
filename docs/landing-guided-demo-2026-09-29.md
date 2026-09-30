@@ -11,7 +11,8 @@
 - Selecao manual, teclado, pausa/retomada e pausa fora da tela/aba.
 - Preferencia por movimento reduzido desativa a reproducao automatica.
 - Apenas `/demonstracao` aceita iframe de mesma origem. As demais rotas
-  preservam `X-Frame-Options: DENY` na configuracao da Vercel.
+  preservam `X-Frame-Options: DENY` na configuracao do Next.js, sem override
+  conflitante na Vercel (correcao recebida da revisao `f84eaa7`).
 - Preservado o contato WhatsApp da revisao `e6f4105`.
 
 ## Validacao antes de publicar

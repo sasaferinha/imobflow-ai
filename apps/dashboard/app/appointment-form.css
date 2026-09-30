@@ -16,12 +16,13 @@
 .app-shell.app-shell .appointment-form button { min-height: 42px; height: auto; padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 500; background: var(--paper); color: var(--ink); }
 .app-shell.app-shell .appointment-form button[type='submit'] { border: 1px solid #0066df; background: #0066df; color: white; }
 .app-shell.app-shell.dark-mode .appointment-form select { color-scheme: dark; }
-.visit-record-field { display: grid; gap: 8px; min-width: 0; }
+/* Keep each picker vertical; the legacy .inline-form > div rule is a flex row. */
+.app-shell.app-shell .appointment-form > .visit-record-field { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 8px; width: 100%; min-width: 0; }
 .visit-record-field > span, .visit-record-selected-detail { font-size: 13px; color: var(--muted); }
-.app-shell.app-shell .appointment-form .visit-record-trigger { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; border: 1px solid var(--line); min-height: 46px; font-size: 14px; }
-.visit-record-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell.app-shell .appointment-form button.visit-record-trigger { display: flex; flex: none; justify-content: space-between; align-items: center; gap: 12px; width: 100%; min-width: 0; text-align: left; border: 1px solid var(--line); min-height: 46px; font-size: 14px; line-height: 1.45; }
+.visit-record-trigger > span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .visit-record-trigger svg { flex-shrink: 0; }
-.visit-record-selected-detail { overflow-wrap: anywhere; }
+.visit-record-selected-detail { display: block; min-width: 0; margin: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .visit-record-dialog { position: fixed; inset: 0; margin: auto; width: min(760px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); color: var(--ink); box-shadow: 0 24px 80px rgb(0 0 0 / 18%); font-family: var(--native-font, sans-serif); }
 .visit-record-dialog::backdrop { background: rgb(15 23 42 / 40%); backdrop-filter: blur(4px); }
 .visit-record-dialog-inner { display: flex; flex-direction: column; gap: 18px; padding: 28px; max-height: min(820px, calc(100dvh - 40px)); box-sizing: border-box; }
@@ -29,7 +30,7 @@
 .visit-record-heading > div { flex: 1; }
 .visit-record-heading h2 { margin: 0; font-size: 24px; line-height: 1.25; font-weight: 600; letter-spacing: -.035em; }
 .visit-record-heading p { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
-.app-shell.app-shell .appointment-form .visit-record-heading button { border: 0; font-size: 24px; padding: 0; width: 36px; min-height: 36px; flex-shrink: 0; }
+.app-shell.app-shell .appointment-form .visit-record-heading button { border: 0; font-size: 24px; padding: 0; width: 36px; min-height: 36px; flex: 0 0 36px; }
 .visit-record-search, .visit-record-filters label { display: grid; gap: 8px; }
 .visit-record-search input { width: 100%; min-width: 0; height: 46px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 16px; box-sizing: border-box; }
 .visit-record-search input:focus-visible { outline: 2px solid #0066df; outline-offset: 2px; }
@@ -45,8 +46,8 @@
 .app-shell.app-shell .appointment-form .visit-record-result:disabled { opacity: .5; cursor: not-allowed; }
 .visit-record-empty { padding: 24px 12px; text-align: center; font-size: 14px; }
 .visit-record-empty p { color: var(--muted); font-size: 13px; }
-.visit-record-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
-.visit-record-footer > div { display: flex; gap: 8px; }
+.visit-record-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.visit-record-footer > div { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .app-shell.app-shell .appointment-form .visit-record-footer button { border: 1px solid var(--line); min-width: 80px; white-space: nowrap; }
 .visit-record-footer button:disabled { opacity: .4; cursor: default; }
 @media (max-width: 600px) {
