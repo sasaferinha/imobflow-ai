@@ -178,7 +178,7 @@ export default function ProductPreview() {
         <button type="button" aria-label={playing && !reduced ? 'Pausar demonstração' : reduced ? 'Avançar demonstração' : 'Retomar demonstração'} onClick={() => reduced ? select((active + 1) % sections.length) : setPlaying(value => !value)}><span aria-hidden="true">{playing && !reduced ? 'Ⅱ' : '▶'}</span>{playing && !reduced ? 'Pausar demonstração' : reduced ? 'Próxima etapa' : 'Retomar demonstração'}</button>
         <div className={s.progressGroup} aria-label={`Etapa ${active + 1} de ${sections.length}`}><strong>0{active + 1}</strong><span>/ 04</span><div className={s.progress}><span ref={progress}/></div></div>
       </div>
-      <div className={s.caption}><span>Painel real · dados fictícios</span><a href="/demonstracao" target="_blank" rel="noopener noreferrer">Explorar painel completo <span aria-hidden="true">↗</span></a></div>
+      <div className={s.caption}><span>Painel real · dados fictícios</span><a className={s.explorePanel} href="/demonstracao" target="_blank" rel="noopener noreferrer" aria-label="Explorar painel completo (abre em uma nova aba)">Explorar painel completo <span aria-hidden="true">↗</span></a></div>
     </div>
     {showFocus && <svg className={s.connector} aria-hidden="true"><path key={active} d={connector}/></svg>}
   </div>;
