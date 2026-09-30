@@ -3,6 +3,9 @@
 ## Escopo
 
 - Landing publica com animacoes, identidade branca/azul e secao de match.
+- Cores chapadas, sem degrades. Botoes, CTAs e controles com cantos retos.
+- O tema plano tambem se aplica a demonstracao publica incorporada, sem
+  alterar as telas de contas reais do CRM.
 - Demonstracao guiada em quatro etapas: conversa, leads, match e indicadores.
 - O painel incorporado usa somente os dados ficticios de `/demonstracao`.
 - Selecao manual, teclado, pausa/retomada e pausa fora da tela/aba.

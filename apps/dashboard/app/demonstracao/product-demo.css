@@ -1,4 +1,4 @@
-/* Only the frame changes. All panel components and their visual styles are shared. */
+/* Demo-only presentation. Real account screens retain their own visual styles. */
 html:has(.public-product-demo) { scroll-behavior: auto; }
 .public-product-demo { background: var(--canvas); }
 .public-demo-notice { display: flex; gap: 12px; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--line); background: #f5f8fd; color: #566175; font: 13px/1.5 var(--native-font); }
@@ -8,6 +8,16 @@ html:has(.public-product-demo) { scroll-behavior: auto; }
 .public-product-demo .app-shell .sidebar { position: relative; top: auto; height: auto; min-height: 740px; }
 .public-product-demo .app-shell.app-shell .conversation-demo .inbox-layout { height: 700px; }
 .public-product-demo .app-shell :is(button, input, select, textarea, summary, a):focus-visible { outline: 2px solid #0066df; outline-offset: 3px; }
+/* Match the public landing's flat colors and square controls, including the iframe. */
+.public-product-demo,
+.public-product-demo *,
+.public-product-demo *::before,
+.public-product-demo *::after { background-image: none !important; mask-image: none !important; }
+.public-product-demo :is(button, [role="button"], a) { border-radius: 0 !important; }
+.public-product-demo .score-cell i,
+.public-product-demo .broker-history-bars b { background-color: #0066df; }
+.public-product-demo .broker-goal-overview { background-color: #142033; }
+.public-product-demo .broker-goal-ring { background-color: #246cbd; }
 @media (max-width: 600px) {
   .public-demo-notice { padding: 12px; align-items: flex-start; flex-direction: column; gap: 3px; font-size: 12px; }
   .public-product-demo .app-shell .sidebar { min-height: 0; }
