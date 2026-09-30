@@ -53,7 +53,7 @@
 
 /* Motion-led public landing: bright, precise and unmistakably ImobFlow. */
 .page{--b-cyan:#22b8ff;--b-deep:#061c3c;--b-sky:#eaf5ff;background:#fff}
-.header{position:sticky;top:0;z-index:30;background:#ffffffd9;border-bottom-color:#dfe9f5;backdrop- saturate(145%);animation:navDrop .7s cubic-bezier(.22,1,.36,1) both}
+.header{position:sticky;top:0;z-index:30;background:#ffffffd9;border-bottom-color:#dfe9f5;animation:navDrop .7s cubic-bezier(.22,1,.36,1) both}
 .nav nav a,.login{position:relative;transition:color .2s ease}
 .nav nav a:after,.login:after{content:'';position:absolute;left:0;right:100%;bottom:-8px;height:2px;border-radius:999px;background:var(--b-blue);transition:right .25s ease}
 .nav nav a:hover:after,.login:hover:after{right:0}
@@ -64,7 +64,7 @@
 .hero{min-height:690px;padding:106px 24px 72px;display:grid;place-items:center;isolation:isolate;overflow:hidden;border-bottom:1px solid #dfeaf7;background:#f6fbff}
 .hero:before{content:'';position:absolute;z-index:-3;inset:0;background-image:none;background-size:46px 46px;}
 .heroContent{position:relative;z-index:3;max-width:980px;margin:auto;text-align:center}
-.hero .eyebrow{display:inline-flex;align-items:center;gap:9px;padding:8px 15px;border:1px solid #cfe2f6;border-radius:999px;background:#ffffffb8;box-shadow:0 10px 30px #1d75c50b;backdrop-color:#075ebd}
+.hero .eyebrow{display:inline-flex;align-items:center;gap:9px;padding:8px 15px;border:1px solid #cfe2f6;border-radius:999px;background:#ffffffb8;box-shadow:0 10px 30px #1d75c50b;color:#075ebd}
 .hero .eyebrow:before{content:'';width:7px;height:7px;border-radius:50%;background:#1aaef1;box-shadow:0 0 0 6px #18aaf115;animation:livePulse 2s ease-out infinite}
 .hero h1{font-size:clamp(45px,5.7vw,78px);max-width:970px;margin:25px auto 24px;line-height:1.04;letter-spacing:-.058em;font-weight:650;text-wrap:balance;text-shadow:0 12px 36px #0824430b}
 .hero h1 span{color:#0876df;background:none}
@@ -79,7 +79,7 @@
 .orbThree{width:180px;height:180px;right:19%;top:8%;background:none;border:1px solid #43c5ff24;animation:orbFloat 8s ease-in-out -1s infinite}
 .flowLine{position:absolute;inset:9% -3% auto;width:106%;height:72%;overflow:visible;opacity:.58}.flowLine path{fill:none;stroke:#1597e24d;stroke-width:1.2;stroke-dasharray:8 15;vector-effect:non-scaling-stroke;animation:lineTravel 18s linear infinite}.flowLine path+path{stroke:#0470d92a;animation-duration:24s;animation-direction:reverse}
 .signalCloud{position:absolute;z-index:2;inset:0;max-width:1380px;margin:auto;pointer-events:none}
-.signalCloud article{position:absolute;display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #d5e7f7;border-radius:14px;background:#ffffffd9;box-shadow:0 18px 55px #123f6c16;backdrop-text-align:left}
+.signalCloud article{position:absolute;display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #d5e7f7;border-radius:14px;background:#ffffffd9;box-shadow:0 18px 55px #123f6c16;text-align:left}
 .signalCloud small{display:block;color:#6f8398;font-size:9px;font-weight:700;letter-spacing:.12em}.signalCloud strong{display:block;margin-top:3px;color:#102e4e;font-size:13px;line-height:1.25}.signalCloud p{margin-top:3px;color:#6d7e90;font-size:10px}
 .signalIcon,.matchIcon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:#e8f4ff;color:#0870d9;font-size:11px;font-weight:800}.matchIcon{border-radius:50%;background:#0876df;color:white;box-shadow:0 7px 18px #087ee33d}.matchIcon svg{width:19px}
 .leadSignal{left:2.5%;top:34%;width:230px;animation:cardFloat 6.5s ease-in-out infinite}.routeSignal{right:3%;top:26%;animation:cardFloat 7.5s ease-in-out -2s infinite}.matchSignal{right:1.5%;bottom:16%;width:220px;animation:cardFloat 7s ease-in-out -4s infinite}.liveDot{width:9px;height:9px;border-radius:50%;background:#1ebaf0;box-shadow:0 0 0 7px #1ebaf016;animation:livePulse 2.2s ease-out infinite}
@@ -121,5 +121,25 @@
 
 @media(max-width:1232px){.signalCloud{max-width:1180px}.leadSignal{left:1%}.routeSignal{right:1%}.matchSignal{right:1%}.matchSection{margin-inline:32px}}
 @media(max-width:1050px){.signalCloud article{opacity:.82;transform:scale(.9)}.leadSignal{left:-42px}.routeSignal{right:-42px}.matchSignal{right:-38px}.matchSection{grid-template-columns:1fr;gap:46px}.matchCopy{max-width:650px}.matchStage{width:100%;max-width:690px;margin:auto}}
-@media(max-width:760px){.header{backdrop-}.hero{min-height:0;padding:76px 20px 54px;display:block}.hero h1{font-size:clamp(42px,11vw,58px);line-height:1.06}.heroCopy{font-size:17px}.signalCloud{position:relative;inset:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:100%;margin:45px auto 0}.signalCloud article{position:relative;inset:auto;width:auto;opacity:1;transform:none!important;animation:none;padding:12px}.signalCloud .routeSignal{display:none}.motionRail{padding-block:13px}.product{padding-top:68px;padding-bottom:70px}.productFrame:hover{transform:none}.matchSection{margin:0 20px 70px;padding:48px 24px;border-radius:22px}.matchStage{min-height:0;grid-template-columns:1fr;gap:18px;padding:22px}.profileCard,.propertyCard{width:min(280px,100%);margin:auto}.matchPulse{height:104px}.matchPulse:before,.matchPulse:after{top:auto;left:50%;right:auto;width:0;height:24px;border-top:0;border-left:2px dashed #69cef6a8}.matchPulse:before{bottom:100%}.matchPulse:after{top:100%}.matchPulse>b{bottom:-2px}.benefits{padding-top:72px}.benefitGrid article:hover,.how li:hover{transform:none}.how li:hover{padding:0 0 24px;background:transparent}.closing{padding:54px 20px;border-radius:19px}}
+@media(max-width:760px){.hero{min-height:0;padding:76px 20px 54px;display:block}.hero h1{font-size:clamp(42px,11vw,58px);line-height:1.06}.heroCopy{font-size:17px}.signalCloud{position:relative;inset:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:100%;margin:45px auto 0}.signalCloud article{position:relative;inset:auto;width:auto;opacity:1;transform:none!important;animation:none;padding:12px}.signalCloud .routeSignal{display:none}.motionRail{padding-block:13px}.product{padding-top:68px;padding-bottom:70px}.productFrame:hover{transform:none}.matchSection{margin:0 20px 70px;padding:48px 24px;border-radius:22px}.matchStage{min-height:0;grid-template-columns:1fr;gap:18px;padding:22px}.profileCard,.propertyCard{width:min(280px,100%);margin:auto}.matchPulse{height:104px}.matchPulse:before,.matchPulse:after{top:auto;left:50%;right:auto;width:0;height:24px;border-top:0;border-left:2px dashed #69cef6a8}.matchPulse:before{bottom:100%}.matchPulse:after{top:100%}.matchPulse>b{bottom:-2px}.benefits{padding-top:72px}.benefitGrid article:hover,.how li:hover{transform:none}.how li:hover{padding:0 0 24px;background:transparent}.closing{padding:54px 20px;border-radius:19px}}
 @media(max-width:480px){.hero .eyebrow{font-size:9px;padding:7px 11px}.heroActions .primary{width:100%}.signalCloud{grid-template-columns:1fr}.signalCloud .matchSignal{display:none}.leadSignal{max-width:310px;margin:auto}.heroFoot{flex-wrap:wrap}.motionRail:before,.motionRail:after{width:42px}.matchSection{padding:42px 18px}.matchCopy h2{font-size:35px}.matchCopy>p:not(.eyebrow){font-size:15px}.profileCard,.propertyCard{padding:19px}.closing{margin-inline:16px}}
+
+/* Quiet corporate layout: motion supports the content instead of covering it. */
+.header{background:#fff}
+.hero{display:block;min-height:0;padding:84px 24px 54px;background:#fff}
+.hero h1{text-shadow:none}
+.hero .eyebrow{background:#f3f8ff;box-shadow:none}
+.heroAtmosphere{opacity:.45}
+.signalCloud{position:relative;inset:auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;max-width:860px;margin:40px auto 0}
+.signalCloud article{position:relative;inset:auto;width:auto;opacity:1;transform:none;animation:cardRise .6s ease both;background:#fff;box-shadow:0 5px 18px #123f6c09}
+.signalCloud .routeSignal{animation-delay:.1s}
+.signalCloud .matchSignal{animation-delay:.2s}
+.navCta,.primary{box-shadow:none}
+.navCta:hover,.primary:hover{box-shadow:0 4px 12px #006ee318;transform:translateY(-1px)}
+.motionRail{box-shadow:none}
+.matchSection{box-shadow:0 14px 32px #073a6b12}
+.matchStage{background:#05274e;box-shadow:none}
+.benefitGrid article:hover{transform:translateY(-4px)}
+.benefitGrid article:hover svg{transform:translateY(-2px)}
+@media(max-width:760px){.hero{padding:60px 20px 42px}.signalCloud{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:32px;gap:12px}.signalCloud article{animation:none}}
+@media(max-width:480px){.signalCloud{grid-template-columns:1fr}.signalCloud .leadSignal{width:100%;max-width:310px}}
