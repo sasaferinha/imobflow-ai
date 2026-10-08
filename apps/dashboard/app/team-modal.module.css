@@ -28,3 +28,31 @@
 .staffActions button:disabled { opacity:.6; cursor:wait; }
 .list small { overflow-wrap:anywhere; }
 .staffActions .deleteButton { color: #b42318; border-color: #f3b9b3; }
+
+:global(.crm-workspace) .card { width: min(660px, 100%); font-family: var(--crm-font, 'Nunito', sans-serif); }
+:global(.crm-workspace) .plan { padding: 14px 16px; margin-bottom: 18px; border-color: var(--line); border-radius: 5px; background: var(--secondary); font-size: 14px; }
+:global(.crm-workspace) .plan strong { color: var(--accent-text, #0066df); font-weight: 700; }
+:global(.crm-workspace) .plan span { color: var(--muted); font-size: 13px; }
+:global(.crm-workspace) .list { gap: 0; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+:global(.crm-workspace) .list li { align-items: flex-start; padding: 16px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+:global(.crm-workspace) .list li:last-child { border-bottom: 0; }
+:global(.crm-workspace) .list li > span { flex: 0 0 36px; height: 36px; color: var(--accent-text, #0066df); background: var(--selection); font-size: 12px; }
+:global(.crm-workspace) .list li > div { min-width: 0; gap: 4px; }
+:global(.crm-workspace) .list strong { color: var(--ink); font-size: 15px; font-weight: 700; }
+:global(.crm-workspace) .list small { color: var(--muted); font-size: 12px; line-height: 1.6; }
+:global(.crm-workspace) .list em { flex: 0 0 auto; padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--secondary); font-size: 11px; }
+:global(.crm-workspace) .staffActions { gap: 6px !important; margin-top: 8px; }
+:global(.crm-workspace) .staffActions button { min-height: 32px; padding: 5px 9px; border-color: var(--line); border-radius: 4px; color: var(--accent-text, #0066df); background: var(--paper); font: 600 12px/1.4 var(--crm-font, 'Nunito', sans-serif); }
+:global(.crm-workspace) .staffActions .deleteButton { color: #b42318; border-color: #efc8c3; }
+:global(.crm-workspace) .adminEmail { padding: 18px; margin-top: 18px; border-color: var(--line); border-radius: 5px; background: var(--secondary); }
+:global(.crm-workspace) .adminEmail strong { color: var(--ink); font-size: 15px; }
+:global(.crm-workspace) .adminEmail :is(small, label) { color: var(--muted); }
+:global(.crm-workspace) .adminEmail button { min-height: 38px; border-radius: 4px; background: var(--crm-brand, #0066df); font: 600 13px/1.4 var(--crm-font, 'Nunito', sans-serif); }
+:global(.crm-workspace) .form { margin-top: 24px; padding-top: 22px; border-color: var(--line); }
+:global(.crm-workspace) .form h3 { margin-bottom: 18px; color: var(--ink); font-size: 17px; font-weight: 700; }
+:global(.crm-workspace) .empty { color: var(--muted); font-size: 13px; line-height: 1.7; }
+@media (max-width: 600px) {
+  :global(.crm-workspace) .plan { align-items: flex-start; flex-direction: column; gap: 5px; }
+  :global(.crm-workspace) .list li { padding: 14px 12px; gap: 9px; }
+  :global(.crm-workspace) .list em { padding: 2px 5px; }
+}

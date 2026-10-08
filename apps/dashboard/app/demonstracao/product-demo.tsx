@@ -38,6 +38,6 @@ export default function ProductDemo() {
 
   return <div className={`public-product-demo${adminPresentation ? ' admin-presentation-demo' : ''}${adminPresentation && embedded ? ' embedded-admin-demo' : ''}`}>
     <div className="public-demo-notice" role="status"><strong>Demonstração · Administrador</strong><span>{notice}</span></div>
-    {ready ? <DashboardClient publicDemo account={productDemoAccount} initialView={adminPresentation ? 'overview' : 'conversations'} initialDarkMode={adminPresentation} /> : <p className="public-demo-loading">Carregando o painel demonstrativo…</p>}
+    {ready ? <DashboardClient publicDemo account={productDemoAccount} initialView={adminPresentation ? 'overview' : 'conversations'} /> : <p className="public-demo-loading">Carregando o painel demonstrativo…</p>}
   </div>;
 }

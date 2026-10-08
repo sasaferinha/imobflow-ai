@@ -37,9 +37,10 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId }: {
     finally { setPending(false); }
   }
   const money = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
-  return <div className={styles.center}>
+  return <div className={`${styles.center} crm-opportunities`}>
     <ReactivationLeads onLead={onLead}/>
-    <h2 className={styles.reactivationTitle}>Imóveis compatíveis</h2>
+    <section className={styles.matchesSection} aria-labelledby="compatible-properties-title">
+    <h2 id="compatible-properties-title" className={styles.reactivationTitle}>Imóveis compatíveis</h2>
     <div className={styles.intro}>
       <p>Imóveis que combinam com o que seus clientes procuram.</p>
       {items && <span>{items.length} {items.length === 1 ? 'oportunidade nesta página' : 'oportunidades nesta página'}</span>}
@@ -90,6 +91,7 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId }: {
     </article>)}</div>
     {(offset > 0 || items?.length === 50) && <nav className={styles.pagination} aria-label="Páginas de oportunidades"><button type="button" disabled={offset === 0} onClick={() => { setDraft(null); setOffset(Math.max(0, offset-50)); }}>Anterior</button>
       <span>Página {offset/50+1}</span><button type="button" disabled={items?.length !== 50} onClick={() => { setDraft(null); setOffset(offset+50); }}>Próxima</button></nav>}
+    </section>
   </div>;
 }
 

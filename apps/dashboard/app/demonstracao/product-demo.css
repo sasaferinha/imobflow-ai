@@ -1,4 +1,4 @@
-/* Demo-only presentation. Real account screens retain their own visual styles. */
+/* Demo-specific framing; the dashboard itself uses the production CRM design. */
 html:has(.public-product-demo) { scroll-behavior: auto; }
 .public-product-demo { background: var(--canvas); }
 .public-demo-notice { display: flex; gap: 12px; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--line); background: #f5f8fd; color: #566175; font: 13px/1.5 var(--native-font); }
@@ -7,8 +7,7 @@ html:has(.public-product-demo) { scroll-behavior: auto; }
 /* The landing preview grows with its content. The presentation uses the real
    administrator geometry, including its sticky sidebar and native chat height. */
 .public-product-demo:not(.admin-presentation-demo) .app-shell { min-height: 740px; }
-.public-product-demo:not(.admin-presentation-demo) .app-shell .sidebar { position: relative; top: auto; height: auto; min-height: 740px; }
-.public-product-demo:not(.admin-presentation-demo) .app-shell.app-shell .conversation-demo .inbox-layout { height: 700px; }
+.public-product-demo:not(.admin-presentation-demo) .app-shell .sidebar { position: relative; top: auto; height: auto; min-height: 64px; }
 .public-product-demo:not(.admin-presentation-demo) .app-shell :is(button, input, select, textarea, summary, a):focus-visible { outline: 2px solid #0066df; outline-offset: 3px; }
 /* The presentation already labels the frame as fictional. Keep the notice for
    standalone visitors, without adding a second toolbar above the admin panel. */
@@ -18,7 +17,6 @@ html:has(.public-product-demo) { scroll-behavior: auto; }
 .public-product-demo:not(.admin-presentation-demo) *,
 .public-product-demo:not(.admin-presentation-demo) *::before,
 .public-product-demo:not(.admin-presentation-demo) *::after { background-image: none !important; mask-image: none !important; }
-.public-product-demo:not(.admin-presentation-demo) :is(button, [role="button"], a) { border-radius: 0 !important; }
 .public-product-demo:not(.admin-presentation-demo) .score-cell i,
 .public-product-demo:not(.admin-presentation-demo) .broker-history-bars b { background-color: #0066df; }
 .public-product-demo:not(.admin-presentation-demo) .broker-goal-overview { background-color: #142033; }

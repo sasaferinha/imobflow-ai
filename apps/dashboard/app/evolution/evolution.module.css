@@ -1,17 +1,9 @@
-@font-face {
-  font-family: Nunito;
-  src: url('/fonts/evolution/nunito-latin-wght-normal.woff2') format('woff2');
-  font-style: normal;
-  font-weight: 200 1000;
-  font-display: swap;
-}
-
 /* The same tokens apply to the page and native top-layer dialogs. */
 .app,
 .dialog {
-  --ev-font: Nunito, Arial, sans-serif;
-  --ev-ink: #000;
-  --ev-muted: #6b6b6b;
+  --ev-font: var(--crm-font, Nunito, Arial, sans-serif);
+  --ev-ink: #202735;
+  --ev-muted: #657084;
   --ev-soft: #707070;
   /* ImobFlow brand palette; the reference layout is deliberately retained. */
   --ev-brand: #0066df;
@@ -20,9 +12,9 @@
   --ev-on-brand: #fff;
   --ev-brand-wash: #eaf1fc;
   --ev-paper: #fff;
-  --ev-canvas: #fefefe;
-  --ev-toolbar: #f8f8f8;
-  --ev-line: #eee;
+  --ev-canvas: #f7f8fa;
+  --ev-toolbar: #f3f5f8;
+  --ev-line: #e4e7ec;
   --ev-input-line: #ccc;
   --ev-navy: #000077;
   --ev-blue: #38acf5;
@@ -77,17 +69,27 @@
 
 .app { min-width: 0; min-height: 100vh; background: var(--ev-canvas); }
 .operationalPanel { min-width: 0; isolation: isolate; }
-.operationalPanel :global(.app-shell.evolution-operational) { display: block; min-height: 0; width: 100%; font-family: var(--ev-font); background: var(--ev-canvas); }
-.operationalPanel :global(.evolution-operational .workspace) { min-width: 0; width: 100%; margin: 0; padding: 0; }
-.operationalPanel :global(.evolution-operational .topbar) { display: flex; align-items: center; justify-content: flex-end; min-height: 44px; margin: 0 0 18px; padding: 0 0 12px; }
-.operationalPanel :global(.evolution-operational .header-actions) { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; min-width: 0; margin-left: auto; gap: 8px; }
-.operationalPanel :global(.evolution-operational .header-actions button) { width: auto; min-height: 36px; padding: 7px 12px; font: 600 14px var(--ev-font); }
-.operationalPanel :global(.evolution-operational .header-actions > .secondary-button),
-.operationalPanel :global(.evolution-operational .header-actions .icon-button) { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #d6e0ed; border-radius: 6px; background: #fff; color: #244364; box-shadow: none; line-height: 20px; white-space: nowrap; }
-.operationalPanel :global(.evolution-operational .header-actions > .secondary-button:hover),
-.operationalPanel :global(.evolution-operational .header-actions .icon-button:hover) { border-color: var(--ev-brand); background: var(--ev-brand-wash); color: var(--ev-brand-ink); }
-.operationalPanel :global(.evolution-operational .header-actions .icon-button) { flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; padding: 0; font-size: 18px; }
-.operationalPanel :global(.evolution-operational .header-actions .primary-button::after) { content: none; }
+/* Operational modules now own a complete shared design, not a legacy header patch. */
+.app:has(:global(.crm-workspace.dark-mode)),
+.app:has(:global(.crm-workspace.dark-mode)) .dialog {
+  --ev-ink: #edf2fa;
+  --ev-muted: #a9b6cb;
+  --ev-soft: #b3bed0;
+  --ev-paper: #1b2637;
+  --ev-canvas: #141e2d;
+  --ev-toolbar: #253247;
+  --ev-line: #344154;
+  --ev-input-line: #45556d;
+  --ev-brand-ink: #9ac9ff;
+  --ev-navy: #9ac9ff;
+  --ev-total: #3c3522;
+  --ev-yellow-text: #f5d58c;
+  --ev-brand-wash: #213f66;
+  --ev-gray-wash: #253247;
+  --ev-detail: #243347;
+  --ev-card-body: #243347;
+  color-scheme: dark;
+}
 .sourceNotice { display: flex; align-items: center; gap: 12px; padding: 14px 18px; margin-bottom: 20px; border: 1px solid #cbdff8; border-radius: 6px; color: #174576; background: #f2f7fd; }
 .sourceNotice > svg { flex: 0 0 auto; }
 .sourceNotice > div { flex: 1; min-width: 0; }

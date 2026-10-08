@@ -39,10 +39,19 @@ export default function ClientImport({ onImported, onOpportunities, publicDemo=f
     finally{busy.current=false;setPending(false);}
   }
   const incomplete=rows.filter(row=>!hasCommercialQualification(row)).length;
-  return <section className={styles.root} aria-label="Importar clientes antigos" aria-busy={pending}>
-    <div className={styles.intro}><h2>Sua carteira também pode gerar oportunidades</h2><p>Traga clientes antigos por planilha. Objetivo, tipo de imóvel, bairro e orçamento ajudam a encontrar imóveis compatíveis.</p></div>
-    <div className={styles.actions}><button type="button" onClick={template}>Baixar modelo CSV</button><button type="button" className="primary-button" disabled={pending} onClick={()=>fileInput.current?.click()}>{name?'Trocar arquivo':'Selecionar planilha'}</button><input ref={fileInput} type="file" hidden accept=".csv,text/csv" disabled={pending} onChange={e=>{void choose(e.target.files?.[0]);e.target.value='';}} /></div>
-    <p className={styles.hint}>Até 500 clientes por arquivo, em CSV UTF-8. Nome e telefone ou e-mail são obrigatórios. Telefones brasileiros devem incluir DDD.</p>
+  return <section className={`${styles.root} crm-client-import`} aria-label="Importar clientes antigos" aria-busy={pending}>
+    <div className={styles.intro}><span className={styles.sectionLabel}>Importação de carteira</span><h2>Seus clientes, organizados em um só lugar</h2><p>Traga clientes antigos por planilha. Objetivo, tipo de imóvel, bairro e orçamento ajudam a encontrar imóveis compatíveis.</p></div>
+    <ol className={styles.steps} aria-label="Etapas da importação">
+      <li data-current={!rows.length&&!result}><span>1</span><div><strong>Prepare a planilha</strong><small>Use o modelo de cadastro</small></div></li>
+      <li data-current={rows.length>0}><span>2</span><div><strong>Confira os clientes</strong><small>Revise antes de confirmar</small></div></li>
+      <li data-current={!!result}><span>3</span><div><strong>Conclua a importação</strong><small>Cadastros existentes preservados</small></div></li>
+    </ol>
+    <div className={styles.uploadArea}>
+      <span className={styles.uploadIcon} aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-7m-3 3 3-3 3 3"/></svg></span>
+      <div className={styles.uploadCopy}><h3>{name||'Selecione sua planilha de clientes'}</h3><p>CSV UTF-8 · Até 2 MB · Até 500 clientes por arquivo</p></div>
+      <div className={styles.actions}><button type="button" onClick={template}>Baixar modelo CSV</button><button type="button" className="primary-button" disabled={pending} onClick={()=>fileInput.current?.click()}>{name?'Trocar arquivo':'Selecionar planilha'}</button><input ref={fileInput} type="file" hidden accept=".csv,text/csv" disabled={pending} onChange={e=>{void choose(e.target.files?.[0]);e.target.value='';}} /></div>
+    </div>
+    <p className={styles.hint}>Nome e telefone ou e-mail são obrigatórios. Telefones brasileiros devem incluir DDD. Nenhuma mensagem será enviada aos clientes.</p>
     <details className={styles.help}><summary>Como preencher a planilha</summary><p>Objetivo: Comprar, Alugar ou Investir. Tipo: Casa, Apartamento, Terreno, Comercial, Galpão ou Outro. Região: bairro desejado. Orçamento: valor máximo em reais, por exemplo 500000 ou Até R$ 500 mil.</p><p>Último contato, status, corretor e observações são opcionais. Use o nome de um corretor ativo da sua empresa. Para último contato, use dia/mês/ano. Dados incompletos podem ser complementados em Leads.</p><p>A importação salva cadastros. Ela não lê o histórico do WhatsApp, não usa IA e não envia mensagens aos clientes.</p></details>
     {error&&<p className={styles.error} role="alert">{error}</p>}
     {result&&<div className={styles.result} role="status"><h3>Importação concluída</h3><p>{result.imported} clientes adicionados. {result.skipped} duplicados ignorados. Cadastros existentes foram preservados.</p><button type="button" onClick={onOpportunities}>Ver oportunidades</button></div>}

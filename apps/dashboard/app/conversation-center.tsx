@@ -56,8 +56,8 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
   return <>
     <div className="conversation-tools">
     <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
-      <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>Clientes cadastrados</button>
-      <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>Ver demonstração</button>
+      <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}><ConversationIcon name="inbox"/>Clientes cadastrados</button>
+      <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}><ConversationIcon name="play"/>Ver demonstração</button>
       {preview && <span role="status">{demoSyncFailed ? 'Não foi possível atualizar a demonstração. Tentando reconectar…' : !demoReady ? 'Carregando atendimentos da empresa…' : 'Demonstração compartilhada com sua equipe. Nenhuma mensagem é enviada a clientes reais.'}</span>}
     </div>
     {!preview&&<ConversationSettings/>}
@@ -85,6 +85,19 @@ const liveTemperature = (temperature: string) => {
 };
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
+
+function ConversationIcon({ name }: { name: 'inbox' | 'search' | 'play' | 'person' | 'property' | 'send' | 'message' }) {
+  const paths = {
+    inbox: <><path d="M4 4h16v16H4zM4 13h5l2 3h2l2-3h5"/><path d="M8 8h8"/></>,
+    search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>,
+    play: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 5 4-5 4z"/></>,
+    person: <><circle cx="12" cy="8" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/></>,
+    property: <><path d="m3 10 9-7 9 7M5 9v12h14V9M10 21v-7h4v7"/></>,
+    send: <><path d="m3 3 18 9-18 9 4-9-4-9ZM7 12h14"/></>,
+    message: <><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 1V11.5a8.5 8.5 0 0 1 17 0Z"/><path d="M7 9h9M7 13h6"/></>,
+  };
+  return <svg className="conversation-ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
 
 function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, currentBrokerId, isAdministrator = false, leads = [], properties = [], inbox = [], demonstration = false, ready: parentReady = true }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
@@ -224,8 +237,8 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     body?.addEventListener('scroll',onVisible);
     return () => { active=false;controller.abort();window.removeEventListener('focus',onVisible);document.removeEventListener('visibilitychange',onVisible);body?.removeEventListener('scroll',onVisible); };
   }, [demonstration,ready,lead?.id,historyPage]);
-  if(!ready&&!selected)return <section className="panel empty-live-data" role="status"><h2>Sincronizando conversas</h2><p>Aguarde a confirmação do carregamento. Em caso de falha, os controles permanecerão desabilitados.</p></section>;
-  if (!selected || !lead) return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data"><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
+  if(!ready&&!selected)return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state" role="status"><span className="conversation-empty-icon"><ConversationIcon name="inbox"/></span><h2>Sincronizando conversas</h2><p>Aguarde a confirmação do carregamento. Em caso de falha, os controles permanecerão desabilitados.</p></section></div>;
+  if (!selected || !lead) return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state"><span className="conversation-empty-icon"><ConversationIcon name="message"/></span><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
   const leadId = lead.id;
   const filtered = contacts.filter((contact) => {
     const current = state.threads[contact.id] || emptyThread;
@@ -242,6 +255,9 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   });
   const stage = lead?.lifecycleStatus || selected.stage;
   const temperature = contactTemperature(selected);
+  const unreadContacts = contacts.filter(contact => demonstration
+    ? (state.threads[contact.id]?.unread || 0) > 0
+    : (summaries.get(contact.sourceLead!.id)?.unread || 0) > 0).length;
   const ownership = thread.attendance ?? thread.messages.find(message => message.attendanceMode);
   const attendance = describeConversationAttendance({
     snapshot: { ...ownership, assignedTo: thread.attendance ? thread.attendance.assignedTo : lead.assignedTo },
@@ -346,11 +362,13 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     catch(e){notify(e instanceof Error?e.message:'Não foi possível devolver o atendimento.');}finally{savingRef.current = false; setSaving(false);}
   }
   return <div className="conversation-demo conversation-clean">
-    {!ready&&<p role="status">A sincronização está indisponível. Aguarde a atualização antes de enviar.</p>}
+    {!ready&&<p className="conversation-sync-notice" role="status">A sincronização está indisponível. Aguarde a atualização antes de enviar.</p>}
     <div className={`inbox-layout${profileOpen ? ' has-profile' : ''}`}>
       <aside className="inbox-list panel" aria-label="Conversas">
-        <div className="inbox-search">⌕ <input value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Buscar conversa" placeholder="Buscar cliente, perfil ou região" /></div>
-        <div className="inbox-tabs"><button type="button" aria-pressed={!onlyUnread} className={!onlyUnread ? 'selected' : ''} onClick={() => setOnlyUnread(false)}>Todas</button><button type="button" aria-pressed={onlyUnread} className={onlyUnread ? 'selected' : ''} onClick={() => setOnlyUnread(true)}>Não lidas</button></div>
+        <div className="conversation-inbox-heading"><h2>Caixa de entrada</h2><span aria-label={`${contacts.length} conversas`}>{contacts.length}</span></div>
+        <div className="inbox-search"><ConversationIcon name="search"/><input value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Buscar conversa" placeholder="Buscar cliente ou região" /></div>
+        <div className="inbox-tabs"><button type="button" aria-pressed={!onlyUnread} className={!onlyUnread ? 'selected' : ''} onClick={() => setOnlyUnread(false)}>Todas <span>{contacts.length}</span></button><button type="button" aria-pressed={onlyUnread} className={onlyUnread ? 'selected' : ''} onClick={() => setOnlyUnread(true)}>Não lidas <span>{unreadContacts}</span></button></div>
+        <div className="conversation-contact-list">
         {filtered.map((contact) => {
           const current = state.threads[contact.id] || emptyThread;
           const last = current.messages[current.messages.length - 1];
@@ -363,13 +381,15 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
             currentBrokerId, isAdministrator, lifecycleStatus: contact.sourceLead?.lifecycleStatus, hasMessages: current.messages.length > 0,
           });
           const contactBroker = (demonstration ? current.assignedTo : currentAttendance.owner)?.trim();
-          return <button type="button" className={`contact-row ${selected.id === contact.id ? 'selected' : ''}`} aria-pressed={selected.id === contact.id} onClick={() => dispatch({ type: 'select', id: contact.id })} key={contact.id}>
+          return <button type="button" className={`contact-row ${selected.id === contact.id ? 'selected' : ''}${unread > 0 ? ' has-unread' : ''}`} aria-pressed={selected.id === contact.id} onClick={() => dispatch({ type: 'select', id: contact.id })} key={contact.id}>
             <span className={`lead-avatar avatar-${contact.tone}`}>{contact.initials}</span>
-            <span><strong>{contact.name}</strong><small>{preview?.lastMessageText || last?.text || 'Ainda sem mensagens'}</small><small className="conversation-contact-broker" title={contactBroker ? `Corretor responsável: ${contactBroker}` : 'Sem corretor responsável'}>{contactBroker ? `Corretor: ${contactBroker}` : 'Sem corretor responsável'}</small>{!demonstration && <ConversationAttendanceBadge attendance={currentAttendance}/>}</span>
-            <time>{preview ? new Date(preview.lastMessageAt).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}) : last?.time || ''}</time>{unread > 0 && <b aria-label={`${unread} mensagens não lidas`}>{unread > 99 ? '99+' : unread}</b>}
+            <span className="conversation-contact-copy"><strong>{contact.name}</strong><small className="conversation-message-preview">{current.draft.trim() ? <><em>Rascunho: </em>{current.draft}</> : preview?.lastMessageText || last?.text || 'Ainda sem mensagens'}</small><small className="conversation-contact-broker" title={contactBroker ? `Corretor responsável: ${contactBroker}` : 'Sem corretor responsável'}>{contactBroker ? `Corretor: ${contactBroker}` : 'Sem corretor responsável'}</small>{!demonstration && <ConversationAttendanceBadge attendance={currentAttendance}/>}</span>
+            <span className="conversation-contact-meta"><time>{preview ? new Date(preview.lastMessageAt).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}) : last?.time || ''}</time>{unread > 0 && <b aria-label={`${unread} mensagens não lidas`}>{unread > 99 ? '99+' : unread}</b>}</span>
           </button>;
         })}
         {!filtered.length && <p className="empty-filter">Nenhuma conversa encontrada. Ajuste a busca ou selecione “Todas”.</p>}
+        </div>
+        <div className="conversation-inbox-footer">{filtered.length} {filtered.length === 1 ? 'conversa' : 'conversas'}{search || onlyUnread ? ' neste filtro' : ' na sua caixa de entrada'}</div>
       </aside>
       <section className="full-chat panel" aria-label={`Conversa com ${selected.name}`}>
         <div className="full-chat-head">
@@ -377,19 +397,21 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
           <div className="conversation-contact-heading"><strong>{selected.name}</strong><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}${isCurrentBroker ? ' (você)' : ''}` : 'Sem corretor responsável'}</span></div>
           <div className="conversation-head-actions">
             {canClaim && <button type="button" className="conversation-claim-button" disabled={!ready || saving} onClick={() => void claimConversation()}>Assumir atendimento</button>}
-            <button ref={profileToggleRef} type="button" aria-expanded={profileOpen} aria-controls="conversation-client-profile" onClick={() => setProfileOpen(open => !open)}>Ficha do cliente</button>
+            <button ref={profileToggleRef} type="button" aria-expanded={profileOpen} aria-controls="conversation-client-profile" onClick={() => setProfileOpen(open => !open)}><ConversationIcon name="person"/>Ficha do cliente</button>
           </div>
         </div>
         {!demonstration && <ConversationAttendanceBanner attendance={attendance} ready={ready} saving={saving} release={() => void releaseConversation()}/>}
-        <div className="full-chat-body" ref={bodyRef}>{!demonstration && historyPage.leadId === leadId && historyPage.cursor && <button type="button" className="conversation-property-button" disabled={loadingOlder} onClick={() => void loadOlderMessages()}>{loadingOlder ? 'Carregando…' : 'Carregar mensagens anteriores'}</button>}{thread.messages.length ? thread.messages.map(message => <ConversationMessageBubble key={message.id} message={message} demo={demonstration}/>) : <p className="conversation-empty-thread">{ready ? 'Ainda não há mensagens deste lead no painel.' : 'Carregando histórico…'}</p>}</div>
+        <div className="full-chat-body" ref={bodyRef}>{!demonstration && historyPage.leadId === leadId && historyPage.cursor && <button type="button" className="conversation-property-button conversation-load-history" disabled={loadingOlder} onClick={() => void loadOlderMessages()}>{loadingOlder ? 'Carregando…' : 'Carregar mensagens anteriores'}</button>}{thread.messages.length ? thread.messages.map(message => <ConversationMessageBubble key={message.id} message={message} demo={demonstration}/>) : <div className="conversation-empty-thread"><ConversationIcon name="message"/><p>{ready ? 'Ainda não há mensagens deste lead no painel.' : 'Carregando histórico…'}</p></div>}</div>
         <details className="conversation-quick-reply" key={selected.id}><summary>Resposta sugerida</summary><div><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div></details>
         {sendNotice && <p className="conversation-send-notice" role="alert">{sendNotice}</p>}
         {showWhatsAppHandoff && <ConversationWhatsAppHandoff phone={lead.phone || ''} text={thread.draft.trim() || rejectedText || ''} />}
-        <form className="full-composer" onSubmit={send}><button type="button" className="conversation-property-button" disabled={loadingProperties || !ready || saving || !canSend} onClick={() => void openPropertyPicker()}>{loadingProperties ? 'Atualizando…' : 'Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => { setSendNotice(''); dispatch({ type: 'draft', id: selected.id, text: event.target.value }); }} aria-label={`Mensagem para ${selected.name}`} placeholder={canSend ? 'Escreva uma resposta…' : attendance.mode === 'closed' ? 'Conversa encerrada' : canClaim ? 'Assuma o atendimento para enviar' : 'Envio disponível ao corretor responsável'} maxLength={4000}/><button className="send-button" type="button" onClick={() => void submitDraft()} disabled={!thread.draft.trim() || !ready || saving || !canSend} aria-label="Adicionar mensagem"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m5 12 7-7 7 7M12 5v14"/></svg></button></form>
+        <form className="full-composer" onSubmit={send}><button type="button" className="conversation-property-button" disabled={loadingProperties || !ready || saving || !canSend} onClick={() => void openPropertyPicker()}><ConversationIcon name="property"/>{loadingProperties ? 'Atualizando…' : 'Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => { setSendNotice(''); dispatch({ type: 'draft', id: selected.id, text: event.target.value }); }} aria-label={`Mensagem para ${selected.name}`} placeholder={canSend ? 'Escreva uma resposta…' : attendance.mode === 'closed' ? 'Conversa encerrada' : canClaim ? 'Assuma o atendimento para enviar' : 'Envio disponível ao corretor responsável'} maxLength={4000}/><button className="send-button" type="button" onClick={() => void submitDraft()} disabled={!thread.draft.trim() || !ready || saving || !canSend} aria-label="Adicionar mensagem"><ConversationIcon name="send"/></button></form>
       </section>
       <aside id="conversation-client-profile" hidden={!profileOpen} className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
         <div className="conversation-profile-title"><h2>Ficha do cliente</h2><button type="button" aria-label="Fechar ficha do cliente" onClick={() => { setProfileOpen(false); profileToggleRef.current?.focus(); }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+        <div className="conversation-profile-identity"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><strong>{selected.name}</strong><span>Perfil comercial</span></div></div>
         <div className="conversation-priority-line"><span>Score do lead</span><strong data-defined={Boolean(lead.scoreDefined)} aria-label={lead.scoreDefined ? `${lead.score}/100` : 'Indefinido'}>{lead.scoreDefined ? <>{lead.score}<small>/100</small></> : 'Indefinido'}</strong></div>
+        <h3 className="conversation-profile-section">Interesses do cliente</h3>
         <dl className="conversation-lead-highlights" aria-label="Critérios de busca do lead">{leadHighlights.map(([label, value]) => <div className={label === 'Preferências' ? 'profile-preferences' : undefined} key={label}><dt>{label}</dt><dd>{value || 'Não informado'}</dd></div>)}</dl>
         <details className="conversation-lead-details conversation-extra-details" key={selected.id}><summary>Mais dados do cliente<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary>
           <span className="conversation-data-source">{sourceLabel}{lead?.source ? ` · ${lead.source}` : ''}</span>

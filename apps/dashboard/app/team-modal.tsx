@@ -127,9 +127,9 @@ export default function TeamModal({ close, notify }: { close: () => void; notify
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={close}>
-      <article className={`modal-card ${styles.card}`} onMouseDown={(event) => event.stopPropagation()}>
+      <article className={`modal-card crm-team-modal ${styles.card}`} role="dialog" aria-modal="true" aria-labelledby="crm-team-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-head">
-          <div><p className="eyebrow">Painel do administrador</p><h2>Corretores</h2></div>
+          <div><p className="eyebrow">Gestão de equipe</p><h2 id="crm-team-title">Corretores e acessos</h2></div>
           <button type="button" aria-label="Fechar" onClick={close}>×</button>
         </div>
 

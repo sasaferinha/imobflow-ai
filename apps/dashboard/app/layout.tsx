@@ -9,6 +9,11 @@ import './conversation-pilot.css';
 import './leads-essential.css';
 import './conversation-clean.css';
 import './appointment-form.css';
+import './crm-foundation.css';
+import './crm-shell.css';
+import './crm-operational.css';
+import './conversation-workspace.css';
+import './crm-access.css';
 
 const siteOrigin = process.env.SITE_URL ?? 'http://localhost:3000';
 

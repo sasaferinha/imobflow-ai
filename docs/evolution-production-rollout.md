@@ -1,5 +1,16 @@
 # Novo painel ImobFlow: integração e publicação
 
+## Unificação visual em 08/10/2026
+
+- Base da evolução visual: `06ece1c6e69896e72578a9ba54ee94fc6e5ff8df`, alinhada ao GitHub e à produção no início do trabalho. O checkout antigo com alterações locais foi preservado.
+- Fonte Nunito local, azuis ImobFlow, controles, bordas, espaçamentos e estados de foco compartilhados pelo CRM e suas telas operacionais. Conversas ganhou nova caixa de entrada, mensagens, composição e ficha comercial; agenda, resultados, metas, imóveis, leads, oportunidades, importação, equipe e integrações usam o mesmo padrão.
+- Login, recuperação de senha, administração de licenças, apresentação, simulador e fontes da página pública também foram alinhados. Nenhuma migração, credencial, permissão ou regra de envio foi alterada.
+- Conferência visual local com dados fictícios: telas operacionais no modo independente e dentro do host Evolution integrado, desktop e largura móvel de 390px, temas claro/escuro, formulário da agenda e preservação do rascunho ao navegar. A rota temporária usada para essa conferência foi removida e não faz parte da publicação.
+- Regressão adicional: `pnpm run test:crm-design`, integrada ao `build:production`, valida análise CSS, escopo/importação, renderização TSX, estrutura acessível e fluxo de importação com confirmação, trava de duplo clique e isolamento da demonstração.
+- Validação de liberação: `pnpm run build:production`, revisão dos arquivos alterados e conferência de páginas públicas, versão e saúde após publicação. A inspeção local não substitui um teste de envio real ou uma sessão autenticada de produção; nenhuma mensagem foi enviada durante esta alteração.
+- Limite do lint: `dashboard-client.tsx` já apresentava duas ocorrências de `react-hooks/set-state-in-effect` e um aviso de dependências; `evolution/live-entry.tsx` já apresentava `react-hooks/error-boundaries`. As ocorrências foram reproduzidas na revisão-base com `git show`; os novos estilos não as introduzem. A sincronização funcional existente foi preservada nesta alteração visual.
+- Retorno visual: reverter o commit de unificação e publicar novamente, preservando os dados. O atalho clássico passa a compartilhar os estilos atualizados; ele não restaura, sozinho, o visual anterior.
+
 ## Escopo
 
 Preparado sobre `90ca31e02201adbed34021cd848e33ccd4b2a76c`, fonte da publicação vigente auditada, para preservar as correções de setembro. A cópia antiga de trabalho não é fonte de publicação.

@@ -31,8 +31,8 @@ export default function LoginClient() {
 
   const registering = mode === 'enroll';
   const administrator = mode !== 'login';
-  return <main className="access-page"><section className="access-card" aria-labelledby="access-title">
-    <header className="access-header"><Link href="/" className="access-logo"><span aria-hidden="true">I</span>ImobFlow</Link><p>Gestão imobiliária, com privacidade.</p></header>
+  return <main className="access-page crm-access-surface"><section className="access-card" aria-labelledby="access-title">
+    <header className="access-header"><Link href="/" className="access-logo"><span aria-hidden="true"><svg viewBox="0 0 32 44" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 41V24l8-4v21M11 20V7l12-5v39M23 16h6v25" /></svg></span>ImobFlow</Link><p>Gestão imobiliária, com privacidade.</p></header>
     <div className="access-content">
       <div className="access-intro"><p className="access-eyebrow">ACESSO DA IMOBILIÁRIA</p><h1 id="access-title">{recovering ? 'Recupere seu acesso.' : registering ? 'Cadastre sua imobiliária.' : administrator ? 'Acesso do administrador.' : 'Acesso do corretor.'}</h1><p>{recovering ? 'Informe seu e-mail para receber um link de redefinição de senha.' : registering ? 'Use a chave recebida após a contratação para criar o painel de administrador da sua empresa.' : 'Entre com seu e-mail e sua senha pessoal.'}</p></div>
       <div className="access-tabs access-tabs-three" aria-label="Tipo de acesso">{([['enroll','Cadastrar empresa'],['login','Login do corretor'],['login-admin','Login do Administrador']] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={mode === value} disabled={loading} onClick={() => { setMode(value); setRecovering(false); setMessage(''); }}>{label}</button>)}</div>

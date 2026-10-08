@@ -79,3 +79,73 @@
   .center .reactivationRow { grid-template-columns: minmax(0,1fr); gap: 16px; }
   .center .reactivationRow .primary { justify-self: start; }
 }
+
+/* Operational CRM skin; keeps the standalone component compatible. */
+:global(.crm-workspace) .center {
+  --op-accent: var(--accent-text, #0066df);
+  --op-tint: var(--selection, #edf4ff);
+  font-family: var(--crm-font, 'Nunito', sans-serif);
+  font-size: 15px;
+}
+:global(.crm-workspace) .center .reactivationSection {
+  margin: 0 0 24px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 1px 3px rgb(22 35 54 / 3%);
+}
+:global(.crm-workspace) .center .matchesSection { min-width: 0; }
+:global(.crm-workspace) .center .reactivationTitle { margin: 0 0 6px; font: 700 18px/1.4 var(--crm-font, 'Nunito', sans-serif); letter-spacing: 0; }
+:global(.crm-workspace) .center .intro { align-items: center; gap: 12px 20px; margin-bottom: 18px; }
+:global(.crm-workspace) .center .intro p { font-size: 14px; line-height: 1.6; }
+:global(.crm-workspace) .center .intro > span { padding: 5px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); font-size: 12px; }
+:global(.crm-workspace) .center .reactivationSection > .meta { margin: 0 0 18px; padding: 12px 14px; border-left: 2px solid var(--op-accent); border-radius: 0 4px 4px 0; background: var(--secondary); font-size: 12px; }
+:global(.crm-workspace) .center .reactivationList { border-top: 0; }
+:global(.crm-workspace) .center .reactivationRow { gap: 20px; padding: 18px 0; }
+:global(.crm-workspace) .center .reactivationRow:last-child { border-bottom: 0; padding-bottom: 0; }
+:global(.crm-workspace) .center .reactivationRow h3 { margin-bottom: 5px; font: 700 16px/1.4 var(--crm-font, 'Nunito', sans-serif); }
+:global(.crm-workspace) .center .reactivationAge { padding: 12px 14px; border-radius: 4px; background: var(--secondary); font-size: 17px; }
+:global(.crm-workspace) .center .reactivationAge strong { font-weight: 700; }
+:global(.crm-workspace) .center .grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px; }
+:global(.crm-workspace) .center .card { padding: 0; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgb(22 35 54 / 3%); }
+:global(.crm-workspace) .center .header { padding: 18px 20px; margin: 0; gap: 12px; border-bottom: 1px solid var(--line); }
+:global(.crm-workspace) .center .avatar { flex-basis: 38px; height: 38px; font-size: 15px; font-weight: 700; }
+:global(.crm-workspace) .center .card h2 { margin-top: 2px; font-size: 17px; font-weight: 700; letter-spacing: 0; }
+:global(.crm-workspace) .center .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .025em; }
+:global(.crm-workspace) .center .status { padding: 5px 8px; border-radius: 4px; background: var(--secondary); font-size: 11px; font-weight: 600; }
+:global(.crm-workspace) .center .property { margin: 20px 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 4px; background: var(--secondary); }
+:global(.crm-workspace) .center .property h3 { margin: 6px 0; font-size: 18px; font-weight: 700; letter-spacing: 0; }
+:global(.crm-workspace) .center .propertyDetails { margin-top: 16px; }
+:global(.crm-workspace) .center .propertyDetails strong { color: var(--op-accent); font-size: 22px; font-weight: 700; letter-spacing: -.015em; }
+:global(.crm-workspace) .center .compatibility { margin: 18px 20px 0; }
+:global(.crm-workspace) .center .compatibility ul { gap: 6px; margin-top: 8px; }
+:global(.crm-workspace) .center .compatibility li { padding: 4px 8px; border: 0; border-radius: 4px; background: var(--op-tint); color: var(--ink); font-size: 12px; }
+:global(.crm-workspace) .center .card > .meta { margin: 16px 20px; padding-top: 14px; border-top: 1px solid var(--line); }
+:global(.crm-workspace) .center .actions { padding: 0 20px 18px; gap: 12px; }
+:global(.crm-workspace) .center .links button { min-height: 36px; font-size: 13px; font-weight: 600; }
+:global(.crm-workspace) .center .primary { min-height: 40px; padding: 9px 14px; border-radius: 4px; background: var(--crm-brand, #0066df); font-size: 13px; font-weight: 600; }
+:global(.crm-workspace) .center .primary:hover { background: #0059c4; }
+:global(.crm-workspace) .center .workflow { gap: 4px 16px; padding: 8px 20px; margin: 0; background: var(--secondary); }
+:global(.crm-workspace) .center .workflow button { min-height: 36px; font-size: 12px; font-weight: 600; }
+:global(.crm-workspace) .center .review { margin: 0 20px 20px; padding: 16px; border-radius: 4px; }
+:global(.crm-workspace) .center .review textarea { border-radius: 4px; font-family: inherit; font-size: 14px; }
+:global(.crm-workspace) .center .reviewHeading label { font-weight: 600; }
+:global(.crm-workspace) .center .reviewHeading button { border: 1px solid var(--line); border-radius: 4px; }
+:global(.crm-workspace) .center .empty { padding: 38px 22px; border: 1px dashed var(--line); border-radius: 5px; background: var(--secondary); }
+:global(.crm-workspace) .center .empty h2 { font: 700 18px/1.4 var(--crm-font, 'Nunito', sans-serif); letter-spacing: 0; }
+:global(.crm-workspace) .center .empty p { font-size: 14px; }
+:global(.crm-workspace) .center .warning { border-color: #f2c8bd; border-radius: 4px; background: #fff5f2; color: #8d3925; }
+:global(.crm-workspace) .center .pagination { margin-top: 20px; gap: 16px; }
+:global(.crm-workspace) .center .pagination button { border-radius: 4px; font-weight: 600; }
+@media (max-width: 600px) {
+  :global(.crm-workspace) .center .reactivationSection { padding: 18px; }
+  :global(.crm-workspace) .center .reactivationAge { justify-self: start; }
+  :global(.crm-workspace) .center .header { padding: 16px; }
+  :global(.crm-workspace) .center .property { margin: 16px 16px 0; padding: 14px; }
+  :global(.crm-workspace) .center .compatibility { margin: 16px 16px 0; }
+  :global(.crm-workspace) .center .card > .meta { margin: 14px 16px; }
+  :global(.crm-workspace) .center .actions { padding: 0 16px 16px; }
+  :global(.crm-workspace) .center .workflow { padding: 8px 16px; }
+  :global(.crm-workspace) .center .review { margin: 0 16px 16px; }
+}

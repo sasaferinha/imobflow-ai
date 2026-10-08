@@ -597,7 +597,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   }
 
   return (
-    <main className={`app-shell ${embedded ? 'evolution-operational' : ''} ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
+    <main className={`app-shell crm-workspace ${embedded ? 'evolution-operational' : ''} ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
       {!publicDemo && <ReleaseNotice />}
       {syncFailed && <div className="sync-notice" role="status">Não foi possível atualizar os atendimentos. Tentando reconectar…</div>}
       {!embedded && <aside className="sidebar">
@@ -624,6 +624,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
       <section className="workspace">
         <header className="topbar">
           {!embedded && <div><p className="eyebrow">{header.eyebrow}</p><h1>{headerTitle}</h1><p>{header.copy}</p></div>}
+          {embedded && <p className="crm-context-copy">{header.copy}</p>}
           <div className="header-actions">
             {embedded && <><button type="button" className="secondary-button" onClick={() => setUtilityModal('profile')}>Perfil</button><button type="button" className="secondary-button" onClick={() => setUtilityModal('password')}>Senha</button><button type="button" className="secondary-button" onClick={() => setUtilityModal('settings')}>Preferências</button>{account?.role === 'owner' && <button type="button" className="secondary-button" onClick={() => setUtilityModal('team')}>Corretores</button>}<button type="button" className="secondary-button" onClick={async () => { if (publicDemo) { notify('Você está na demonstração. Nenhuma sessão real foi alterada.'); return; } await fetch('/api/admin/logout', { method: 'POST' }); window.location.href = '/painel'; }}>Sair</button></>}
             <button type="button" className="icon-button theme-toggle" aria-label={settings.dark ? 'Ativar modo claro' : 'Ativar modo escuro'} title={settings.dark ? 'Modo claro' : 'Modo escuro'} aria-pressed={settings.dark} onClick={toggleDarkMode}>{settings.dark ? '☀' : '☾'}</button>
