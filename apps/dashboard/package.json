@@ -20,7 +20,7 @@
     "test:pilot": "node scripts/test-pilot-conversations.cjs && node scripts/test-core-opportunities.cjs",
     "test:presentation": "node scripts/test-presentation-handshake.cjs && node scripts/test-presentation-headers.cjs && node scripts/test-product-preview-cta.cjs",
     "test:appointments": "node scripts/test-appointment-picker.cjs && node scripts/test-appointment-selection.cjs && node scripts/test-appointment-form-layout.cjs && node scripts/test-appointment-history.cjs",
-    "test:evolution": "node scripts/test-evolution-model.cjs && node scripts/test-evolution-model-security.cjs && node scripts/test-evolution-legacy-bridge.cjs && node scripts/test-evolution-server.cjs && node scripts/test-evolution-sql.cjs && node scripts/test-evolution-legacy-sql.cjs && node scripts/test-evolution-integrated-server.cjs && node scripts/test-evolution-navigation.cjs"
+    "test:evolution": "node scripts/test-evolution-model.cjs && node scripts/test-evolution-model-security.cjs && node scripts/test-evolution-legacy-bridge.cjs && node scripts/test-evolution-server.cjs && node scripts/test-evolution-sql.cjs && node scripts/test-evolution-legacy-sql.cjs && node scripts/test-evolution-integrated-server.cjs && node scripts/test-evolution-navigation.cjs && node scripts/test-account-menu.cjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

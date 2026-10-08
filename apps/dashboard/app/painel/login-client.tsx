@@ -8,8 +8,8 @@ import './access.css';
 
 type Mode = 'enroll' | 'login' | 'login-admin';
 
-export default function LoginClient() {
-  const [mode, setMode] = useState<Mode>('enroll');
+export default function LoginClient({ initialMode = 'enroll' }: { initialMode?: Mode }) {
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
   const [loading, setLoading] = useState(false);

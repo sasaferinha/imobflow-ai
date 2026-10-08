@@ -245,6 +245,26 @@
 .mobileMenu { display: none; }
 .headerUser, .accountBadge { display: flex; align-items: center; gap: 8px; color: var(--ev-on-brand); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .headerUser small, .accountBadge small { display: block; font-size: 10px; font-weight: 400; }
+.accountMenu { position: relative; flex-shrink: 0; min-width: 0; }
+.headerUser { min-height: 44px; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
+.headerUser:hover, .headerUser[aria-expanded="true"] { background: rgb(0 0 0 / 12%); }
+.headerUser:focus-visible { outline: 2px solid var(--ev-on-brand); outline-offset: 2px; }
+.accountTriggerName { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.accountChevron { flex-shrink: 0; transition: transform .15s ease; }
+.headerUser[aria-expanded="true"] .accountChevron { transform: rotate(180deg); }
+.accountDropdown { position: absolute; z-index: 45; top: calc(100% + 8px); right: 0; width: min(290px, calc(100vw - 30px)); border: 1px solid var(--ev-line); border-radius: var(--ev-panel-radius); background: var(--ev-paper); color: var(--ev-ink); box-shadow: var(--ev-menu-shadow); text-align: left; }
+.accountIdentity { display: grid; gap: 3px; padding: 15px 16px 13px; border-bottom: 1px solid var(--ev-line); overflow-wrap: anywhere; }
+.accountIdentity strong { font-size: 14px; font-weight: 700; }
+.accountIdentity > span { color: var(--ev-muted); font-size: 12px; }
+.accountMenuBody { padding: 8px; }
+.accountLogout { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 10px 8px; border: 0; border-radius: var(--ev-radius); background: transparent; color: var(--ev-ink); font-family: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+.accountLogout svg { color: var(--ev-brand-ink); flex-shrink: 0; }
+.accountLogout:hover, .accountLogout:focus-visible { background: var(--ev-brand-wash); color: var(--ev-brand-ink); }
+.accountLogout:focus-visible { outline: 2px solid var(--ev-brand); outline-offset: -2px; }
+.accountLogout:disabled { opacity: .6; cursor: wait; }
+.accountHint, .accountNotice, .accountError { margin: 4px 8px 8px; font-size: 12px; line-height: 1.5; }
+.accountHint, .accountNotice { color: var(--ev-muted); }
+.accountError { color: var(--ev-red); }
 .avatar {
   display: grid;
   place-items: center;
@@ -736,7 +756,7 @@
   .header, .topbar { gap: 10px; }
   .navButton { gap: 4px; padding: 0 7px; font-size: 14px; }
   .brand > span { font-size: 19px; }
-  .headerUser > span:last-child, .accountBadge > span:last-child, .workspaceName, .headerSeparator { display: none; }
+  .headerUser .accountTriggerName, .accountBadge > span:last-child, .workspaceName, .headerSeparator { display: none; }
   .quickActions { gap: 4px; }
   .dashboardGrid { grid-template-columns: minmax(0, 1fr) 285px; }
   .summaryCard { padding: 8px 12px; }

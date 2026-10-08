@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { canAccess, dashboardMetrics, filterCases, freshness, type Actor, type CrmState, type CrmRecord, type CrmCommand as Command } from '@/lib/evolution/model';
 import { CAPTURE_STAGES, MODULES, NEGOTIATION_STAGES, type Field, type Kind } from '@/lib/evolution/schema';
 import s from './evolution.module.css';
+import AccountMenu from './account-menu';
 
 export type OperationalPage = 'conversations' | 'opportunities' | 'appointments' | 'imports' | 'integrations' | 'account' | 'brokers' | 'results' | 'operational-goals' | 'portfolio' | 'customer-base';
 type Page = Kind | 'dashboard' | 'reports' | 'members' | 'settings' | OperationalPage;
@@ -322,7 +323,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
         {groups.map(group => <div className={s.navGroup} key={group.title}><button className={`${s.navButton} ${group.items.includes(page) ? s.navActive : ''}`} onClick={() => setMenu(menu === group.title ? null : group.title)} aria-expanded={menu === group.title}>{group.title}<Icon name="chevron" size={13} /></button>{menu === group.title && <><button className={s.menuDismiss} aria-label="Fechar menu" onClick={() => setMenu(null)} /><div className={s.navDropdown}>{group.items.map(item => <button key={item} className={page === item ? s.dropdownActive : ''} onClick={() => navigate(item)}><Icon name={['tasks', 'appointments'].includes(item) ? 'calendar' : group.icon} size={19} />{pageTitle(item)}</button>)}</div></>}</div>)}
       </nav>
       <div className={s.quickActions}><button className={s.iconButton} onClick={() => navigate(hasLiveOperation ? 'appointments' : 'tasks')} aria-label="Agenda" title="Agenda"><Icon name="calendar" size={21} /></button><button className={s.iconButton} onClick={() => navigate('notes')} aria-label="Anotações" title="Anotações"><Icon name="edit" size={21} /></button><button className={s.iconButton} onClick={() => navigate('notices')} aria-label="Mural de avisos" title="Mural de avisos"><Icon name="tool" size={21} /></button></div>
-      <div className={s.headerUser} title={`${actor.name} · ${isAdmin ? 'Administrador' : 'Corretor'}`}><span className={s.avatar}>{initials(actor.name)}</span><span>{actor.name}<small>{isAdmin ? 'Administrador' : 'Corretor'}</small></span></div>
+      <AccountMenu name={actor.name} role={actor.role} preview={mode === 'preview'} onOpen={() => { setMenu(null); setMobileNavOpen(false); }} />
     </header>
     <div className={s.pageHead}><div><h1>{title}</h1></div><div className={s.headActions}><button className={s.secondaryButton} aria-label="Atualizar" onClick={() => void refresh()} disabled={busy}><Icon name="refresh" size={17} /><span>Atualizar</span></button>{page in MODULES ? (!MODULES[page as Kind].admin || isAdmin) && <button className={s.primaryButton} onClick={() => create(page as Kind)}><Icon name="plus" size={17} />{MODULES[page as Kind].singular}</button> : page === 'dashboard' && <button className={s.primaryButton} onClick={() => create('cases')}><Icon name="plus" size={17} />Novo atendimento</button>}<a className={s.legacyLink} href="/painel?experiencia=classica" title="Abrir experiência anterior">Painel clássico <Icon name="external" size={14} /></a></div></div>
     <main className={s.main}>

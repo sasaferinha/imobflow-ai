@@ -1,5 +1,14 @@
 # Novo painel ImobFlow: integração e publicação
 
+## Menu da conta em 08/10/2026
+
+- O avatar/nome no cabeçalho abre opções da conta, incluindo saída explícita. Abrir o menu não encerra a sessão. Demonstrações não executam logout real.
+- A saída usa o endpoint existente, confere a resposta, limita a espera a 15 segundos e retorna ao login do papel atual, com opção de escolher outro acesso. Erros permitem nova tentativa; cliques repetidos ficam bloqueados enquanto a solicitação está em andamento.
+- Nenhuma migração, credencial, integração WhatsApp ou permissão foi alterada. A API continua revogando somente a sessão atual.
+- Teste isolado `scripts/test-account-menu.cjs`, incluído em `test:evolution`, cobre menu, foco, fechamento, saída, erros, timeout, isolamento da demonstração, seleção segura do login e contrato da API. Conferência visual local em desktop e 390px com dados fictícios; fixture removida antes da publicação. Nenhuma sessão real foi encerrada para testar.
+- Lint dos arquivos de menu/login aprovado. As quatro ocorrências de hooks em `evolution-client.tsx` foram reproduzidas no arquivo da revisão-base (`bb72c86`); a integração altera somente o import e a substituição do avatar pelo menu, preservando a lógica existente.
+- Retorno: reverter o commit do menu e publicar novamente, sem reverter dados.
+
 ## Unificação visual em 08/10/2026
 
 - Base da evolução visual: `06ece1c6e69896e72578a9ba54ee94fc6e5ff8df`, alinhada ao GitHub e à produção no início do trabalho. O checkout antigo com alterações locais foi preservado.

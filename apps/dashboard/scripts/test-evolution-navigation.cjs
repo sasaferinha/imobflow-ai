@@ -34,6 +34,7 @@ function runtime(react = React, environment = {}) {
         if (id === 'react') return react;
         if (id === 'react/jsx-runtime') return require(id);
         if (id.endsWith('.css')) return css;
+        if (id === './account-menu') return load('app/evolution/account-menu.tsx');
         if (id === '@/lib/evolution/model') return load('lib/evolution/model.ts');
         if (id === '@/lib/evolution/schema' || id === './schema') return load('lib/evolution/schema.ts');
         throw new Error(`Unexpected client dependency: ${id}`);
