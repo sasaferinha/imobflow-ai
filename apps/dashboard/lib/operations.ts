@@ -26,7 +26,7 @@ export type PropertyRecord = {
 
 export type PropertyInput = Omit<PropertyRecord, 'id' | 'createdAt'>;
 
-export type AppointmentStatus = 'Confirmada' | 'Aguardando';
+export type AppointmentStatus = 'Confirmada' | 'Aguardando' | 'Realizada' | 'Ausência' | 'Cancelada';
 
 export type AppointmentRecord = {
   id: string;

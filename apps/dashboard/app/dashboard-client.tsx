@@ -25,7 +25,9 @@ const WhatsAppIntegration = dynamic(() => import('./whatsapp-integration'), { lo
 const TeamModal = dynamic(() => import('./team-modal'), { loading: loadingSection });
 const ClientImport = dynamic(() => import('./client-import'), { loading: loadingSection });
 
-type View = 'imports' | 'overview' | 'goals' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'opportunities' | 'integrations';
+export type DashboardView = 'imports' | 'overview' | 'goals' | 'conversations' | 'leads' | 'properties' | 'agenda' | 'opportunities' | 'integrations';
+type View = DashboardView;
+type DashboardUtility = 'profile' | 'settings' | 'broker' | 'team' | 'password';
 type Property = PropertyRecord;
 type DashboardLead = LeadProfile & { initials: string; intent: string; status: string; tone: number };
 type LeadFilter = 'rent' | 'buy' | 'hot' | 'cold' | 'house' | 'apartment';
@@ -181,8 +183,10 @@ function announcePropertyChange() {
   announceDashboardChange('properties');
 }
 
-export default function DashboardClient({ account, publicDemo = false, initialView = 'overview', initialDarkMode = false }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View; initialDarkMode?: boolean }) {
-  const [view, setView] = useState<View>(initialView);
+export default function DashboardClient({ account, publicDemo = false, initialView = 'overview', initialDarkMode = false, embedded = false, initialUtility = null, onViewChange }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View; initialDarkMode?: boolean; embedded?: boolean; initialUtility?: DashboardUtility | null; onViewChange?: (view: DashboardView) => void }) {
+  const [view, setViewState] = useState<View>(initialView);
+  function setView(next: View) { setViewState(next); if (embedded) onViewChange?.(next); }
+  useEffect(() => { if (embedded) setViewState(initialView); }, [embedded, initialView]);
   const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createLiveConversationState);
   const [leadSearch, setLeadSearch] = useState('');
   const [leadFilters, setLeadFilters] = useState<LeadFilter[]>([]);
@@ -201,7 +205,8 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   const [toast, setToast] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [utilityModal, setUtilityModal] = useState<'profile' | 'settings' | 'broker' | 'team' | 'password' | null>(null);
+  const [utilityModal, setUtilityModal] = useState<DashboardUtility | null>(initialUtility);
+  useEffect(() => { if (embedded) setUtilityModal(initialUtility); }, [embedded, initialUtility]);
   const [profile, setProfile] = useState({ name: account?.name || 'Corretor', company: account?.company || 'Imobiliária' });
   const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: publicDemo && initialDarkMode });
   const [notifications, setNotifications] = useState<Opportunity[]>([]);
@@ -592,10 +597,10 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   }
 
   return (
-    <main className={`app-shell ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
+    <main className={`app-shell ${embedded ? 'evolution-operational' : ''} ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
       {!publicDemo && <ReleaseNotice />}
       {syncFailed && <div className="sync-notice" role="status">Não foi possível atualizar os atendimentos. Tentando reconectar…</div>}
-      <aside className="sidebar">
+      {!embedded && <aside className="sidebar">
         <button type="button" className="brand brand-button" onClick={() => openView('overview')} aria-label="Ir para a visão geral">
           <span className="brand-mark"><svg viewBox="0 0 32 44" width="32" height="44" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 41V24l8-4v21M11 20V7l12-5v39M23 16h6v25" /></svg></span>
           <div><strong>ImobFlow</strong><span>Gestão Imobiliária</span></div>
@@ -614,12 +619,13 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
           <button type="button" className="nav-item mobile-profile-nav" onClick={() => setProfileOpen((open) => !open)} aria-label="Perfil e configurações" aria-expanded={profileOpen} title="Perfil e configurações"><span className="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg></span><span className="nav-label">Perfil</span></button>
           {profileOpen && <div className="profile-menu popover"><strong>{account?.role === 'owner' ? 'Painel do administrador' : 'Perfil do corretor'}</strong><button type="button" onClick={() => { setUtilityModal('broker'); setProfileOpen(false); }}>Meu desempenho</button>{account?.role === 'owner' && <button type="button" onClick={() => { setUtilityModal('team'); setProfileOpen(false); }}>Gerenciar corretores</button>}<button type="button" onClick={() => { setUtilityModal('profile'); setProfileOpen(false); }}>Editar perfil</button><button type="button" onClick={() => { setUtilityModal('settings'); setProfileOpen(false); }}>Configurações</button><button type="button" onClick={() => { setUtilityModal('password'); setProfileOpen(false); }}>Trocar minha senha</button><button type="button" onClick={async () => { if (publicDemo) { notify('Você está na demonstração. Nenhuma sessão real foi alterada.'); return; } await fetch('/api/admin/logout', { method:'POST' }); window.location.href = '/painel'; }}>Sair do painel</button></div>}
         </div>
-      </aside>
+      </aside>}
 
       <section className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow">{header.eyebrow}</p><h1>{headerTitle}</h1><p>{header.copy}</p></div>
+          {!embedded && <div><p className="eyebrow">{header.eyebrow}</p><h1>{headerTitle}</h1><p>{header.copy}</p></div>}
           <div className="header-actions">
+            {embedded && <><button type="button" className="secondary-button" onClick={() => setUtilityModal('profile')}>Perfil</button><button type="button" className="secondary-button" onClick={() => setUtilityModal('password')}>Senha</button><button type="button" className="secondary-button" onClick={() => setUtilityModal('settings')}>Preferências</button>{account?.role === 'owner' && <button type="button" className="secondary-button" onClick={() => setUtilityModal('team')}>Corretores</button>}<button type="button" className="secondary-button" onClick={async () => { if (publicDemo) { notify('Você está na demonstração. Nenhuma sessão real foi alterada.'); return; } await fetch('/api/admin/logout', { method: 'POST' }); window.location.href = '/painel'; }}>Sair</button></>}
             <button type="button" className="icon-button theme-toggle" aria-label={settings.dark ? 'Ativar modo claro' : 'Ativar modo escuro'} title={settings.dark ? 'Modo claro' : 'Modo escuro'} aria-pressed={settings.dark} onClick={toggleDarkMode}>{settings.dark ? '☀' : '☾'}</button>
             <div className="notification-wrap">
               <button type="button" className="icon-button" aria-label={`Notificações: ${unreadCount} não lidas`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>♢{settings.alerts && unreadCount > 0 && <i />}</button>
@@ -682,9 +688,21 @@ function PeriodLoadNotice({ month, changeMonth, loading, error, retry }: { month
   </section>;
 }
 
+function usePerformanceLoadAttempt() {
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const invalidate = (event: Event) => {
+      if ((event as CustomEvent<{ entity?: string }>).detail?.entity === 'performance') setAttempt(current => current + 1);
+    };
+    window.addEventListener('imobflow_data_changed', invalidate);
+    return () => window.removeEventListener('imobflow_data_changed', invalidate);
+  }, []);
+  return [attempt, setAttempt] as const;
+}
+
 function Overview({ notify, canEditGoals, properties, refreshProperties }: { notify:(message:string)=>void; canEditGoals:boolean; properties:PropertyRecord[]; refreshProperties:()=>Promise<void> }) {
   const [month, setMonth] = useState(() => businessCalendarDate().slice(0, 7));
-  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadAttempt, setLoadAttempt] = usePerformanceLoadAttempt();
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
   const [modal, setModal] = useState<'sale' | 'goals' | null>(null);
   const [dealType, setDealType] = useState<'Venda' | 'Aluguel'>('Venda');
@@ -819,7 +837,7 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
 
 function GoalsManagement({ notify }: { notify:(message:string)=>void }) {
   const [month, setMonth] = useState(() => businessCalendarDate().slice(0, 7));
-  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadAttempt, setLoadAttempt] = usePerformanceLoadAttempt();
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1114,6 +1132,7 @@ function Agenda({ items, setItems, notify, leads, properties, brokerName }: { it
   }
 
   async function confirmAppointment(appointment: AppointmentRecord) {
+    if (appointment.status !== 'Aguardando') { notify('Somente visitas aguardando podem ser confirmadas. O registro atual foi preservado.'); return; }
     try {
       const response = await fetch(`/api/appointments/${appointment.id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ status:'Confirmada' }) });
       const result = await response.json() as { data?:AppointmentRecord; error?:string };
@@ -1126,6 +1145,7 @@ function Agenda({ items, setItems, notify, leads, properties, brokerName }: { it
   }
 
   async function removeAppointment(appointment: AppointmentRecord) {
+    if (!['Aguardando', 'Confirmada'].includes(appointment.status)) { notify('Esta visita já foi encerrada. O registro permanece no histórico.'); return; }
     if (!window.confirm(`Cancelar a visita de ${appointment.name}?`)) return;
     try {
       const response = await fetch(`/api/appointments/${appointment.id}`, { method:'DELETE' });
@@ -1139,6 +1159,8 @@ function Agenda({ items, setItems, notify, leads, properties, brokerName }: { it
   }
 
   const activeAppointment = visibleItems.find((item) => item.id === selectedAppointment);
+  const openItems = visibleItems.filter(item => ['Aguardando', 'Confirmada'].includes(item.status));
+  const closedItems = visibleItems.filter(item => ['Realizada', 'Ausência', 'Cancelada'].includes(item.status));
   const brokerCount = new Set(visibleItems.map((item) => item.broker)).size;
   return <div className="agenda-layout native-agenda">
     <section className="panel calendar-panel">
@@ -1163,11 +1185,11 @@ function Agenda({ items, setItems, notify, leads, properties, brokerName }: { it
         </button>)}
         {visibleItems.length === 0 && <div className="agenda-empty"><span aria-hidden="true">＋</span><h3>Seu dia está livre</h3><p>Nenhuma visita agendada para esta data.</p><button type="button" className="profile-action" onClick={() => setFormOpen(true)}>Agendar uma visita</button></div>}
       </div>
-      {activeAppointment && <div className="appointment-detail"><div><strong>{activeAppointment.name}</strong><span>{activeAppointment.time} • {activeAppointment.property}</span></div><div className="appointment-detail-actions"><button type="button" onClick={() => setSelectedAppointment(null)}>Fechar</button><button type="button" className="cancel-visit" onClick={() => removeAppointment(activeAppointment)}>Cancelar visita</button>{activeAppointment.status !== 'Confirmada' && <button type="button" className="confirm-visit" onClick={() => confirmAppointment(activeAppointment)}>Confirmar visita</button>}</div></div>}
+      {activeAppointment && <div className="appointment-detail"><div><strong>{activeAppointment.name}</strong><span>{activeAppointment.time} • {activeAppointment.property}</span></div><div className="appointment-detail-actions"><button type="button" onClick={() => setSelectedAppointment(null)}>Fechar</button>{['Aguardando', 'Confirmada'].includes(activeAppointment.status) ? <button type="button" className="cancel-visit" onClick={() => removeAppointment(activeAppointment)}>Cancelar visita</button> : <span role="status">Visita encerrada · {activeAppointment.status}. Histórico preservado.</span>}{activeAppointment.status === 'Aguardando' && <button type="button" className="confirm-visit" onClick={() => confirmAppointment(activeAppointment)}>Confirmar visita</button>}</div></div>}
     </section>
     <aside className="panel day-summary"><p className="eyebrow">Resumo do dia</p><h2>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}</h2>
-      <div className="summary-number"><strong>{visibleItems.length}</strong><span>visitas agendadas</span></div>
-      <ul><li><span><i className="mint"/>Confirmadas</span><strong>{visibleItems.filter((item) => item.status === 'Confirmada').length}</strong></li><li><span><i className="amber"/>Aguardando</span><strong>{visibleItems.filter((item) => item.status === 'Aguardando').length}</strong></li><li><span><i className="blue"/>Corretores</span><strong>{brokerCount}</strong></li></ul>
+      <div className="summary-number"><strong>{openItems.length}</strong><span>visitas em aberto</span></div>
+      <ul><li><span><i className="mint"/>Confirmadas</span><strong>{visibleItems.filter((item) => item.status === 'Confirmada').length}</strong></li><li><span><i className="amber"/>Aguardando</span><strong>{visibleItems.filter((item) => item.status === 'Aguardando').length}</strong></li><li><span>Realizadas</span><strong>{closedItems.filter(item => item.status === 'Realizada').length}</strong></li><li><span>Ausências</span><strong>{closedItems.filter(item => item.status === 'Ausência').length}</strong></li><li><span>Canceladas</span><strong>{closedItems.filter(item => item.status === 'Cancelada').length}</strong></li><li><span><i className="blue"/>Corretores</span><strong>{brokerCount}</strong></li></ul>
       <button type="button" className="primary-button" aria-expanded={formOpen} onClick={() => setFormOpen((open) => !open)}>＋ Novo horário</button>
       {formOpen && <form className="inline-form appointment-form" onSubmit={addAppointment}>
         <header><h3>Nova visita</h3><time dateTime={activeDate}>{new Date(activeDate + 'T12:00:00').toLocaleDateString('pt-BR')}</time></header>

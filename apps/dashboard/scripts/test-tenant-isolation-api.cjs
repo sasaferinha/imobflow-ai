@@ -40,8 +40,18 @@ async function run() {
         const table = identifier(resource), values = [], predicates = [];
         for (const [key,value] of url.searchParams) {
           if (['select','order','limit','offset'].includes(key)) continue;
-          assert.ok(value.startsWith('eq.'),value);
-          values.push(value.slice(3)); predicates.push(`${identifier(key)}=$${values.length}`);
+          if (value.startsWith('eq.')) {
+            values.push(value.slice(3)); predicates.push(`${identifier(key)}=$${values.length}`);
+          } else {
+            const match = value.match(/^in\.\(([^()]*)\)$/);
+            assert.ok(match,`Unsupported PostgREST filter: ${value}`);
+            const items = match[1].split(',');
+            assert.ok(items.length > 0 && items.length <= 100);
+            for (const item of items) assert.match(item,/^[\p{L}\p{N}_ .:-]+$/u,'This isolated adapter accepts simple unquoted IN values only');
+            // Bind each element independently; never interpolate filter values into SQL.
+            const bindings = items.map(item => { values.push(item); return `$${values.length}`; });
+            predicates.push(`${identifier(key)} IN (${bindings.join(',')})`);
+          }
         }
         const where = predicates.length ? ` WHERE ${predicates.join(' AND ')}` : '';
         if (method === 'GET') {
@@ -120,6 +130,14 @@ async function run() {
     assert.equal((await property.DELETE(request('DELETE',tokens[0]),context(createdId))).status,200);
     assert.equal((await lead.PATCH(request('PATCH',tokens[0],{lifecycleStatus:'Em atendimento'}),context(id(101)))).status,200);
     assert.equal((await appointment.PATCH(request('PATCH',tokens[0],{status:'Confirmada'}),context(id(901)))).status,200);
+    for (const status of ['Realizada','Ausência','Cancelada']) {
+      await db.query('UPDATE appointments SET status=$1 WHERE id=$2',[status,id(901)]);
+      const beforeDeniedBackground=background.length;
+      assert.equal((await appointment.PATCH(request('PATCH',tokens[0],{status:'Confirmada'}),context(id(901)))).status,404,'completed appointment cannot be reopened by a classic request');
+      assert.equal((await appointment.DELETE(request('DELETE',tokens[0]),context(id(901)))).status,404,'completed appointment cannot be deleted');
+      assert.equal((await db.query('SELECT status FROM appointments WHERE id=$1',[id(901)])).rows[0].status,status);
+      assert.equal(background.length,beforeDeniedBackground);
+    }
 
     for (const token of [undefined,'forged','c'.repeat(64)]) {
       assert.equal((await properties.GET(request('GET',token))).status,401);

@@ -147,12 +147,15 @@ export async function createAppointment(input: AppointmentInput): Promise<Appoin
 }
 
 export async function updateAppointmentStatus(id: string, status: AppointmentRecord['status']): Promise<AppointmentRecord | null> {
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, { method: 'PATCH', prefer: 'return=representation', body: { status } });
+  // Keep the status predicate in the mutation itself: a concurrent completion
+  // must not be reopened by an older classic-panel confirmation request.
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&status=in.(Aguardando,Agendada,Confirmada)`, { method: 'PATCH', prefer: 'return=representation', body: { status } });
   return rows[0] ? mapAppointment(rows[0]) : null;
 }
 
 export async function deleteAppointment(id: string): Promise<boolean> {
-  const rows = await supabaseRequest<Array<{ id: string }>>(`appointments?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&select=id`, { method: 'DELETE', prefer: 'return=representation' });
+  // Classic cancellation deletes an open slot, never completed visit history.
+  const rows = await supabaseRequest<Array<{ id: string }>>(`appointments?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&status=in.(Aguardando,Agendada,Confirmada)&select=id`, { method: 'DELETE', prefer: 'return=representation' });
   return rows.length > 0;
 }
 
@@ -163,7 +166,7 @@ function mapAppointment(row: Record<string, unknown>, leadNames = new Map<string
   return {
     id: String(row.id), date: scheduledAt.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), time: scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
     name: leadNames.get(String(row.lead_id)) || fallbackName || 'Cliente', property: propertyNames.get(String(row.property_id)) || fallbackProperty || 'Imóvel',
-    broker: String(row.assigned_to || 'Marina Oliveira'), status: row.status === 'Confirmada' ? 'Confirmada' : 'Aguardando', color: row.status === 'Confirmada' ? 'mint' : 'amber',
+    broker: String(row.assigned_to || 'Sem responsável'), status: ['Confirmada','Realizada','Ausência','Cancelada'].includes(String(row.status)) ? row.status as AppointmentRecord['status'] : 'Aguardando', color: row.status === 'Confirmada' ? 'mint' : ['Realizada','Cancelada','Ausência'].includes(String(row.status)) ? 'gray' : 'amber',
     createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }
