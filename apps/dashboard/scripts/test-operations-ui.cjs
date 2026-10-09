@@ -87,6 +87,8 @@ assert(text(central.tree).includes('Em plantão agora'));
 button(central.tree, 'Resumo semanal').props.onClick(); central.render();
 assert(text(central.tree).includes('Resumo semanal · 2026-10-05'));
 assert(text(central.tree).includes('Exportar resumo CSV'));
+assert(text(central.tree).includes('Novos atendimentos'));
+assert(!text(central.tree).includes('Atendimentos abertos'),'weekly creation counts must not claim current open workload');
 button(central.tree, 'Qualidade da carteira').props.onClick(); central.render();
 assert(text(central.tree).includes('Lead fictício incompleto'));
 button(central.tree, 'Completar cadastro').props.onClick();

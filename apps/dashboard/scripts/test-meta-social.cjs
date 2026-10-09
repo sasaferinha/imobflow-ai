@@ -46,6 +46,10 @@ function load(name){
   const lead=rows.get(m.socialLeadId(event));assert.equal(lead.company_id,company);assert.equal(lead.goal,'Alugar');assert.equal(lead.budget_max,null);assert.equal(lead.assigned_to,null);
   assert.notEqual(m.socialLeadId(event),m.socialLeadId({...event,connection:{...connection,companyId:'22222222-2222-4222-a222-222222222222'}}));
   const unqualified=m.mapFacebookLead({field_data:[{name:'phone_number',values:['invalid']},{name:'objetivo',values:['talvez comprar ou alugar']},{name:'orcamento',values:['500 mil']}]});assert.equal(unqualified.goal,'Não informado');assert.equal(unqualified.phone,'');assert.equal(unqualified.budget,'Não informado');
+  for (const purpose of ['Locação','LOCAÇÃO','Locac\u0327a\u0303o','Locacao','Alugar','Aluguel']) {
+    assert.equal(m.mapFacebookLead({field_data:[{name:'finalidade',values:[purpose]}]}).goal,'Alugar',`explicit rental purpose is accent-insensitive: ${purpose}`);
+  }
+  assert.equal(m.mapFacebookLead({field_data:[{name:'finalidade',values:['Compra ou locação']}]}).goal,'Não informado','normalization must not guess ambiguous purpose');
   const ig={object:'instagram',entry:[{id:'456',messaging:[{sender:{id:'777'},recipient:{id:'456'},timestamp:Date.now(),message:{mid:'mid1',text:'Gostaria de informações'}}]}]};
   const [dm]=m.parseSocialEvents(ig,[connection]);assert.equal(dm.senderId,'777');
   await m.saveSocialEvent(dm);await m.saveSocialEvent(dm);assert.equal(rows.get(m.socialLeadId(dm)).interest_profile.socialMessages.length,1);

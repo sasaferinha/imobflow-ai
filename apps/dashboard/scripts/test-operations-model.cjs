@@ -100,17 +100,22 @@ assert.equal(ops.recommendAssignees(state,'Venda','broker1',now).some(r=>r.id===
 // Funnel prerequisites apply both to forms and atomic conversation registration.
 configure({funnelEnabled:true,requireCompleteCatalog:true,requireAttendanceBeforeSchedule:true,requireVisitBeforeProposal:true});
 fails(()=>save('cases',{stage:'Atendimento'},caseId,b1),/Complete o cadastro/);
+const tasksChangingType = ['Pendente','Confirmada','Realizada'].map(status => save('tasks',{name:`Task-to-visit regression ${status}`,caseId,assignedTo:'broker1',type:'Tarefa',propertyId:property,dueAt:'2026-10-10T09:00',priority:'Normal',status},undefined,b1));
+for (const task of tasksChangingType) fails(()=>save('tasks',{type:'Visita'},task,b1),/Complete o cadastro/);
 const register=(action,data={})=>m.applyCommand(state,b1,{type:'register',caseId,requestId:crypto.randomUUID(),action,data},now);
 fails(()=>register('attendance',{channel:'WhatsApp',outcome:'Contato realizado'}),/Complete o cadastro/);
 save('people',{phone:'35999999999'},person,b1);
 save('leads',{propertyType:'Apartamento',city:'Lavras',budgetMax:200000,bedrooms:0,parkingSpaces:0},lead,b1);
 assert.equal(ops.catalogCompleteness(state,state.records.find(r=>r.id===lead)).complete,true);
+for (const task of tasksChangingType) fails(()=>save('tasks',{type:'Visita'},task,b1),/Registre o atendimento/);
 const qualifiedLead=state.records.find(r=>r.id===lead);
 for (const placeholder of ['Não informado','NAO INFORMADO','A definir',' Não definida ']) assert.equal(ops.catalogCompleteness(state,{...qualifiedLead,data:{...qualifiedLead.data,propertyType:placeholder}}).complete,false,'unknown placeholders are not qualification');
 const visitData={name:'Visit',caseId,assignedTo:'broker1',type:'Visita',propertyId:property,dueAt:'2026-10-10T10:00',priority:'Normal',status:'Confirmada'};
 fails(()=>save('tasks',visitData,undefined,b1),/Registre o atendimento/);
 fails(()=>save('cases',{stage:'Agendamento'},caseId,b1),/Registre o atendimento/);
 save('cases',{stage:'Atendimento'},caseId,b1);
+save('tasks',{type:'Visita'},tasksChangingType[0],b1);
+assert.equal(state.records.find(r=>r.id===tasksChangingType[0]).data.type,'Visita','changing a task to a visit succeeds after prerequisites are fulfilled');
 const visit=save('tasks',visitData,undefined,b1);
 save('cases',{stage:'Agendamento'},caseId,b1);
 const proposalData={name:'Proposal',caseId,propertyId:property,amount:99000,conditions:'Example conditions',expiresAt:'2026-11-01',status:'Enviada'};

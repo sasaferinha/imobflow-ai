@@ -166,7 +166,7 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
     if (!unresolvedLegacyAssignee && (!assignee || !canAccess(state, {companyId:state.companyId,brokerId:assignee.id,name:assignee.name,role:assignee.role}, parent))) throw new CrmError('O responsável pela atividade precisa ter acesso ao atendimento. Ajuste a carteira ou as permissões antes de atribuir.');
     if (d.type === 'Visita' && !d.propertyId && !(previous?.legacy?.table === 'appointments' && !previous.data.propertyId)) throw new CrmError('Selecione o imóvel da visita.');
     if (['Ausência', 'Cancelada'].includes(String(d.status)) && !d.reason) throw new CrmError('Informe o motivo / feedback.');
-    if (d.type === 'Visita' && (!previous || previous.data.status !== d.status) && ['Pendente','Confirmada','Realizada'].includes(String(d.status))) {
+    if (d.type === 'Visita' && (!previous || previous.data.type !== 'Visita' || previous.data.status !== d.status) && ['Pendente','Confirmada','Realizada'].includes(String(d.status))) {
       const blocked = funnelBlockReason(state,{...parent,data:{...parent.data,stage:d.status==='Realizada'?'Visita':'Agendamento'}},{...parent,data:{...parent.data,stage:'Lead'}});
       if (blocked) throw new CrmError(blocked);
     }

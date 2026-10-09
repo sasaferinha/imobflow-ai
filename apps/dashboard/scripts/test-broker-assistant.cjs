@@ -6,9 +6,9 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const root = path.resolve(__dirname, '..');
 const uuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-function load(file, dependencies = {}, globals = {}) {
+function load(file, dependencies = {}, globals = {}, sourceSuffix = '') {
   const module = { exports: {} };
-  const source = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), { reportDiagnostics: true, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } });
+  const source = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8') + sourceSuffix, { reportDiagnostics: true, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } });
   assert.equal(source.diagnostics.filter(item => item.category === ts.DiagnosticCategory.Error).length, 0, file);
   vm.runInNewContext(source.outputText, { module, exports: module.exports, require: name => name === 'server-only' ? {} : name in dependencies ? dependencies[name] : require(name), Buffer, URL, Response, Request, AbortController, AbortSignal, Set, Map, Date, Intl, console, ...globals }, { filename: file });
   return module.exports;
@@ -68,7 +68,7 @@ const completion = value => ({ status: 'completed', output: [{ type: 'message', 
 
   const actor = { companyId: uuid(1), brokerId: uuid(10), role: 'broker', name: 'Broker synthetic' };
   const record = { id: `lead:${uuid(30)}`, kind: 'leads', data: { purpose: 'Venda' }, legacy: { id: uuid(30), table: 'leads', assignedTo: actor.brokerId } };
-  let canWrite = true, state = { companyId: actor.companyId, version: 3, sourceRevision: 'a', records: [record] }, rates = true, syntheticOutput = completion(valid()), reads = [], generationCalls = [], authenticated = true, snapshotReads = 0, onSecondRead;
+  let canWrite = true, state = { companyId: actor.companyId, version: 3, sourceRevision: 'a', records: [record] }, rates = true, syntheticOutput = valid(), reads = [], generationCalls = [], authenticated = true, snapshotReads = 0, onSecondRead;
   class CrmError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
   class EvolutionServerError extends Error { constructor(status, message) { super(message); this.status = status; } }
   const route = load('app/api/conversations/assist/route.ts', {
@@ -93,8 +93,36 @@ const completion = value => ({ status: 'completed', output: [{ type: 'message', 
   snapshotReads = 0; let resultResponse = await route.POST(request()); assert.equal(resultResponse.status, 200);
   assert.ok(reads.every(url => url.includes(`company_id=eq.${actor.companyId}`)));
   assert.equal(generationCalls[0].messages[0].id, uuid(40)); assert.equal(generationCalls[0].messages[0].side, 'incoming');
-  assert.equal((await resultResponse.json()).review.expectedVersion, 3);
+  const payloadForUi = await resultResponse.json();
+  const uiContract = load('app/conversation-assistant.tsx', {
+    '@/lib/dashboard-transport': {}, './conversation-assistant.module.css': {},
+  }, {}, '\nexport { isResult as acceptsAnalysisResponse };');
+  assert.equal(uiContract.acceptsAnalysisResponse(payloadForUi), true, 'The actual UI parser must accept the route response');
+  assert.deepEqual(payloadForUi.assistance, valid());
+  assert.equal(payloadForUi.messageCount, messages.length);
+  assert.equal(payloadForUi.review.record.id, `lead:${uuid(30)}`);
+  assert.equal(payloadForUi.review.expectedVersion, 3);
+  assert.equal(payloadForUi.review.expectedSourceRevision, 'a');
+  assert.equal(uiContract.acceptsAnalysisResponse({ ...payloadForUi, assistance: completion(valid()) }), false, 'A raw provider envelope is not the assistant contract');
   snapshotReads = 0; onSecondRead = () => { canWrite = false; }; assert.equal((await route.POST(request())).status, 403); canWrite = true;
-  snapshotReads = 0; onSecondRead = () => { state.version++; }; assert.equal((await route.POST(request())).status, 409); onSecondRead = undefined;
-  console.log('PASS assistant route: authentication, explicit origin, body cap/allowlist, portfolio write scope, rate limits, persisted tenant-scoped chronology, post-generation access/version recheck');
+  snapshotReads = 0; onSecondRead = () => { state.records = []; }; assert.equal((await route.POST(request())).status, 403); state.records = [record];
+  snapshotReads = 0; onSecondRead = () => {
+    state.version++; state.sourceRevision = 'unrelated-update';
+    state.records.push({ id: 'unrelated-property', kind: 'properties', data: { name: 'Synthetic property' } });
+  };
+  resultResponse = await route.POST(request()); assert.equal(resultResponse.status, 200, 'An unrelated global update must not invalidate the analysis');
+  const updatedReview = await resultResponse.json();
+  assert.equal(uiContract.acceptsAnalysisResponse(updatedReview), true);
+  assert.equal(updatedReview.review.expectedVersion, 4); assert.equal(updatedReview.review.expectedSourceRevision, 'unrelated-update');
+  assert.deepEqual(updatedReview.review.record, record, 'The returned target is intact and uses the fresh CAS tokens');
+  state.records = [record];
+  snapshotReads = 0; onSecondRead = () => { state.records = [{ ...record, data: { ...record.data, region: 'Updated during analysis' } }]; };
+  assert.equal((await route.POST(request())).status, 409, 'Target field changes conflict even when global version tokens did not change'); state.records = [record];
+  snapshotReads = 0; onSecondRead = () => { state.records = [{ ...record, updatedAt: '2026-10-09T17:00:00Z' }]; };
+  assert.equal((await route.POST(request())).status, 409, 'Target revision metadata changes still require another analysis'); state.records = [record];
+  snapshotReads = 0; onSecondRead = () => { state.records = [{ ...record, legacy: { ...record.legacy, assignedTo: uuid(11) } }]; };
+  assert.equal((await route.POST(request())).status, 409, 'Ownership changes conflict even for an actor who still has write access'); state.records = [record];
+  snapshotReads = 0; onSecondRead = () => { state.records = [{ legacy: record.legacy, data: record.data, kind: record.kind, id: record.id }]; };
+  assert.equal((await route.POST(request())).status, 200, 'Object key serialization order is not a target change'); onSecondRead = undefined;
+  console.log('PASS assistant route: authentication, origin/body limits, portfolio scope, rate limits, tenant chronology, actual UI response contract, target/access conflicts and fresh CAS after unrelated updates');
 })().catch(error => { console.error(error); process.exitCode = 1; });

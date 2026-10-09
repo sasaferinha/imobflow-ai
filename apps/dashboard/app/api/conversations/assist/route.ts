@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isDeepStrictEqual } from 'node:util';
 import { protectedRoute } from '@/lib/accounts';
 import { currentAccount } from '@/lib/tenant-context';
 import { hasSameOrigin, hasSafeRequestSize, consumeRateLimit } from '@/lib/request-security';
@@ -51,7 +52,10 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     const fresh = await getEvolutionSnapshot(actor);
     const current = fresh.state.records.find(record => record.id === lead.id && record.kind === 'leads');
     if (!current || !canAccess(fresh.state, actor, current, 'write')) return NextResponse.json({ error: 'Seu acesso a este cliente mudou. Atualize a conversa.' }, { status: 403 });
-    if (fresh.state.version !== snapshot.state.version || fresh.state.sourceRevision !== snapshot.state.sourceRevision) return NextResponse.json({ error: 'A ficha foi atualizada durante a análise. Analise novamente para revisar os dados atuais.' }, { status: 409 });
+    // Another customer's update must not discard this analysis. Compare the
+    // complete target (including ownership/source metadata), then return the
+    // fresh global version/revision so saving still uses the normal strict CAS.
+    if (!isDeepStrictEqual(current, lead)) return NextResponse.json({ error: 'A ficha foi atualizada durante a análise. Analise novamente para revisar os dados atuais.' }, { status: 409 });
     return NextResponse.json({ assistance, review: { record: current, expectedVersion: fresh.state.version, expectedSourceRevision: fresh.state.sourceRevision }, messageCount: messages.length });
   } catch (error) {
     if (error instanceof BrokerAssistantError || error instanceof EvolutionServerError || error instanceof CrmError) return NextResponse.json({ error: error.message }, { status: error.status });

@@ -74,7 +74,7 @@ export function mapFacebookLead(payload: unknown): LeadInput {
     fields[name] = list(field.values).map(v => clean(v, 300)).filter(Boolean).join(', ').slice(0,500);
   }
   const read = (...names: string[]) => names.map(n=>fields[n]).find(Boolean) || '';
-  const purpose = read('objetivo','interesse','finalidade').toLowerCase();
+  const purpose = read('objetivo','interesse','finalidade').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   const goal = /^(comprar|compra|venda)$/.test(purpose) ? 'Comprar' : /^(alugar|aluguel|locacao)$/.test(purpose) ? 'Alugar' : 'Não informado';
   const phone = importPhone(read('phone_number','telefone','whatsapp')), email = read('email').toLowerCase();
   const type = read('tipo_de_imovel','tipo_imovel');
