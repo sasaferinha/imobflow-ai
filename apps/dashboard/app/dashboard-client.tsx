@@ -626,7 +626,16 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
           {!embedded && <div><p className="eyebrow">{header.eyebrow}</p><h1>{headerTitle}</h1><p>{header.copy}</p></div>}
           {embedded && <p className="crm-context-copy">{header.copy}</p>}
           <div className="header-actions">
-            {embedded && <><button type="button" className="secondary-button" onClick={() => setUtilityModal('profile')}>Perfil</button><button type="button" className="secondary-button" onClick={() => setUtilityModal('password')}>Senha</button><button type="button" className="secondary-button" onClick={() => setUtilityModal('settings')}>Preferências</button>{account?.role === 'owner' && <button type="button" className="secondary-button" onClick={() => setUtilityModal('team')}>Corretores</button>}<button type="button" className="secondary-button" onClick={async () => { if (publicDemo) { notify('Você está na demonstração. Nenhuma sessão real foi alterada.'); return; } await fetch('/api/admin/logout', { method: 'POST' }); window.location.href = '/painel'; }}>Sair</button></>}
+            {embedded && <details className="embedded-account-options" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={(event) => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
+              <summary>Opções da conta<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg></summary>
+              <div className="embedded-account-menu" role="group" aria-label="Ações da conta">
+                <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setUtilityModal('profile'); }}>Perfil</button>
+                <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setUtilityModal('password'); }}>Senha</button>
+                <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setUtilityModal('settings'); }}>Preferências</button>
+                {account?.role === 'owner' && <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setUtilityModal('team'); }}>Corretores</button>}
+                <button type="button" onClick={async (event) => { event.currentTarget.closest('details')?.removeAttribute('open'); if (publicDemo) { notify('Você está na demonstração. Nenhuma sessão real foi alterada.'); return; } await fetch('/api/admin/logout', { method: 'POST' }); window.location.href = '/painel'; }}>Sair</button>
+              </div>
+            </details>}
             <button type="button" className="icon-button theme-toggle" aria-label={settings.dark ? 'Ativar modo claro' : 'Ativar modo escuro'} title={settings.dark ? 'Modo claro' : 'Modo escuro'} aria-pressed={settings.dark} onClick={toggleDarkMode}>{settings.dark ? '☀' : '☾'}</button>
             <div className="notification-wrap">
               <button type="button" className="icon-button" aria-label={`Notificações: ${unreadCount} não lidas`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>♢{settings.alerts && unreadCount > 0 && <i />}</button>

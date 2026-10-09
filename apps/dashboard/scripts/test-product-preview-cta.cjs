@@ -42,16 +42,16 @@ function declaration(style, property, value, important = false) {
 const base = rule('.caption .explorePanel');
 for (const [property, value] of Object.entries({
   display: 'inline-flex', 'min-height': '56px', 'max-width': '100%', padding: '16px 24px',
-  background: '#0062d6', 'font-size': '16px', 'font-weight': '650',
+  background: '#0066f5', 'font-size': '16px', 'font-weight': '650',
 })) declaration(base, property, value);
 declaration(base, 'color', '#fff', true);
 declaration(base, 'text-decoration', 'none', true);
 const hover = rule('.caption .explorePanel:hover');
-declaration(hover, 'background', '#004faa');
+declaration(hover, 'background', '#0054cf');
 declaration(hover, 'color', '#fff', true);
 declaration(hover, 'text-decoration', 'none', true);
 const focus = rule('.caption .explorePanel:focus-visible');
-declaration(focus, 'outline', '3px solid #004faa');
+declaration(focus, 'outline', '3px solid #0054cf');
 declaration(focus, 'outline-offset', '4px');
 const mobile = rule('.caption .explorePanel', '(max-width:600px)');
 declaration(mobile, 'width', '100%');

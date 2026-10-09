@@ -1,22 +1,22 @@
 /* The same tokens apply to the page and native top-layer dialogs. */
 .app,
 .dialog {
-  --ev-font: var(--crm-font, Nunito, Arial, sans-serif);
-  --ev-ink: #202735;
-  --ev-muted: #657084;
-  --ev-soft: #707070;
-  /* ImobFlow brand palette; the reference layout is deliberately retained. */
-  --ev-brand: #0066df;
-  --ev-brand-hover: #0055bc;
-  --ev-brand-ink: #005bc4;
+  --ev-font: var(--crm-font, Inter, Arial, sans-serif);
+  --ev-ink: #10294b;
+  --ev-muted: #526b8c;
+  --ev-soft: #6880a0;
+  /* Linha: the shared ImobFlow identity. Funnel stages keep their meaning. */
+  --ev-brand: #0066f5;
+  --ev-brand-hover: #0055ce;
+  --ev-brand-ink: #005bd8;
   --ev-on-brand: #fff;
-  --ev-brand-wash: #eaf1fc;
+  --ev-brand-wash: #eaf3ff;
   --ev-paper: #fff;
-  --ev-canvas: #f7f8fa;
-  --ev-toolbar: #f3f5f8;
-  --ev-line: #e4e7ec;
-  --ev-input-line: #ccc;
-  --ev-navy: #000077;
+  --ev-canvas: #f3f8ff;
+  --ev-toolbar: #f7faff;
+  --ev-line: #dce8f7;
+  --ev-input-line: #cfddf0;
+  --ev-navy: #17375e;
   --ev-blue: #38acf5;
   --ev-yellow: #f1c400;
   --ev-red: #eb0045;
@@ -32,8 +32,8 @@
   --ev-green-text: #208052;
   --ev-yellow-text: #7d6500;
   --ev-red-text: #c00038;
-  --ev-detail: #ffffee;
-  --ev-card-body: #ffffdd;
+  --ev-detail: #f7faff;
+  --ev-card-body: #fff;
   --ev-stage-one: #2c85c7;
   --ev-stage-two: #feb54e;
   --ev-stage-three: #ce8f64;
@@ -50,16 +50,25 @@
   --health-near: var(--ev-yellow);
   --health-overdue: var(--ev-red);
   --border: var(--ev-line);
-  --ev-radius: 4px;
-  --ev-panel-radius: 6px;
-  --ev-shadow: 1px 1px 4px rgb(0 0 0 / 3.5%);
-  --ev-menu-shadow: 0 4px 15px rgb(0 0 0 / 16%);
+  --ev-radius: 8px;
+  --ev-panel-radius: 12px;
+  --ev-shadow: 0 2px 10px rgb(28 71 125 / 2.5%);
+  --ev-menu-shadow: 0 12px 35px rgb(24 55 101 / 14%);
   --ev-focus: 0 0 0 3px rgb(0 102 223 / 18%);
-  --ev-gutter: 30px;
+  --ev-gutter: 24px;
   --ev-control-height: 40px;
   --ev-nav-height: 60px;
   --ev-title-height: 46px;
   --ev-funnel-height: 48px;
+  --ink: var(--ev-ink);
+  --secondary: var(--ev-toolbar);
+  --muted: var(--ev-muted);
+  --selection: var(--ev-brand-wash);
+  --paper: var(--ev-paper);
+  --line: var(--ev-line);
+  --accent-text: var(--ev-brand-ink);
+  --accent: var(--ev-brand);
+  --surface-soft: var(--ev-toolbar);
   color: var(--ev-ink);
   color-scheme: light;
   font: 400 15px/1.5 var(--ev-font);
@@ -925,4 +934,217 @@
 
 @media (prefers-reduced-motion: reduce) {
   .app *, .dialog * { scroll-behavior: auto; animation: none; transition: none; }
+}
+
+/* Linha workspace: a persistent, quiet navigation rail and an open work canvas. */
+.app { --ev-sidebar-width: 208px; }
+.workspace { margin-left: var(--ev-sidebar-width); min-width: 0; }
+.sidebar { position: fixed; z-index: 45; inset: 0 auto 0 0; width: var(--ev-sidebar-width); display: flex; flex-direction: column; padding: 0 12px 18px 0; border-right: 1px solid var(--ev-line); background: var(--ev-paper); color: var(--ev-ink); overflow-y: auto; overscroll-behavior: contain; }
+.sidebarBrand { display: flex; align-items: center; justify-content: space-between; min-height: 92px; padding: 17px 18px 17px 25px; }
+.sidebar .brand { min-height: 36px; gap: 10px; color: var(--ev-brand); }
+.sidebar .brand > span { font-size: 23px; font-weight: 650; letter-spacing: -.8px; }
+.sidebar .brand b { color: var(--ev-ink); font-weight: 650; }
+.sidebar .brand svg { width: 27px; height: 36px; }
+.sidebar .nav { position: static; display: flex; flex: 0 0 auto; flex-direction: column; align-items: stretch; gap: 5px; min-height: 0; max-height: none; padding: 0; margin: 0; background: transparent; color: var(--ev-ink); overflow: visible; box-shadow: none; }
+.navItem { display: flex; align-items: stretch; min-height: 46px; border-left: 4px solid transparent; border-radius: 0 8px 8px 0; color: var(--ev-ink); }
+.navItem:hover { background: var(--ev-toolbar); }
+.navItem.navActive { border-left-color: var(--ev-brand); background: var(--ev-brand-wash); color: var(--ev-brand-ink); }
+.nav .navButton { flex: 1; gap: 13px; width: auto; min-width: 0; height: 46px; padding: 0 0 0 24px; color: inherit; font-size: 13px; font-weight: 500; text-align: left; background: transparent; }
+.nav .navButton > svg:first-child { width: 21px; height: 21px; }
+.nav .navButton:disabled { opacity: .45; }
+.navExpand { display: grid; place-items: center; flex: 0 0 29px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ev-muted); }
+.navExpand:hover { background: var(--ev-brand-wash); color: var(--ev-brand-ink); }
+.navExpand[aria-expanded="true"] svg { transform: rotate(180deg); }
+.sidebar .navDropdown { position: static; min-width: 0; margin: 4px 0 9px 38px; padding: 0 0 0 12px; border: 0; border-left: 1px solid var(--ev-line); border-radius: 0; background: transparent; box-shadow: none; }
+.sidebar .navDropdown button { min-height: 37px; padding: 7px 8px; border-radius: 7px; font-size: 12px; line-height: 1.4; }
+.sidebarFooter { display: flex; flex-direction: column; gap: 16px; margin-top: auto; padding: 28px 8px 0 20px; }
+.workspaceShortcut { display: flex; align-items: center; gap: 8px; min-height: 42px; width: 100%; padding: 8px; border: 1px solid var(--ev-line); border-radius: 8px; background: var(--ev-toolbar); color: var(--ev-muted); font-size: 11px; text-align: left; }
+.workspaceShortcut:hover, .workspaceShortcut.shortcutActive { color: var(--ev-brand-ink); border-color: var(--ev-brand); background: var(--ev-brand-wash); }
+.workspaceShortcut > span { flex: 1; }
+.sidebarFooter > small { color: var(--ev-soft); font-size: 9px; }
+.sidebarFooter .legacyLink { font-size: 10px; }
+.sidebarClose, .sidebarBackdrop { display: none; }
+.workspace .pageHead { position: relative; z-index: 35; align-items: flex-start; gap: 18px; min-height: 96px; padding: 22px var(--ev-gutter) 15px; border: 0; background: transparent; }
+.pageHeading { flex: 1; min-width: 150px; }
+.workspace .pageHead h1 { color: var(--ev-ink); font-size: 32px; font-weight: 650; letter-spacing: -.9px; line-height: 1.2; }
+.workspace .pageHead p { display: block; margin-top: 5px; color: var(--ev-muted); font-size: 12px; line-height: 1.5; }
+.headerTools { display: flex; align-items: center; gap: 12px; width: min(580px, 54%); padding-top: 2px; }
+.headerTools .headerSearch { flex: 1; height: 42px; border-color: var(--ev-input-line); background: var(--ev-paper); }
+.headerTools .headerSearch input { font-size: 12px; }
+.headerTools .iconButton { width: 32px; height: 38px; color: var(--ev-ink); }
+.headerTools .accountMenu { margin-left: 2px; padding-left: 14px; border-left: 1px solid var(--ev-line); }
+.headerTools .headerUser { max-width: 185px; padding: 0; gap: 10px; color: var(--ev-ink); font-size: 12px; border-radius: 8px; }
+.headerTools .headerUser:hover, .headerTools .headerUser[aria-expanded="true"] { background: var(--ev-brand-wash); }
+.headerTools .headerUser:focus-visible { outline-color: var(--ev-brand-ink); }
+.headerTools .headerUser small { margin-top: 2px; color: var(--ev-muted); font-size: 10px; }
+.headerTools .avatar { width: 35px; height: 35px; border: 0; color: var(--ev-brand-ink); background: var(--ev-brand-wash); }
+.headerTools .accountTriggerName { max-width: 125px; }
+.workspace .main { max-width: 1800px; padding-top: 0; }
+.workspace .mobileMenu { color: var(--ev-ink); }
+.workspace .mobileMenu:hover { background: var(--ev-brand-wash); color: var(--ev-brand-ink); }
+.integrationNote { position: relative; margin: -5px 0 10px; color: var(--ev-muted); font-size: 10px; }
+.integrationNote > summary { display: flex; align-items: center; gap: 5px; width: fit-content; list-style: none; cursor: pointer; }
+.integrationNote > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; margin-top: 8px; border: 1px solid var(--ev-line); border-radius: 8px; background: var(--ev-paper); font-size: 12px; }
+.integrationNote > summary::-webkit-details-marker, .periodFilter > summary::-webkit-details-marker, .dashboardDetails > summary::-webkit-details-marker { display: none; }
+.moduleActions { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+.moduleActions .primaryButton { min-height: 40px; font-size: 13px; }
+.dashboardOverview { display: flex; align-items: center; gap: 14px; margin: 7px 0 26px; }
+.dashboardOverview .summaryGrid { flex: 1; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.dashboardOverview .summaryCard { align-items: center; gap: 13px; min-height: 80px; padding: 4px 14px; border-bottom: 0; border-right: 1px solid var(--ev-line); border-radius: 0; color: var(--ev-ink); }
+.dashboardOverview .summaryCard:first-child { padding-left: 10px; }
+.dashboardOverview .summaryIcon { display: grid; width: 34px; height: 40px; background: transparent; color: var(--ev-brand); }
+.dashboardOverview .summaryCard small { font-size: 11px; line-height: 1.4; }
+.dashboardOverview .summaryCard strong { margin: 5px 0 2px; font-size: 32px; font-weight: 650; line-height: 1.1; letter-spacing: -.8px; }
+.dashboardOverview .summaryCard em { margin-top: 4px; font-size: 9px; line-height: 1.4; }
+.dashboardOverview .acceptedTotals { display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
+.dashboardOverview .acceptedTotals > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.dashboardOverview .acceptedTotals small { font-size: 9px; }
+.dashboardOverview .acceptedTotals b { font-size: 16px; line-height: 1.3; }
+.dashboardOverview .acceptedTotals i { font-size: 10px; }
+.dashboardControls { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.dashboardFilterStack { display: grid; gap: 8px; width: 175px; }
+.dashboardFilterStack > select { width: 100%; min-height: 37px; padding: 6px 8px; font-size: 10px; font-weight: 500; }
+.periodFilter { position: relative; }
+.periodFilter > summary { display: flex; align-items: center; gap: 8px; min-height: 37px; padding: 6px 10px; border: 1px solid var(--ev-input-line); border-radius: 8px; background: var(--ev-paper); color: var(--ev-ink); list-style: none; cursor: pointer; font-size: 10px; }
+.periodFilter > summary span { flex: 1; }
+.periodFilter > summary:focus-visible, .dashboardDetails > summary:focus-visible, .integrationNote > summary:focus-visible { outline: 2px solid var(--ev-brand); outline-offset: 3px; }
+.periodPopover { position: absolute; right: 0; top: calc(100% + 8px); z-index: 25; display: grid; gap: 12px; width: 280px; padding: 18px; border: 1px solid var(--ev-line); border-radius: 12px; background: var(--ev-paper); box-shadow: var(--ev-menu-shadow); }
+.periodPopover label { display: grid; gap: 5px; color: var(--ev-muted); font-size: 12px; }
+.periodPopover input, .periodPopover select { width: 100%; font-size: 13px; }
+.periodPopover small { color: var(--ev-soft); font-size: 10px; }
+.dashboardControls .dashboardCreate { flex-direction: column; gap: 3px; min-height: 65px; padding: 8px 10px; font-size: 10px; }
+.crmPanel { margin: 0 0 18px; }
+.crmPanelHead { min-height: 53px; padding: 12px 20px; }
+.crmPanelHead h2 { gap: 12px; font-size: 18px; font-weight: 650; letter-spacing: -.4px; }
+.crmPanelHead h2 > svg { width: 22px; height: 22px; }
+.purposeTabs { padding-top: 14px; gap: 0; }
+.purposeTabs button { border: 1px solid var(--ev-line); border-radius: 0 7px 7px 0; min-width: 88px; }
+.purposeTabs button:first-child { border-radius: 7px 0 0 7px; }
+.purposeTabs button[aria-pressed="true"] { border-color: var(--ev-brand); background: var(--ev-brand); }
+.journeyGrid { gap: 0; padding: 12px 30px 18px; }
+.journeyCard { padding: 0 20px; }
+.journeyCard + .journeyCard { border-left: 1px solid var(--ev-line); }
+.journeyCard h3 { border: 0; margin-bottom: 10px; padding: 5px 17px; border-radius: 4px; background: #253650; color: #fff; font-size: 12px; font-weight: 500; }
+.funnelCount, .funnelBlock { border-radius: 4px; }
+.funnelRow:first-child .funnelCount, .funnelRow:first-child .funnelBlock, .funnelRow:last-child .funnelCount, .funnelRow:last-child .funnelBlock { border-radius: 4px; }
+.verticalFunnel { gap: 2px; min-height: 320px; }
+.journeyHealth { margin-top: 15px; padding-top: 13px; }
+.crmPanel > .panelFoot { justify-content: center; font-size: 9px; padding: 8px 12px; background: var(--ev-toolbar); }
+.dashboardFollowups, .dashboardSecondary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.dashboardFollowups .panelHead { border-bottom: 0; min-height: 52px; }
+.dashboardFollowups .panelHead h2 { font-size: 15px; gap: 12px; }
+.dashboardFollowups .panelHead h2 > svg { color: var(--ev-brand); }
+.dashboardFollowups .panelHead p { display: none; }
+.dashboardFollowups .empty { padding: 15px 20px 20px; }
+.dashboardFollowups .emptyIcon { background: transparent; color: #91a6c2; }
+.dashboardFollowups .empty strong { color: var(--ev-muted); font-size: 14px; font-weight: 500; }
+.dashboardFollowups .inlineEmpty { min-height: 113px; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--ev-muted); font-size: 13px; }
+.dashboardDetails { margin-top: 20px; }
+.dashboardDetails > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; color: var(--ev-muted); font-size: 12px; list-style: none; cursor: pointer; }
+.dashboardDetails[open] > summary { margin-bottom: 5px; }
+.dashboardDetails[open] > summary svg { transform: rotate(180deg); }
+.dashboardDetails > .panel { margin-top: 18px; }
+.panelHead { min-height: 54px; padding: 15px 18px; background: var(--ev-paper); }
+.panelHead h2 { font-weight: 650; }
+.table thead th { background: var(--ev-toolbar); color: var(--ev-muted); font-size: 11px; font-weight: 600; }
+.table td { border-color: var(--ev-line); font-size: 13px; }
+.listToolbar { gap: 12px; padding: 16px 18px; background: var(--ev-paper); border-bottom: 1px solid var(--ev-line); }
+.listToolbar input, .listToolbar select { font-size: 12px; }
+.cardGrid { gap: 18px; padding: 18px; }
+.recordCard { border-color: var(--ev-line); border-radius: 10px; box-shadow: none; }
+.recordCardHead, .recordCardBody, .catalogCardStatus { background: var(--ev-paper); }
+.boardColumn { border-radius: 10px; background: var(--ev-toolbar); }
+.boardCard { border-radius: 9px; border: 1px solid var(--ev-line); box-shadow: var(--ev-shadow); }
+.dialog { border-radius: 16px; border-color: var(--ev-line); box-shadow: 0 25px 90px rgb(8 30 63 / 24%); }
+.dialog::backdrop { background: rgb(12 30 55 / 42%); backdrop-filter: blur(3px); }
+.dialogHead { padding: 23px 26px; background: var(--ev-paper); }
+.dialogHead h2 { font-size: 22px; font-weight: 650; letter-spacing: -.5px; }
+.dialogHead p { color: var(--ev-muted); }
+.detailActions, .dialogActions, .detailFooter { background: var(--ev-toolbar); }
+.tabs { gap: 4px; padding-block: 8px; }
+.detailGrid dd { color: var(--ev-ink); }
+.sourceNotice { border-radius: 10px; background: var(--ev-toolbar); border-color: var(--ev-line); color: var(--ev-ink); }
+.formSection legend { color: var(--ev-brand-ink); }
+.followupContext { background: var(--ev-toolbar); border-radius: 8px; }
+.followupContext p, .followupContext small { color: var(--ev-muted); }
+.footer { margin-top: 20px; border-color: var(--ev-line); font-size: 10px; }
+
+@media (min-width: 1001px) and (max-width: 1390px) {
+  .dashboardOverview { flex-wrap: wrap; }
+  .dashboardOverview .summaryGrid { flex-basis: 100%; }
+  .dashboardControls { margin-left: auto; }
+  .dashboardFilterStack { display: flex; width: auto; gap: 8px; }
+  .dashboardFilterStack > select, .periodFilter { width: 185px; }
+  .dashboardControls .dashboardCreate { flex-direction: row; min-height: 38px; font-size: 12px; }
+  .headerTools { width: 52%; gap: 7px; }
+  .headerTools .accountTriggerName { max-width: 90px; }
+  .funnelRow { grid-template-columns: 36px 155px 65px 18px; gap: 8px; }
+  .journeyGrid { padding-inline: 12px; }
+  .journeyCard { padding-inline: 14px; }
+}
+@media (max-width: 1000px) {
+  .workspace { margin-left: 0; }
+  .sidebar { display: none; width: min(280px, calc(100vw - 50px)); z-index: 80; padding-right: 14px; }
+  .sidebar.sidebarOpen { display: flex; }
+  .sidebarBackdrop { display: block; position: fixed; inset: 0; z-index: 79; border: 0; background: rgb(12 30 55 / 38%); }
+  .sidebarClose { display: grid; place-items: center; width: 32px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: var(--ev-toolbar); color: var(--ev-ink); }
+  .sidebar .sidebarBrand { padding-inline: 24px 4px; }
+  .workspace .mobileMenu { display: grid; flex: 0 0 32px; width: 32px; height: 40px; margin-top: 1px; }
+  .workspace .pageHead { gap: 12px; min-height: 92px; }
+  .workspace .pageHead h1 { font-size: 28px; }
+  .headerTools { width: 50%; gap: 6px; }
+  .headerTools .accountTriggerName { display: none; }
+  .headerTools .accountMenu { padding-left: 8px; }
+  .dashboardOverview { flex-wrap: wrap; }
+  .dashboardOverview .summaryGrid { flex-basis: 100%; }
+  .dashboardControls { margin-left: auto; }
+  .dashboardFilterStack { display: flex; width: auto; }
+  .dashboardFilterStack > select, .periodFilter { width: 185px; }
+  .dashboardControls .dashboardCreate { flex-direction: row; min-height: 38px; font-size: 12px; }
+  .journeyGrid { padding-inline: 10px; }
+  .journeyCard { padding-inline: 10px; }
+  .funnelRow { grid-template-columns: 36px 155px 62px 18px; gap: 8px; }
+}
+@media (max-width: 700px) {
+  .workspace .pageHead { flex-wrap: wrap; padding: 18px 16px 12px; }
+  .workspace .pageHead h1 { font-size: 27px; }
+  .workspace .pageHead p { font-size: 11px; }
+  .workspace .pageHeading { flex: 1; }
+  .headerTools { width: 100%; gap: 8px; }
+  .headerTools .headerSearch input { font-size: 16px; }
+  .headerTools .accountMenu { margin-left: 0; padding-left: 8px; }
+  .headerTools .headerUser { max-width: none; }
+  .workspace .main { padding: 0 16px; }
+  .dashboardOverview { margin-bottom: 18px; gap: 18px; }
+  .dashboardOverview .summaryGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 0; }
+  .dashboardOverview .summaryCard { align-items: center; gap: 10px; min-height: 79px; padding: 3px 10px; border-bottom: 0; }
+  .dashboardOverview .summaryCard:nth-child(even) { border-right: 0; }
+  .dashboardOverview .summaryIcon { width: 25px; }
+  .dashboardOverview .summaryIcon svg { width: 24px; height: 24px; }
+  .dashboardOverview .summaryCard strong { font-size: 28px; }
+  .dashboardOverview .summaryCard small { font-size: 10px; }
+  .dashboardOverview .summaryCard em { font-size: 9px; }
+  .dashboardControls { width: 100%; margin: 0; gap: 8px; }
+  .dashboardFilterStack { flex: 1; min-width: 0; display: grid; gap: 7px; }
+  .dashboardFilterStack > select, .periodFilter { width: 100%; }
+  .periodPopover { left: 0; right: auto; width: min(280px, calc(100vw - 50px)); }
+  .dashboardControls .dashboardCreate { flex-direction: column; min-height: 79px; padding-inline: 10px; font-size: 10px; }
+  .crmPanelHead { gap: 8px; padding: 14px; }
+  .crmPanelHead h2 { gap: 7px; font-size: 16px; }
+  .crmPanelHead .textButton { font-size: 11px; }
+  .journeyGrid { grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 16px 12px; }
+  .journeyCard { padding: 0; }
+  .journeyCard + .journeyCard { padding-top: 22px; border-left: 0; border-top: 1px solid var(--ev-line); }
+  .verticalFunnel { min-height: 0; width: fit-content; max-width: 100%; }
+  .funnelRow { grid-template-columns: 32px minmax(120px, 155px) 56px 17px; gap: 7px; }
+  .funnelPercentage { font-size: 12px; }
+  .funnelPercentage small { font-size: 10px; }
+  .funnelStageName { font-size: 11px; }
+  .funnelFreshness { display: flex; }
+  .funnelFreshness svg { width: 15px; height: 15px; }
+  .dashboardFollowups, .dashboardSecondary { grid-template-columns: minmax(0, 1fr); }
+  .integrationNote > div { align-items: flex-start; flex-direction: column; }
+  .dialogHead { padding: 18px; }
+  .dialogHead h2 { font-size: 20px; }
+  .moduleActions { justify-content: flex-start; }
 }

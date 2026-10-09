@@ -6,9 +6,9 @@
   display: grid;
   place-items: center;
   padding: 40px 24px;
-  background: #f5f6f8;
-  color: #303744;
-  font-family: var(--crm-font, "Nunito", "Segoe UI", sans-serif);
+  background: #f3f8ff;
+  color: #10294b;
+  font-family: var(--crm-font, "Inter", "Segoe UI", sans-serif);
   font-size: 14px;
   line-height: 1.5;
   color-scheme: light;
@@ -24,11 +24,10 @@
   width: min(600px, 100%);
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #dfe3e9;
-  border-top: 4px solid var(--crm-brand, #0066df);
-  border-radius: 6px;
+  border: 1px solid #dce8f7;
+  border-radius:12px;
   background: #fff;
-  box-shadow: 0 6px 22px rgb(31 48 76 / 5%);
+  box-shadow: 0 12px 36px rgb(16 41 75 / 6%);
   backdrop-filter: none;
 }
 
@@ -36,13 +35,13 @@
   min-height: 76px;
   padding: 20px 28px;
   gap: 16px;
-  border-bottom: 1px solid #e9edf2;
-  background: #fff;
+  border-bottom: 1px solid #e4edf8;
+  background: #fafdff;
 }
 
 .crm-access-surface .access-header > p {
   margin: 0;
-  color: #697586;
+  color: #58708f;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -51,10 +50,10 @@
 
 .crm-access-surface .access-logo {
   flex-shrink: 0;
-  color: #27364a;
+  color: #10294b;
   font-family: inherit;
   font-size: 21px;
-  font-weight: 800;
+  font-weight:700;
   letter-spacing: -.5px;
 }
 
@@ -64,9 +63,9 @@
   border: 0;
   border-radius: 0;
   background: none;
-  color: var(--crm-brand, #0066df);
+  color: var(--crm-brand, #0066f5);
   font-size: 21px;
-  font-weight: 800;
+  font-weight:700;
   box-shadow: none;
 }
 
@@ -86,34 +85,34 @@
 
 .crm-access-surface .access-eyebrow {
   margin: 0 0 8px;
-  color: var(--crm-brand, #0066df);
+  color: var(--crm-brand, #0066f5);
   font-size: 10px;
-  font-weight: 800;
+  font-weight:700;
   letter-spacing: 1.1px;
 }
 
 .crm-access-surface .access-intro h1 {
   margin: 0;
-  color: #27364a;
+  color: #10294b;
   font-size: clamp(23px, 4vw, 28px);
-  font-weight: 800;
+  font-weight:700;
   line-height: 1.25;
   letter-spacing: -.55px;
 }
 
 .crm-access-surface .access-intro > p:not(.access-eyebrow) {
   margin: 10px 0 0;
-  color: #697586;
+  color: #58708f;
   font-size: 14px;
   line-height: 1.6;
 }
 
 .crm-access-surface .access-tabs {
-  gap: 0;
+  gap: 4px;
   margin: 24px 0;
-  padding: 0;
-  border: 1px solid #dfe3e9;
-  border-radius: 4px;
+  padding: 4px;
+  border: 1px solid #dce8f7;
+  border-radius:8px;
   overflow: hidden;
   background: #f8fafc;
 }
@@ -127,9 +126,9 @@
   min-height: 48px;
   padding: 9px 10px;
   border: 0;
-  border-radius: 0;
+  border-radius: 6px;
   background: transparent;
-  color: #596576;
+  color: #58708f;
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -139,16 +138,16 @@
 }
 
 .crm-access-surface .access-tabs button + button {
-  border-left: 1px solid #dfe3e9;
+  border-left: 0;
 }
 
 .crm-access-surface .access-tabs button:hover:not(:disabled) {
   background: #edf5ff;
-  color: var(--crm-brand, #0066df);
+  color: var(--crm-brand, #0066f5);
 }
 
 .crm-access-surface .access-tabs button[aria-pressed="true"] {
-  background: var(--crm-brand, #0066df);
+  background: var(--crm-brand, #0066f5);
   color: #fff;
   box-shadow: none;
 }
@@ -164,7 +163,7 @@
 .crm-access-surface .access-form label {
   min-width: 0;
   gap: 7px;
-  color: #424d5c;
+  color: #294566;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.5;
@@ -175,10 +174,10 @@
   min-width: 0;
   height: 44px;
   padding: 0 12px;
-  border: 1px solid #d9dfe7;
-  border-radius: 4px;
+  border: 1px solid #ceddf0;
+  border-radius:8px;
   background: #fff;
-  color: #303744;
+  color: #10294b;
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
@@ -188,25 +187,25 @@
 }
 
 .crm-access-surface .access-form input::placeholder {
-  color: #8893a2;
+  color: #7a8fae;
   opacity: 1;
 }
 
 .crm-access-surface .access-form :is(input, select):focus {
-  border-color: var(--crm-brand, #0066df);
+  border-color: var(--crm-brand, #0066f5);
   outline: none;
-  box-shadow: 0 0 0 3px rgb(0 102 223 / 12%);
+  box-shadow: 0 0 0 3px rgb(0 102 245 / 14%);
 }
 
 .crm-access-surface .access-key {
   padding: 14px;
   border: 1px solid #d7e7fa;
-  border-radius: 4px;
+  border-radius:8px;
   background: #f5f9ff;
 }
 
 .crm-access-surface .access-key small {
-  color: #697586;
+  color: #58708f;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
@@ -215,9 +214,9 @@
 .crm-access-surface .access-submit {
   min-height: 44px;
   padding: 10px 16px;
-  border: 1px solid var(--crm-brand, #0066df);
-  border-radius: 4px;
-  background: var(--crm-brand, #0066df);
+  border: 1px solid var(--crm-brand, #0066f5);
+  border-radius:8px;
+  background: var(--crm-brand, #0066f5);
   color: #fff;
   font-family: inherit;
   font-size: 14px;
@@ -228,8 +227,8 @@
 }
 
 .crm-access-surface .access-submit:hover:not(:disabled) {
-  border-color: #0056be;
-  background: #0056be;
+  border-color: #0054cf;
+  background: #0054cf;
   transform: none;
 }
 
@@ -242,7 +241,7 @@
 .crm-access-surface .access-form button[aria-controls] {
   min-height: 32px;
   padding: 5px 0;
-  color: var(--crm-brand, #0066df);
+  color: var(--crm-brand, #0066f5);
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -256,21 +255,21 @@
 }
 
 .crm-access-surface :is(button, a):focus-visible {
-  outline: 2px solid var(--crm-brand, #0066df);
+  outline: 2px solid var(--crm-brand, #0066f5);
   outline-offset: 3px;
 }
 
 .crm-access-surface .access-tabs button:focus-visible {
   position: relative;
   outline-offset: -3px;
-  outline-color: #27364a;
+  outline-color: #10294b;
 }
 
 .crm-access-surface :is(.access-error, .access-notice) {
   margin: 0;
   padding: 11px 13px;
   border: 1px solid;
-  border-radius: 4px;
+  border-radius:8px;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
@@ -293,7 +292,7 @@
   margin: 24px 0 0;
   padding-top: 18px;
   border-top: 1px solid #edf0f4;
-  color: #697586;
+  color: #58708f;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.6;
@@ -310,23 +309,23 @@
   margin-top: 24px;
   padding: 18px;
   border: 1px solid #cdeadd;
-  border-radius: 4px;
+  border-radius:8px;
   background: #f2faf6;
 }
 
 .crm-access-surface .license-result strong {
   color: #18704f;
   font-size: 14px;
-  font-weight: 800;
+  font-weight:700;
 }
 
 .crm-access-surface .license-result code {
   min-width: 0;
   padding: 12px;
-  border: 1px solid #dfe3e9;
-  border-radius: 4px;
+  border: 1px solid #dce8f7;
+  border-radius:8px;
   background: #fff;
-  color: #303744;
+  color: #10294b;
   font-size: 13px;
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -337,9 +336,9 @@
   min-height: 38px;
   padding: 8px 14px;
   border: 1px solid #d1e4fa;
-  border-radius: 4px;
+  border-radius:8px;
   background: #fff;
-  color: var(--crm-brand, #0066df);
+  color: var(--crm-brand, #0066f5);
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -347,12 +346,12 @@
 }
 
 .crm-access-surface .license-result button:hover {
-  border-color: var(--crm-brand, #0066df);
+  border-color: var(--crm-brand, #0066f5);
   background: #edf5ff;
 }
 
 .crm-access-surface .license-result small {
-  color: #697586;
+  color: #58708f;
   font-size: 12px;
   line-height: 1.5;
 }

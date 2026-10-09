@@ -1,35 +1,40 @@
-/* One typeface and brand vocabulary, shared by CRM, operational tools and access. */
+/* ImobFlow Linha: shared visual tokens for the product, tools and access pages. */
 @font-face {
-  font-family: Nunito;
-  src: url('/fonts/evolution/nunito-latin-wght-normal.woff2') format('woff2');
+  font-family: Inter;
+  src: url('/fonts/linha/InterVariable.woff2') format('woff2');
   font-style: normal;
-  font-weight: 200 1000;
+  font-weight: 100 900;
   font-display: swap;
 }
 
 :root {
-  --crm-font: Nunito, Arial, sans-serif;
+  --crm-font: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --native-font: var(--crm-font);
-  --crm-brand: #0066df;
-  --crm-brand-hover: #0055bc;
-  --crm-brand-wash: #edf4ff;
-  --crm-ink: #202735;
-  --crm-muted: #657084;
-  --crm-line: #e4e7ec;
-  --crm-radius: 5px;
+  --crm-brand: #0066f5;
+  --crm-brand-hover: #0054cf;
+  --crm-brand-wash: #edf5ff;
+  --crm-ink: #10294b;
+  --crm-muted: #526b8c;
+  --crm-line: #dce8f7;
+  --crm-canvas: #f3f8ff;
+  --crm-paper: #fff;
+  --crm-radius: 12px;
+  --crm-control-radius: 8px;
+  --crm-shadow: 0 4px 20px rgb(24 76 135 / 4%);
+  --crm-sidebar-width: 208px;
 }
-body { font-family: var(--crm-font); }
+body { font-family: var(--crm-font); font-optical-sizing: auto; }
 
 .app-shell.crm-workspace {
   --ink: var(--crm-ink);
   --muted: var(--crm-muted);
   --line: var(--crm-line);
   --paper: #fff;
-  --canvas: #f7f8fa;
-  --secondary: #f3f5f8;
+  --canvas: var(--crm-canvas);
+  --secondary: #f6f9fe;
   --selection: var(--crm-brand-wash);
   --accent: var(--crm-brand);
-  --accent-text: #0055bc;
+  --accent-text: #0054cf;
   --violet: var(--crm-brand);
   --native-font: var(--crm-font);
   --panel-space: 20px;
@@ -39,15 +44,15 @@ body { font-family: var(--crm-font); }
   letter-spacing: 0;
 }
 .app-shell.crm-workspace.dark-mode {
-  --ink: #edf2fa;
-  --muted: #a9b6cb;
-  --line: #344154;
-  --paper: #1b2637;
-  --canvas: #141e2d;
-  --secondary: #253247;
-  --selection: #213f66;
-  --accent: #66afff;
-  --accent-text: #9ac9ff;
+  --ink: #f0f6ff;
+  --muted: #b4c6df;
+  --line: #2b4564;
+  --paper: #142b45;
+  --canvas: #0d1e33;
+  --secondary: #1c3553;
+  --selection: #203e64;
+  --accent: #75b5ff;
+  --accent-text: #a4cfff;
   color-scheme: dark;
 }
 .crm-workspace *, .crm-access-surface * { box-sizing: border-box; }
@@ -61,8 +66,8 @@ body { font-family: var(--crm-font); }
 }
 .crm-workspace [hidden] { display: none !important; }
 .crm-workspace button:disabled { cursor: not-allowed; }
-.crm-unavailable { display: grid; min-height: 100dvh; place-items: center; padding: 24px; background: #f7f8fa; }
-.crm-unavailable > section { width: min(100%, 520px); padding: 32px; border: 1px solid var(--crm-line); border-radius: 6px; background: #fff; }
+.crm-unavailable { display: grid; min-height: 100dvh; place-items: center; padding: 24px; background: var(--crm-canvas); }
+.crm-unavailable > section { width: min(100%, 520px); padding: 32px; border: 1px solid var(--crm-line); border-radius: var(--crm-radius); background: var(--crm-paper); box-shadow: var(--crm-shadow); }
 .crm-unavailable h1 { margin: 0 0 12px; color: var(--crm-ink); font-size: 24px; }
 .crm-unavailable p { color: var(--crm-muted); line-height: 1.6; }
 .crm-unavailable a { display: inline-block; margin-top: 12px; color: var(--crm-brand); font-weight: 700; }

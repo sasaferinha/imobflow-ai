@@ -77,7 +77,7 @@ assert(clientSource.includes('expectedSourceRevision: state.sourceRevision'));
 
 // A small hook runner checks the parent element's retention and stable keys.
 // It is not a substitute for browser tests of DOM focus, layout or requests.
-function navigationHarness(actor = owner, hash = '#conversations') {
+function navigationHarness(actor = owner, hash = '#conversations', browser = {}) {
   let index = 0, slots = [], effects = [], dirty = false, tree;
   const differs = (left, right) => !left || !right || left.length !== right.length || left.some((value, i) => value !== right[i]);
   const hooks = {
@@ -102,12 +102,16 @@ function navigationHarness(actor = owner, hash = '#conversations') {
     },
     useEffect(effect, deps) {
       const slot = index++;
-      if (!slots[slot] || differs(slots[slot].deps, deps)) { slots[slot] = { deps }; effects.push(effect); }
+      if (!slots[slot] || differs(slots[slot].deps, deps)) {
+        const previous = slots[slot]; slots[slot] = { deps };
+        effects.push(() => { previous?.cleanup?.(); slots[slot].cleanup = effect(); });
+      }
     },
   };
   const requests = [];
   const isolated = runtime(hooks, {
-    window: { location: { hash, pathname: '/painel', search: '' }, history: { replaceState() {} } },
+    window: { location: { hash, pathname: '/painel', search: '' }, history: { replaceState() {} }, ...browser.window },
+    document: browser.document,
     fetch: async (url, options) => {
       requests.push({ url, method: options?.method || 'GET' });
       return { ok: true, json: async () => ({ state }) };
@@ -160,7 +164,7 @@ click(nav, 'Dashboard');
 assert.equal(host().props.page, 'conversations', 'The operational child must remain mounted outside native tabs.');
 assert.equal(container().props.hidden, true);
 assert.equal(container().props.inert, true);
-click(nav, 'CRM'); click(nav, 'Conversas');
+click(nav, 'Conversas');
 assert.equal(container().props.hidden, false);
 find(nav.tree, node => node.props?.['aria-label'] === 'Atualizar').props.onClick(); nav.render();
 assert.equal(host().props.refreshKey, 1);
@@ -172,10 +176,11 @@ assert(nav.requests.every(request => request.url === '/api/evolution' && request
 
 const broker = navigationHarness({ ...owner, role: 'broker' }, '#brokers');
 assert(!find(broker.tree, node => node.type === 'native-host'), 'A broker cannot open the owner-only operational route by hash.');
-click(broker, 'Painel de controle');
+find(broker.tree, node => node.props?.['aria-label'] === 'Opções de Equipe').props.onClick(); broker.render();
 assert(!button(broker, 'Corretores e acessos'));
+find(broker.tree, node => node.props?.['aria-label'] === 'Opções de Relatórios').props.onClick(); broker.render();
 assert(!button(broker, 'Metas da operação'));
-click(broker, 'Pessoas');
+find(broker.tree, node => node.props?.['aria-label'] === 'Opções de Leads').props.onClick(); broker.render();
 assert(!button(broker, 'Importar clientes'));
 
 // Editing an existing canonical record must not force invented legacy values.
@@ -202,3 +207,6 @@ assert(/<select[^>]*id="edit-assignedTo"[^>]*disabled/.test(leadForm));
 assert(leadForm.includes('ao assumir ou devolver'));
 
 console.log('PASS evolution navigation: SSR preview isolation; integration capability; retained native host; refresh without remount; owner/broker menu boundaries; canonical editor preservation.');
+
+// Shared isolated hook harness for the Linha navigation/accessibility contracts.
+module.exports = { navigationHarness, find, text, button, click, owner, state, runtime };

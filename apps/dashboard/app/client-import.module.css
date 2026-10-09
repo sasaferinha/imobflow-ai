@@ -1,4 +1,4 @@
-.root{max-width:1100px;padding:28px;background:var(--paper,#fff);border:1px solid var(--line,#e3e7ee);border-radius:16px;color:var(--ink,#20252c)}
+.root{max-width:1100px;padding:28px;background:var(--paper,#fff);border:1px solid var(--line,#e3e7ee);border-radius: 12px;color:var(--ink,#20252c)}
 .intro h2{font-size:22px;letter-spacing:-.5px;margin:0 0 12px;font-weight:600}.intro p{max-width:700px;color:var(--muted,#667085);font-size:15px;line-height:1.65;margin:0 0 24px}
 .actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:18px 0}.root button{font:inherit;cursor:pointer;padding:11px 16px;border:1px solid var(--line,#e3e7ee);border-radius:8px;background:var(--paper,#fff);color:var(--ink,#20252c)}.root button:disabled{opacity:.5;cursor:default}.root button:focus-visible,.help summary:focus-visible,.tableWrap:focus-visible{outline:2px solid #1267e8;outline-offset:3px}
 .hint,.help,.confirm p{color:var(--muted,#667085);font-size:13px;line-height:1.65}.help{border-block:1px solid var(--line,#e3e7ee);padding:16px 0;margin:22px 0}.help summary{cursor:pointer;font-weight:500;color:var(--ink,#20252c)}.help p{max-width:800px}
@@ -8,32 +8,32 @@
 
 .sectionLabel{display:block;margin-bottom:7px;color:var(--muted,#707886);font-size:12px;font-weight:600}
 .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;list-style:none;margin:0 0 24px;padding:0}
-.steps li{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line,#e4e7ec);border-radius:5px;background:var(--secondary,#f7f8fa)}
+.steps li{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line,#e4e7ec);border-radius: 8px;background:var(--secondary,#f7f8fa)}
 .steps li>span{display:grid;place-items:center;flex:0 0 30px;height:30px;border:1px solid var(--line,#e4e7ec);border-radius:50%;background:var(--paper,#fff);color:var(--muted,#707886);font-size:13px;font-weight:700}
 .steps li[data-current='true']{border-color:#b9d1ef;background:var(--selection,#edf4ff)}
-.steps li[data-current='true']>span{border-color:#0066df;background:#0066df;color:#fff}
+.steps li[data-current='true']>span{border-color:#0066f5;background:#0066f5;color:#fff}
 .steps strong{display:block;font-size:13px;font-weight:600;color:var(--ink,#353c48)}
 .steps small{display:block;margin-top:3px;font-size:11px;color:var(--muted,#707886)}
-.uploadArea{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:24px;border:1px dashed #b8cce7;border-radius:5px;background:var(--secondary,#f7f8fa)}
-.uploadIcon{display:grid;place-items:center;flex:0 0 48px;height:48px;border:1px solid var(--line,#e4e7ec);border-radius:6px;background:var(--paper,#fff);color:#0066df}
+.uploadArea{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:24px;border:1px dashed #b8cce7;border-radius: 8px;background:var(--secondary,#f7f8fa)}
+.uploadIcon{display:grid;place-items:center;flex:0 0 48px;height:48px;border:1px solid var(--line,#e4e7ec);border-radius: 12px;background:var(--paper,#fff);color:#0066f5}
 .uploadCopy{flex:1 1 280px;min-width:0}.uploadCopy h3{margin:0 0 6px;font-size:16px;font-weight:600;overflow-wrap:anywhere}.uploadCopy p{margin:0;color:var(--muted,#707886);font-size:12px;line-height:1.6}
 .uploadArea .actions{flex:1 1 100%;margin:2px 0 0;justify-content:flex-end}
 :global(.crm-workspace.dark-mode) .uploadIcon{color:var(--accent-text)}
-:global(.crm-workspace) .root{max-width:none;padding:24px;border-radius:6px;font-family:var(--crm-font,'Nunito',sans-serif);box-shadow:0 1px 3px rgb(22 35 54 / 3%)}
+:global(.crm-workspace) .root{max-width:none;padding:24px;border-radius: 12px;font-family:var(--crm-font,Inter,sans-serif);box-shadow:var(--crm-shadow, 0 4px 20px rgb(24 76 135 / 4%))}
 :global(.crm-workspace) .intro{padding-bottom:20px;margin-bottom:24px;border-bottom:1px solid var(--line)}
-:global(.crm-workspace) .intro h2{margin:0 0 8px;color:var(--ink);font:700 20px/1.4 var(--crm-font,'Nunito',sans-serif);letter-spacing:0}
+:global(.crm-workspace) .intro h2{margin:0 0 8px;color:var(--ink);font:700 20px/1.4 var(--crm-font,Inter,sans-serif);letter-spacing:0}
 :global(.crm-workspace) .intro p{max-width:780px;margin:0;font-size:14px;line-height:1.65}
-:global(.crm-workspace) .root button{min-height:40px;padding:9px 14px;border-radius:4px;font-size:14px;font-weight:600}
-:global(.crm-workspace) .root button:global(.primary-button){background:var(--crm-brand,#0066df);border-color:var(--crm-brand,#0066df);color:#fff}
+:global(.crm-workspace) .root button{min-height:40px;padding:9px 14px;border-radius: 8px;font-size:14px;font-weight:600}
+:global(.crm-workspace) .root button:global(.primary-button){background:var(--crm-brand,#0066f5);border-color:var(--crm-brand,#0066f5);color:#fff}
 :global(.crm-workspace) .hint{margin:14px 0;font-size:12px;line-height:1.7}
-:global(.crm-workspace) .help{padding:16px;margin:22px 0;border:1px solid var(--line);border-radius:5px;background:var(--secondary)}
+:global(.crm-workspace) .help{padding:16px;margin:22px 0;border:1px solid var(--line);border-radius: 8px;background:var(--secondary)}
 :global(.crm-workspace) .help summary{font-size:14px;font-weight:600}
 :global(.crm-workspace) .help p{font-size:13px;line-height:1.7}
 :global(.crm-workspace) .error{border:1px solid #efc5c5;border-radius:4px}
-:global(.crm-workspace) .result{padding:20px;margin-top:24px;border:1px solid #b8ddc9;border-left:3px solid #218652;border-radius:5px;background:var(--secondary)}
+:global(.crm-workspace) .result{padding:20px;margin-top:24px;border:1px solid #b8ddc9;border-left:3px solid #218652;border-radius: 8px;background:var(--secondary)}
 :global(.crm-workspace) .result h3{margin-top:0;font-weight:700}
 :global(.crm-workspace) .previewHead h3{font-size:17px;font-weight:700}
-:global(.crm-workspace) .previewHead span{padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--secondary)}
+:global(.crm-workspace) .previewHead span{padding:5px 8px;border:1px solid var(--line);border-radius: 8px;background:var(--secondary)}
 :global(.crm-workspace) .tableWrap{border:1px solid var(--line);border-radius:4px}
 :global(.crm-workspace) .tableWrap th{background:var(--secondary);font-weight:600;padding-block:12px}
 :global(.crm-workspace) .tableWrap td{padding-block:16px;color:var(--ink)}
