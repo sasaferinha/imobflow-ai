@@ -31,5 +31,16 @@ const input = { sector:'Geral', profile:{}, messages:[{id:'synthetic',side:'inco
   response = new Response('private non-json error', {status:502,headers:{'x-request-id':'private-invalid-header'}});
   await assert.rejects(()=>mod.exports.generateBrokerAssistance(input),error=>error.status===503);
   assert.equal(logs.at(-1)[1].requestId,null);
+  // The opt-in live checker must sanitize malicious error fields too, not just the runtime provider.
+  const checker = fs.readFileSync(path.join(__dirname,'check-broker-assistant-live.cjs'),'utf8');
+  for (const code of ['sk-private-synthetic-key','invalid_json_schema']) {
+    const liveLogs = [], liveProcess = {argv:[],env:{OPENAI_API_KEY:'sk-private-synthetic-key'},exitCode:0};
+    await vm.runInNewContext(checker,{require,__dirname,process:liveProcess,AbortSignal,
+      console:{error:(...args)=>liveLogs.push(args),warn:(...args)=>liveLogs.push(args),log:(...args)=>liveLogs.push(args)},
+      fetch:async()=>Response.json({error:{code,param:'customer-private-payload',message:'sk-private-synthetic-key customer-private-payload'}},{status:400}),
+    });
+    assert.equal(liveProcess.exitCode,1);
+    assert.doesNotMatch(JSON.stringify(liveLogs),/sk-private|customer-private/);
+  }
   console.log('PASS broker assistant diagnostics: schema/auth/model/quota/rate/outage distinguished; raw provider content, credentials and customer data never logged or returned.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

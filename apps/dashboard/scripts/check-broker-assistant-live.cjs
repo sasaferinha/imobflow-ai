@@ -6,19 +6,16 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const assert = require('node:assert/strict');
 const mod = { exports: {} };
-const safeToken = value => typeof value === 'string' && /^[a-zA-Z0-9_.\[\]-]{1,100}$/.test(value) ? value : null;
+const codes = ['invalid_json_schema', 'invalid_api_key', 'model_not_found', 'insufficient_quota', 'rate_limit_exceeded', 'unsupported_parameter', 'invalid_request_error'];
+const parameters = ['model', 'text.format', 'text.format.schema', 'max_output_tokens'];
 const checkedFetch = async (url, options) => {
   assert.equal(url, 'https://api.openai.com/v1/responses');
   const response = await fetch(url, options);
   if (!response.ok) {
     const body = await response.clone().json().catch(() => ({}));
     const error = body?.error || {};
-    console.error('BROKER_ASSISTANT_PROVIDER_REJECTED', JSON.stringify({ status: response.status, code: safeToken(error.code), param: safeToken(error.param) }));
-    // Schema errors contain our static schema, not credentials or conversation content.
-    if (error.code === 'invalid_json_schema' && typeof error.message === 'string') {
-      const key = process.env.OPENAI_API_KEY?.trim();
-      console.error('BROKER_ASSISTANT_SCHEMA_ERROR', error.message.slice(0,1000).replaceAll(key || 'unused-placeholder', '[redacted]').replace(/sk-[^\s"']+/g, '[redacted]'));
-    }
+    console.error('BROKER_ASSISTANT_PROVIDER_REJECTED', JSON.stringify({ status: response.status,
+      code: codes.includes(error.code) ? error.code : 'unknown', param: parameters.includes(error.param) ? error.param : null }));
   }
   return response;
 };
