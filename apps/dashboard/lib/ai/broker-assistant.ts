@@ -60,6 +60,26 @@ export function validateBrokerAssistance(value: unknown, messages: AssistantMess
 
 export function brokerAssistantConfigured() { return Boolean(process.env.OPENAI_API_KEY?.trim()); }
 
+async function providerFailure(response: Response): Promise<BrokerAssistantError> {
+  const body = await response.json().catch(() => null);
+  const error = object(object(body)?.error);
+  // Only enumerated diagnostics: never log the provider's raw message, inputs or credentials.
+  const codes = ['invalid_json_schema', 'invalid_api_key', 'model_not_found', 'insufficient_quota', 'rate_limit_exceeded', 'unsupported_parameter', 'invalid_request_error'];
+  const parameters = ['model', 'text.format', 'text.format.schema', 'max_output_tokens'];
+  const code = typeof error?.code === 'string' && codes.includes(error.code) ? error.code : 'unknown';
+  const parameter = typeof error?.param === 'string' && parameters.includes(error.param) ? error.param : null;
+  const requestId = response.headers.get('x-request-id');
+  console.warn('broker_assistant_provider_rejected', { status: response.status, code, parameter,
+    requestId: requestId && /^req_[a-zA-Z0-9_-]{1,100}$/.test(requestId) ? requestId : null });
+  if (response.status === 429) return new BrokerAssistantError(429, code === 'insufficient_quota'
+    ? 'O provedor de IA está sem saldo ou cota disponível. Peça ao administrador que confira o faturamento do provedor. Nada foi alterado.'
+    : 'O provedor de IA atingiu seu limite de uso. Aguarde um pouco e tente novamente. Nada foi alterado.');
+  if (response.status === 401) return new BrokerAssistantError(503, 'O provedor recusou a credencial da IA. O administrador precisa revisar a chave configurada no servidor. Nada foi alterado.');
+  if (response.status === 403 || response.status === 404 || code === 'model_not_found') return new BrokerAssistantError(503, 'O modelo de IA configurado não está disponível para esta conta. Peça ao administrador que revise o modelo e suas permissões. Nada foi alterado.');
+  if (response.status === 400) return new BrokerAssistantError(503, 'A integração com a IA precisa de uma correção de compatibilidade. Avise o suporte da ImobFlow. Nada foi alterado.');
+  return new BrokerAssistantError(503, 'O provedor de IA está temporariamente indisponível. Tente novamente mais tarde. Nada foi alterado.');
+}
+
 export async function generateBrokerAssistance(input: { sector: AssistantSector; profile: Record<string, unknown>; messages: AssistantMessage[] }): Promise<BrokerAssistance> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) throw new BrokerAssistantError(503, 'A IA ainda não está configurada. O administrador precisa configurar o provedor para usar as sugestões. A ficha e o botão Registro continuam disponíveis.');
@@ -79,8 +99,7 @@ export async function generateBrokerAssistance(input: { sector: AssistantSector;
       }),
     });
   } catch { throw new BrokerAssistantError(503, 'A IA demorou para responder ou está indisponível. Nada foi enviado ou alterado. Tente novamente mais tarde.'); }
-  if (response.status === 429) throw new BrokerAssistantError(429, 'O provedor de IA atingiu seu limite de uso. Tente mais tarde ou peça ao administrador que confira a disponibilidade.');
-  if (!response.ok) throw new BrokerAssistantError(503, 'Não foi possível consultar a IA. Peça ao administrador que confira a configuração do provedor.');
+  if (!response.ok) throw await providerFailure(response);
   let body: Record<string, unknown> | null;
   try { body = object(await response.json()); } catch { throw invalid(); }
   if (!body || body.status !== 'completed' || !Array.isArray(body.output)) throw invalid();
