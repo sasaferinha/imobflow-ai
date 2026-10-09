@@ -68,11 +68,11 @@
 .crm-workspace.crm-workspace .conversation-clean .full-chat { display: flex; flex-direction: column; height: auto; min-height: 0; overflow: hidden; border-inline: 0; }
 .crm-workspace.crm-workspace .conversation-clean .full-chat-head { display: flex; align-items: center; flex-wrap: wrap; flex-shrink: 0; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--line); background: var(--paper); }
 .crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-contact-heading { flex: 1; min-width: 140px; gap: 3px; }
-.crm-workspace.crm-workspace .conversation-clean .full-chat-head strong { color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-contact-heading > strong { color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
 .crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-owner-line { margin: 0; color: var(--muted) !important; font-size: 12px !important; line-height: 1.5; }
 .crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions { display: flex; align-items: center; flex-direction: row; flex-wrap: wrap; flex: 0 1 auto; gap: 7px; margin-left: auto; }
-.crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--muted); font-size: 12px; font-weight: 600; }
-.crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions button[aria-expanded="true"] { border-color: var(--accent); background: var(--selection, #edf4ff); color: var(--accent-text, #005bc7); }
+.crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--muted); font-size: 12px; font-weight: 600; }
+.crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions > button[aria-expanded="true"] { border-color: var(--accent); background: var(--selection, #edf4ff); color: var(--accent-text, #005bc7); }
 .crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions .conversation-claim-button { border-color: var(--crm-brand); background: var(--crm-brand); color: #fff; }
 .crm-workspace.crm-workspace .conversation-clean .conversation-attendance { align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 10px 18px; border-left-width: 3px; }
 .crm-workspace.crm-workspace .conversation-clean .conversation-attendance strong { font-size: 12px; font-weight: 700; }
@@ -182,7 +182,7 @@
   .crm-workspace.crm-workspace .conversation-clean .full-chat { flex: none; width: 100%; min-height: 660px; height: 740px; }
   .crm-workspace.crm-workspace .conversation-clean .full-chat-head { padding: 14px; }
   .crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions { flex: 1 1 100%; width: 100%; margin: 0; }
-  .crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions button { flex: 1; min-height: 44px; font-size: 12px; }
+  .crm-workspace.crm-workspace .conversation-clean .full-chat-head .conversation-head-actions > button { flex: 1; min-height: 44px; font-size: 12px; }
   .crm-workspace.crm-workspace .conversation-clean .conversation-attendance { padding: 10px 14px; }
   .crm-workspace.crm-workspace .conversation-clean .conversation-attendance button { min-height: 44px; }
   .crm-workspace.crm-workspace .conversation-clean .full-chat-body { gap: 12px; min-height: 180px; padding: 16px 12px; }

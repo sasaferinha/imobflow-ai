@@ -87,7 +87,7 @@
   flex: none;
   margin-left: auto;
 }
-.conversation-clean .full-chat-head .conversation-head-actions button {
+.conversation-clean .full-chat-head .conversation-head-actions > button {
   min-height: 40px;
   padding: 8px 11px;
   font-size: 13px;
@@ -183,7 +183,7 @@
   .app-shell.app-shell .conversation-clean .full-chat { height: 640px; min-height: 640px; flex: none; }
   .app-shell.app-shell .conversation-clean .full-chat-head { padding: 14px; }
   .app-shell.app-shell .conversation-clean .full-chat-head .conversation-head-actions { width: 100%; margin: 0; }
-  .conversation-clean .full-chat-head .conversation-head-actions button { min-height: 44px; }
+  .conversation-clean .full-chat-head .conversation-head-actions > button { min-height: 44px; }
   .conversation-clean .conversation-attendance { padding: 10px 14px; }
   .app-shell.app-shell .conversation-clean .full-chat-body { padding: 16px; }
   .app-shell.app-shell .conversation-clean .full-composer { padding: 10px; gap: 6px; }

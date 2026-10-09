@@ -32,6 +32,7 @@ assert.doesNotMatch(renderToStaticMarkup(React.createElement(ConversationWhatsAp
 // Exercise actual workspace submit handler and re-render, without network or customer messages.
 let states, cursor, props, denied, calls, dispatched;
 const ui = load('app/conversation-center.tsx', {
+  './conversation-registration': { default: () => null },
   react: { useState: initial => { const n = cursor++; if (!(n in states)) states[n] = initial?.leadId === '' ? { leadId: 'a', ready: true } : initial; return [states[n], v => { states[n] = typeof v === 'function' ? v(states[n]) : v; }]; }, useEffect() {}, useMemo: fn => fn(), useRef: initial => ({ current: initial }) },
   '@/lib/dashboard-transport': {}, '@/lib/demo-conversations': { demoContacts: [] },
   '@/lib/dashboard-sync': {}, '@/lib/conversation-inbox': load('lib/conversation-inbox.ts'),

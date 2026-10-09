@@ -1,6 +1,6 @@
 import { supabaseRequest } from '../supabase';
 import { evolutionEnabled } from './feature';
-import { applyCommand, emptyState, visibleState, type Actor, type CrmCommand, type CrmMember, type CrmState } from './model';
+import { applyCommand, emptyState, registrationReplay, visibleState, type Actor, type CrmCommand, type CrmMember, type CrmState } from './model';
 import { readLegacyBridge, mergeLegacyBridge, prepareLegacyCommand, planLegacyWrites, serializeLegacyWorkspace } from './legacy-bridge';
 
 export class EvolutionServerError extends Error {
@@ -66,12 +66,28 @@ export async function executeEvolutionCommand(actor: Actor, command: CrmCommand,
   const stored = await readWorkspace(actor);
   const bridge = evolutionIntegrated() ? await readLegacyBridge(actor, stored.members) : undefined;
   const state = bridge ? mergeLegacyBridge(stored, bridge) : stored;
+  // A response can be lost after SQL has committed. Replaying the exact human
+  // registration acknowledges the existing event instead of creating another visit/proposal.
+  if (registrationReplay(state, actor, command)) return { state: visibleState(state, actor), actor, mode: 'live' as const };
   if (state.version !== expectedVersion) throw new EvolutionServerError(409, 'Os dados foram atualizados por outra pessoa. Recarregue antes de salvar.');
   if (bridge && (!expectedSourceRevision || expectedSourceRevision !== bridge.sourceRevision)) {
     throw new EvolutionServerError(409, 'A base real foi atualizada. Recarregue e revise os dados antes de salvar.');
   }
   const applied = applyCommand(state, actor, bridge ? prepareLegacyCommand(state, bridge, command) : command);
   const plan = bridge ? planLegacyWrites(state, applied, bridge, actor) : undefined;
+  if (plan && bridge && command.type === 'register') {
+    const registeredCase = state.records.find(record => record.kind === 'cases' && record.id === command.caseId);
+    const contact = registeredCase && state.records.find(record => record.kind === 'people' && record.id === registeredCase.data.personId);
+    const source = registeredCase?.legacy?.table === 'leads' ? registeredCase.legacy : contact?.legacy?.table === 'leads' ? contact.legacy : undefined;
+    const row = source && bridge.leads.find(lead => lead.id === source.id);
+    if (!row) throw new EvolutionServerError(409, 'O vínculo com o cliente precisa ser revisado antes deste registro.');
+    if (!plan.writes.some(write => write.table === 'leads' && write.id === row.id)) {
+      // The existing RPC locks and checks the row AND current conversation ownership
+      // before skipping an empty update. Even a timeline-only registration therefore
+      // cannot bypass a portfolio reassignment that raced with the initial read.
+      plan.writes.unshift({ table: 'leads', id: row.id, operation: 'update', expected: { ...row }, data: {} });
+    }
+  }
   const next = plan ? serializeLegacyWorkspace(plan.state, stored) : applied;
   if (next.companyId !== actor.companyId || next.version !== expectedVersion + 1) {
     throw new EvolutionServerError(503, 'Não foi possível validar esta alteração.');
