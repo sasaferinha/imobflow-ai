@@ -26,7 +26,7 @@ function scenario(status = 'loading', initThrows = false) {
   const Component = load('app/whatsapp-integration.tsx', {
     react: { ...React, useState(initial) { const key = index++; return [key < values.length ? values[key] : initial, value => updates.push({ key, value })]; }, useRef: current => ({ current }), useEffect: fn => effects.push(fn) },
     'next/script': { default: Script }, '@/lib/dashboard-transport': {},
-    '@/lib/meta-whatsapp-signup-client': client, './whatsapp-integration.css': {},
+    '@/lib/meta-whatsapp-signup-client': client, './whatsapp-integration.css': {}, './social-integrations': {default:()=>null},
   }, { window: fakeWindow }).default;
   const tree = Component({ canEdit: true, onOpenConversations() {} });
   const nodes = [];

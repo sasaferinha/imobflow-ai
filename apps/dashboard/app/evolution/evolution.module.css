@@ -68,6 +68,13 @@
 }
 
 .app { min-width: 0; min-height: 100vh; background: var(--ev-canvas); }
+.attentionBadge { display: inline-flex; justify-content: center; align-items: center; min-width: 18px; min-height: 18px; padding: 0 4px; border-radius: 10px; background: #e8f1fc; color: #005ecb; font-size: 10px; }
+.catalogCardStatus { padding: 0 18px 12px; background: var(--ev-card-body); }
+.detailCatalog { padding: 14px 24px 0; }
+.formSection { border: 0; border-top: 1px solid var(--ev-line); margin: 22px 0 0; padding: 15px 0 0; min-width: 0; }
+.formSection legend { color: #255886; font-size: 12px; font-weight: 750; padding: 0 12px 0 0; }
+.followupContext { background: #f3f7fd; padding: 16px; border-left: 3px solid #559aeb; border-radius: 4px; margin-bottom: 20px; }
+.followupContext strong { font-size: 14px; }.followupContext p { margin: 7px 0; color: #5e738d; white-space: pre-wrap; }.followupContext small { color: #7688a0; }
 .operationalPanel { min-width: 0; isolation: isolate; }
 /* Operational modules now own a complete shared design, not a legacy header patch. */
 .app:has(:global(.crm-workspace.dark-mode)),

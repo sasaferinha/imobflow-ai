@@ -6,6 +6,7 @@ import { withAccount } from '@/lib/tenant-context';
 import { sweepOpportunities } from '@/lib/opportunities';
 import {sweepMessageOutbox} from '@/lib/message-outbox';
 import {removeExpiredConversationMedia} from '@/lib/whatsapp-media';
+import {runEvolutionScheduler} from '@/lib/evolution/scheduler';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -39,7 +40,8 @@ export async function GET(request: NextRequest) {
         const legacy = process.env.DATABASE_URL
           ? await withAccount({ companyId: company.company_id, company: company.name, brokerId: 'system', name: 'Agendador', role: 'owner' }, () => runAutomations('cron'))
           : { failed: 0 };
-        executions.push({ companyId: company.company_id, complete, generated, processed, busy, failed: legacy.failed > 0 });
+        const crm = Date.now() + 12000 < deadline ? await runEvolutionScheduler(company.company_id, company.name) : { report: 'deferred' };
+        executions.push({ companyId: company.company_id, complete, generated, processed, busy, crm, failed: legacy.failed > 0 });
         await supabaseRequest('conversation_settings?on_conflict=company_id',{method:'POST',prefer:'resolution=merge-duplicates',body:{company_id:company.company_id,last_scheduler_at:new Date().toISOString()}});
       } catch { executions.push({ companyId: company.company_id, complete: false, generated: 0, failed: true }); }
       if (Date.now() >= deadline) break;

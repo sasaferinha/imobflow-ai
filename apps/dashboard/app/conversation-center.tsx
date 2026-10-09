@@ -13,6 +13,8 @@ import { ConversationMessageBubble } from './conversation-message';
 import { ConversationSettings } from './conversation-settings';
 import { ConversationWhatsAppHandoff } from './conversation-whatsapp-handoff';
 import ConversationRegistration from './conversation-registration';
+import ConversationAssistant from './conversation-assistant';
+import ConversationAlerts from './conversation-alerts';
 import { isWhatsAppWindowError } from '@/lib/whatsapp-handoff';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
 import { inboxByLead, compareInboxActivity, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
@@ -61,7 +63,7 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
       <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}><ConversationIcon name="play"/>Ver demonstração</button>
       {preview && <span role="status">{demoSyncFailed ? 'Não foi possível atualizar a demonstração. Tentando reconectar…' : !demoReady ? 'Carregando atendimentos da empresa…' : 'Demonstração compartilhada com sua equipe. Nenhuma mensagem é enviada a clientes reais.'}</span>}
     </div>
-    {!preview&&<ConversationSettings/>}
+    {!preview&&<><ConversationAlerts inbox={props.inbox} ready={props.ready} demonstration={props.demonstration} /><ConversationSettings/></>}
     </div>
     {preview ? <ConversationWorkspace {...props} demonstration ready={demoReady} state={previewState} dispatch={previewDispatch} leads={previewLeads}
       claimLead={async lead => { await saveDemoAction({ contactId: lead.id, action: 'claim' }); }}
@@ -401,6 +403,9 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
             <ConversationRegistration key={leadId} leadId={leadId} customerName={selected.name} demonstration={demonstration} disabled={!ready || saving} notify={notify} onSaved={() => {
               for (const entity of ['leads', 'appointments', 'properties', 'opportunities', 'performance']) announceDashboardChange(entity);
             }} />
+            <ConversationAssistant key={`assistant-${leadId}`} leadId={leadId} customerName={selected.name} demonstration={demonstration} disabled={!ready || saving} notify={notify}
+              onUseReply={text => { dispatch({ type: 'draft', id: selected.id, text: thread.draft.trim() ? `${thread.draft}\n\n${text}`.slice(0, 4000) : text }); composerRef.current?.focus(); }}
+              onSaved={() => { announceDashboardChange('leads'); announceDashboardChange('opportunities'); }} />
             <button ref={profileToggleRef} type="button" aria-expanded={profileOpen} aria-controls="conversation-client-profile" onClick={() => setProfileOpen(open => !open)}><ConversationIcon name="person"/>Ficha do cliente</button>
           </div>
         </div>

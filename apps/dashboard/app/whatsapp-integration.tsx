@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Script from 'next/script';
 import { beginMetaSignup, initializeMetaSdk, type FacebookSdk, type SignupAssets } from '@/lib/meta-whatsapp-signup-client';
 import './whatsapp-integration.css';
+import SocialIntegrations from './social-integrations';
 
 type Connection = {
   configured: boolean; phoneNumberId: string; apiVersion: string; enabled: boolean; hasAccessToken: boolean;
@@ -220,5 +221,6 @@ export default function WhatsAppIntegration({ canEdit, onOpenConversations }: { 
         <button type="submit" className="primary-button" disabled={busy}>{phase === 'saving' ? 'Validando e salvando…' : 'Validar e salvar configuração'}</button>
       </form></details>}
     </>}
+    <SocialIntegrations />
   </section>;
 }

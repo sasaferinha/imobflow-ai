@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),ts=require('typescript');
+const mod={exports:{}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../lib/evolution/weekly-report.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:mod,exports:mod.exports,Date,Set});
+const {previousReportWeek,weeklyReport}=mod.exports;
+assert.equal(previousReportWeek(new Date('2026-10-12T02:00:00Z')).key,'2026-09-28','Sunday night in São Paulo');
+assert.equal(previousReportWeek(new Date('2026-10-12T03:00:00Z')).key,'2026-10-05');
+const result=weeklyReport({records:[{id:'1',kind:'leads',createdAt:'2026-10-05T03:00:00Z',data:{}},{id:'2',kind:'leads',createdAt:'2026-10-12T03:00:00Z',data:{}},{id:'3',kind:'cases',createdAt:'2026-10-05T02:00:00Z',data:{status:'Aberto'}}],events:[]},new Date('2026-10-12T12:00:00Z'));
+assert.match(result.text,/Novos leads: 1/);assert.match(result.text,/Novos atendimentos: 0/);assert.match(result.text,/1 atendimentos abertos/);assert.match(result.text,/sem reconstruir histórico ausente/);
+const offsets=weeklyReport({records:[{kind:'leads',createdAt:'2026-10-05T00:00:00-03:00',data:{}},{kind:'leads',createdAt:'2026-10-12T03:00:00+00:00',data:{}},{kind:'leads',createdAt:'invalid',data:{}},{kind:'followups',createdAt:'2026-10-05T10:00:00Z',data:{status:'Respondida',dueAt:'2026-10-08T10:00:00Z'}},{kind:'followups',createdAt:'2026-10-05T10:00:00Z',data:{status:'Pendente',dueAt:'2026-10-08T10:00:00Z'}}],events:[]},new Date('2026-10-12T12:00:00Z'));
+assert.match(offsets.text,/Novos leads: 1/,'equivalent offset dates respect inclusive start and exclusive end');
+assert.match(offsets.text,/1 cobranças vencidas/,'answered followups await manager review, not a broker response');
+console.log('Weekly report: São Paulo week boundaries, no fabricated historical results passed.');

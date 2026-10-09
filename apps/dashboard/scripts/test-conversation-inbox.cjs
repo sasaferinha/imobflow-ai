@@ -96,6 +96,7 @@ function load(file,deps={},globals={},suffix='') {
     '@/lib/dashboard-sync':{announceDashboardChange:()=>refreshes++},
     './conversation-message':{},'./conversation-settings':{},'./conversation-whatsapp-handoff':{},
     './conversation-registration':{default:()=>null},
+    './conversation-assistant':{default:()=>null}, './conversation-alerts':{default:()=>null},
     '@/lib/whatsapp-handoff':load('lib/whatsapp-handoff.ts'),
     './conversation-attendance':{describeConversationAttendance:()=>({canSend:true,owner:null})},
   },{window:events,document:doc,AbortController},'\nexport { ConversationWorkspace };');

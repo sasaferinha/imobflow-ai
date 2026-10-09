@@ -1,5 +1,6 @@
 import { CAPTURE_STAGES, MODULES, NEGOTIATION_STAGES, type Kind } from './schema';
 import { REGISTRATION_ACTIONS, REGISTRATION_CHANNELS, REGISTRATION_OUTCOMES, type RegistrationAction, type RegistrationCommand } from './registration-contract';
+import { DEFAULT_OPERATIONS_SETTINGS, funnelBlockReason, type OperationsSettings } from './operations';
 
 export type Value = string | number | boolean;
 export type Actor = { companyId: string; brokerId: string; name: string; role: 'owner' | 'broker' };
@@ -7,7 +8,7 @@ export type CrmMember = { id: string; name: string; role: 'owner' | 'broker'; sp
 export type LegacyRecordSource = { table: 'leads' | 'properties' | 'appointments'; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; missingPurpose?: boolean };
 export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; createdAt: string; updatedAt: string; createdBy: string; legacy?: LegacyRecordSource };
 export type CrmEvent = { id: string; recordId: string; caseId?: string; at: string; actorId: string; actorName: string; type: string; summary: string; changes?: Record<string, { from: Value; to: Value }>; registration?: { requestId: string; fingerprint: string; action: RegistrationAction } };
-export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean };
+export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings };
 export type CrmState = { companyId: string; version: number; records: CrmRecord[]; events: CrmEvent[]; members: CrmMember[]; settings: CrmSettings; sourceRevision?: string };
 export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<CrmSettings> } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | RegistrationCommand;
 export type CaseFilter = { purpose?: string; assignedTo?: string; from?: string; to?: string; stage?: string; freshness?: string; journey?: string; status?: string; query?: string };
@@ -28,6 +29,7 @@ export function canAccess(state: CrmState, actor: Actor, record: CrmRecord, acti
   if (record.kind === 'notes') return record.createdBy === actor.brokerId;
   if (record.kind === 'messages') return record.createdBy === actor.brokerId || (action === 'read' && record.data.recipientId === actor.brokerId);
   if (actor.role === 'owner') return true;
+  if (['followups','captureGoals','shifts'].includes(record.kind)) return record.data.assignedTo === actor.brokerId && (action === 'read' || record.kind === 'followups');
   // Canonical portfolio ownership cannot be expanded by workspace preferences.
   // Inactive or ambiguous historical assignments remain visible to the owner.
   if (record.legacy) {
@@ -95,6 +97,8 @@ function validateData(state: CrmState, actor: Actor, kind: Kind, raw: Record<str
   const definition = MODULES[kind];
   if (!definition || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new CrmError('Cadastro inválido.');
   if (definition.admin && actor.role !== 'owner') deny();
+  if (actor.role !== 'owner' && (['captureGoals','shifts'].includes(kind) || kind === 'followups' && !existing)) deny();
+  if (kind === 'followups' && actor.role !== 'owner' && existing && Object.entries(raw).some(([key,value])=>!['response','status'].includes(key) && value !== existing.data[key])) deny();
   const fields = new Set(definition.fields.map(f => f.key));
   if (Object.keys(raw).some(key => !fields.has(key))) throw new CrmError('Campo não permitido.');
   const merged = { ...existing?.data, ...raw }, data: Record<string, Value> = {};
@@ -132,6 +136,7 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
   }
   if (record.kind === 'leads' && Number(d.budgetMax) && Number(d.budgetMin) > Number(d.budgetMax)) throw new CrmError('Orçamento máximo deve ser maior ou igual ao mínimo.');
   if (record.kind === 'cases') {
+    const blocked = funnelBlockReason(state,record,previous); if (blocked) throw new CrmError(blocked);
     const stages = d.journey === 'Captação' ? CAPTURE_STAGES : NEGOTIATION_STAGES;
     if (!stages.includes(String(d.stage))) throw new CrmError('Etapa incompatível com a jornada.');
     if (['Pausado', 'Perdido'].includes(String(d.status)) && !d.reason && !(previous?.legacy && previous.data.status === d.status && !previous.data.reason)) throw new CrmError('Informe o motivo da pausa ou encerramento.');
@@ -161,9 +166,17 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
     if (!unresolvedLegacyAssignee && (!assignee || !canAccess(state, {companyId:state.companyId,brokerId:assignee.id,name:assignee.name,role:assignee.role}, parent))) throw new CrmError('O responsável pela atividade precisa ter acesso ao atendimento. Ajuste a carteira ou as permissões antes de atribuir.');
     if (d.type === 'Visita' && !d.propertyId && !(previous?.legacy?.table === 'appointments' && !previous.data.propertyId)) throw new CrmError('Selecione o imóvel da visita.');
     if (['Ausência', 'Cancelada'].includes(String(d.status)) && !d.reason) throw new CrmError('Informe o motivo / feedback.');
+    if (d.type === 'Visita' && (!previous || previous.data.status !== d.status) && ['Pendente','Confirmada','Realizada'].includes(String(d.status))) {
+      const blocked = funnelBlockReason(state,{...parent,data:{...parent.data,stage:d.status==='Realizada'?'Visita':'Agendamento'}},{...parent,data:{...parent.data,stage:'Lead'}});
+      if (blocked) throw new CrmError(blocked);
+    }
   }
   if (record.kind === 'proposals') {
     const parent = find(state, String(d.caseId), 'cases');
+    if (['Enviada','Em negociação','Aceita'].includes(String(d.status)) && previous?.data.status !== d.status) {
+      const blocked = funnelBlockReason(state,{...parent,data:{...parent.data,stage:d.status==='Aceita'?'Negociado':'Proposta'}},{...parent,data:{...parent.data,stage:'Lead'}});
+      if (blocked) throw new CrmError(blocked);
+    }
     if (parent.data.journey !== 'Negociação') throw new CrmError('Propostas pertencem à jornada de negociação.');
     if (previous?.data.status === 'Aceita') throw new CrmError('Resultado confirmado é preservado. Correções de fechamento exigem um fluxo de estorno, ainda não disponível.', 409);
     const prop = find(state, String(d.propertyId), 'properties');
@@ -190,6 +203,35 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
   if (record.kind === 'goals') {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(d.month))) throw new CrmError('Informe o mês no formato AAAA-MM.');
     if (state.records.some(r => r.id !== record.id && r.kind === 'goals' && r.data.month === d.month && r.data.assignedTo === d.assignedTo && r.data.purpose === d.purpose)) throw new CrmError('Já existe uma meta desta finalidade para o responsável neste mês.', 409);
+  }
+  if (record.kind === 'followups') {
+    if (!previous && d.status !== 'Pendente') throw new CrmError('Uma cobrança começa como Pendente.');
+    if (previous && ['Concluída','Cancelada'].includes(String(previous.data.status))) throw new CrmError('A cobrança encerrada é preservada. Crie uma nova cobrança.',409);
+    if (actor.role !== 'owner') {
+      if (!['Pendente','Em andamento','Respondida'].includes(String(d.status))) deny();
+      if (previous?.data.status === 'Respondida' && d.status !== 'Respondida') throw new CrmError('A resposta está aguardando conferência do gestor.');
+      if (previous?.data.status === 'Em andamento' && d.status === 'Pendente') throw new CrmError('Mantenha a cobrança em andamento ou envie a resposta.');
+    }
+    if (['Respondida','Concluída'].includes(String(d.status)) && !d.response) throw new CrmError('Escreva a resposta antes de enviar para conferência.');
+    if (d.status === 'Concluída' && previous?.data.status !== 'Respondida') throw new CrmError('Aguarde a resposta do corretor antes de concluir a cobrança.');
+    if ((['Concluída','Cancelada'].includes(String(d.status)) || previous?.data.status === 'Respondida' && d.status === 'Pendente') && !d.review) throw new CrmError('Registre a conferência / motivo do gestor.');
+    if (d.caseId) {
+      const parent = find(state,String(d.caseId),'cases'), assignee = state.members.find(m=>m.id===d.assignedTo);
+      if (!assignee || !canAccess(state,{companyId:state.companyId,brokerId:assignee.id,name:assignee.name,role:assignee.role},parent)) throw new CrmError('O corretor cobrado precisa ter acesso ao atendimento relacionado.');
+    }
+  }
+  if (record.kind === 'captureGoals') {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(d.month))) throw new CrmError('Informe o mês no formato AAAA-MM.');
+    if (!Number.isInteger(d.target) || Number(d.target)>10000) throw new CrmError('A meta deve ser um número inteiro de 1 a 10.000 imóveis.');
+    if (state.records.some(r=>r.id!==record.id && r.kind==='captureGoals' && r.data.month===d.month && r.data.assignedTo===d.assignedTo && r.data.purpose===d.purpose)) throw new CrmError('Já existe uma meta de captação desta finalidade para o corretor neste mês.',409);
+  }
+  if (record.kind === 'shifts') {
+    const start=Date.parse(String(d.startsAt)), end=Date.parse(String(d.endsAt));
+    if (end<=start || end-start>31*86400000) throw new CrmError('O plantão deve terminar depois do início e durar no máximo 31 dias.');
+    const member=state.members.find(m=>m.id===d.assignedTo);
+    if (!member || member.role!=='broker') throw new CrmError('Escolha um corretor ativo para o plantão.');
+    if (member.specialization!=='Ambos' && (d.purpose==='Ambos'||member.specialization!==d.purpose)) throw new CrmError('A finalidade do plantão deve respeitar a atuação do corretor.');
+    if (d.status==='Ativo' && state.records.some(r=>r.id!==record.id && r.kind==='shifts' && r.data.status==='Ativo' && r.data.assignedTo===d.assignedTo && Date.parse(String(r.data.startsAt))<end && Date.parse(String(r.data.endsAt))>start)) throw new CrmError('Este corretor já tem um plantão nesse horário.',409);
   }
 }
 const registrationFields: Record<RegistrationAction, readonly string[]> = {
@@ -335,6 +377,8 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
     if (record.kind === 'keys') { record.data.checkedOutAt = previous?.data.checkedOutAt || now; if (record.data.status === 'Devolvida') record.data.returnedAt = now; }
     if (record.kind === 'cases' && record.data.stage !== previous?.data.stage) record.data.stageEnteredAt = now;
     if (record.kind === 'proposals' && record.data.status === 'Aceita') record.data.acceptedAt = now;
+    if (record.kind === 'followups' && record.data.status === 'Respondida' && (previous?.data.status !== 'Respondida' || previous?.data.response !== record.data.response)) { record.data.respondedAt=now; record.data.respondedBy=actor.brokerId; }
+    if (record.kind === 'followups' && ['Concluída','Cancelada'].includes(String(record.data.status))) { record.data.reviewedAt=now; record.data.reviewedBy=actor.brokerId; }
     if (previous) change(state, actor, previous, record.data, now, `${MODULES[record.kind].singular} atualizado`);
     else { state.records.push(record); addEvent(state, actor, record, now, 'created', `${MODULES[record.kind].singular} criado`, Object.fromEntries(Object.entries(record.data).filter(([,v]) => v !== '').map(([k,v]) => [k,{from:'',to:v}]))); }
     const saved = find(state, record.id);
@@ -351,8 +395,17 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
     if (actor.role !== 'owner') deny();
     const settings = command.settings;
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new CrmError('Configuração inválida.');
-    if (Object.keys(settings).some(k => !['inactivityDays','sources','categories','lossReasons','distributionEnabled'].includes(k))) throw new CrmError('Configuração não permitida.');
+    if (Object.keys(settings).some(k => !['inactivityDays','sources','categories','lossReasons','distributionEnabled','operations'].includes(k))) throw new CrmError('Configuração não permitida.');
     if (settings.distributionEnabled !== undefined && settings.distributionEnabled !== false) throw new CrmError('Distribuição automática ainda não liberada. A especialização não transfere nem oculta atendimentos existentes.');
+    if (settings.operations !== undefined) {
+      const operations=settings.operations;
+      if (!operations || typeof operations!=='object' || Array.isArray(operations) || Object.keys(operations).some(key=>!Object.hasOwn(DEFAULT_OPERATIONS_SETTINGS,key))) throw new CrmError('Regra operacional inválida.');
+      for (const [key,value] of Object.entries(operations)) {
+        if (key==='reassignmentDays') { if (!Number.isInteger(value) || Number(value)<1 || Number(value)>365) throw new CrmError('O prazo de redistribuição deve ser de 1 a 365 dias.'); }
+        else if (typeof value!=='boolean') throw new CrmError('As regras operacionais devem ser ativadas ou desativadas.');
+      }
+      state.settings.operations={...DEFAULT_OPERATIONS_SETTINGS,...state.settings.operations,...operations};
+    }
     if (settings.inactivityDays) {
       for (const [stage, days] of Object.entries(settings.inactivityDays)) { if (![...NEGOTIATION_STAGES, ...CAPTURE_STAGES].includes(stage) || !Number.isInteger(days) || days < 1 || days > 365) throw new CrmError('Prazo por etapa deve ser de 1 a 365 dias.'); }
       state.settings.inactivityDays = { ...state.settings.inactivityDays, ...settings.inactivityDays };
@@ -416,6 +469,9 @@ export function createDemoState(companyId: string, actorId: string, now = new Da
   add('demo-task-1','tasks',{name:'Visita de demonstração',caseId:'demo-case-1',assignedTo:'demo-broker-1',type:'Visita',propertyId:'demo-property-1',dueAt:day(1),priority:'Alta',status:'Confirmada',reason:'',notes:''});
   add('demo-task-2','tasks',{name:'Retorno pendente de demonstração',caseId:'demo-case-2',assignedTo:'demo-broker-2',type:'Tarefa',dueAt:day(-1),priority:'Normal',status:'Pendente',reason:'',notes:''});
   add('demo-goal','goals',{name:'Meta de demonstração',assignedTo:actorId,purpose:'Venda',month:now.slice(0,7),amount:1000000,notes:'Meta sintética informada manualmente.'});
+  add('demo-followup','followups',{name:'Completar preferências do cliente',assignedTo:'demo-broker-1',caseId:'demo-case-1',dueAt:day(-1),priority:'Alta',status:'Pendente',request:'Cenário fictício: confirmar região e prazo para mudança.',response:'',review:''},2);
+  add('demo-capture-goal','captureGoals',{name:'Captações de demonstração',assignedTo:'demo-broker-1',month:new Date(Date.parse(now)-3*3600000).toISOString().slice(0,7),purpose:'Venda',target:5,notes:'Contagem de imóveis fictícios cadastrados no mês.'});
+  add('demo-shift','shifts',{name:'Plantão de demonstração',assignedTo:'demo-broker-1',startsAt:day(-0.1),endsAt:day(0.1),purpose:'Venda',status:'Ativo',notes:'Plantão fictício. Nenhuma carteira é transferida.'});
   // Snapshot data intentionally has no fabricated transition events or conversion rate.
   return state;
 }
