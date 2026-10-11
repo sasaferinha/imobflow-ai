@@ -50,7 +50,7 @@ export const evolutionIntegrated = () => process.env.CRM_EVOLUTION_INTEGRATED ==
 
 export async function readEvolutionState(actor: Actor): Promise<CrmState> {
   const stored = await readWorkspace(actor);
-  return evolutionIntegrated() ? mergeLegacyBridge(stored, await readLegacyBridge(actor, stored.members)) : stored;
+  return evolutionIntegrated() ? mergeLegacyBridge(stored, await readLegacyBridge(actor, stored.members, stored)) : stored;
 }
 
 export async function getEvolutionSnapshot(actor: Actor) {
@@ -64,7 +64,7 @@ export async function executeEvolutionCommand(actor: Actor, command: CrmCommand,
     throw new EvolutionServerError(400, 'Versão inválida. Atualize a página antes de continuar.');
   }
   const stored = await readWorkspace(actor);
-  const bridge = evolutionIntegrated() ? await readLegacyBridge(actor, stored.members) : undefined;
+  const bridge = evolutionIntegrated() ? await readLegacyBridge(actor, stored.members, stored) : undefined;
   const state = bridge ? mergeLegacyBridge(stored, bridge) : stored;
   // A response can be lost after SQL has committed. Replaying the exact human
   // registration acknowledges the existing event instead of creating another visit/proposal.

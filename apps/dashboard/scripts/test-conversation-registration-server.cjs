@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 const ts = require('typescript');
 const { createDatabase, seedCompanies, id, migration } = require('./helpers/tenant-test-database.cjs');
+const { stageMessageQuery } = require('./helpers/stage-message-query.cjs');
 
 async function run() {
   const db = await createDatabase();
@@ -66,6 +67,7 @@ async function run() {
         }
         if (resource === 'leads' && failedReadPending) { failedReadPending = false; return Response.json({ error: 'synthetic_post_commit_failure' }, { status: 503 }); }
         assert.equal(options.method || 'GET', 'GET', 'canonical writes must share the atomic RPC');
+        if (['messages', 'message_delivery_events'].includes(resource)) return Response.json(await stageMessageQuery(db, resource, url.searchParams));
         assert.ok(['broker_accounts', 'crm_evolution_workspaces', 'leads', 'properties', 'appointments', 'conversations'].includes(resource), `unexpected resource ${resource}`);
         const values = [], conditions = [];
         for (const [key, value] of url.searchParams) {
