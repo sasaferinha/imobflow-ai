@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 const ts = require('typescript');
 const { createDatabase, seedCompanies, id, migration } = require('./helpers/tenant-test-database.cjs');
+const { stageMessageQuery } = require('./helpers/stage-message-query.cjs');
 
 async function run() {
   const db = await createDatabase();
@@ -51,6 +52,7 @@ async function run() {
         }
         if(resource==='leads' && failedReadPending){failedReadPending=false;return Response.json({error:'isolated_post_commit_read_failure'},{status:503});}
         assert.equal(options.method||'GET','GET','canonical writes only through atomic RPC');
+        if (['messages', 'message_delivery_events'].includes(resource)) return Response.json(await stageMessageQuery(db, resource, url.searchParams));
         assert.ok(['broker_accounts','crm_evolution_workspaces','leads','properties','appointments','conversations'].includes(resource),resource);
         const values=[],conditions=[];
         for(const [key,value] of url.searchParams){if(['select','order','offset','limit'].includes(key))continue;assert.ok(value.startsWith('eq.'));values.push(key==='active'?value.slice(3)==='true':value.slice(3));conditions.push(`${identifier(key)}=$${values.length}`);}
@@ -95,6 +97,22 @@ async function run() {
     assert.ok((await snapshot('otherBroker')).records.every(r=>r.kind==='properties'));
     assert.equal((await post('broker',{type:'save',kind:'people',id:`person:${id(101)}`,data:{name:'Forbidden'}},brokerState)).status,403);
     assert.equal((await post('owner',{type:'comment',id:`case:${id(101)}`,text:'Wrong origin'},state,'https://evil.example.test')).status,403);
+
+    const canonicalBeforeEngagement = await queryRow('leads', id(101));
+    await db.query("UPDATE messages SET created_at='2026-10-01T10:00:00Z' WHERE id=$1", [id(701)]);
+    await db.query("INSERT INTO messages(id,company_id,conversation_id,direction,sender_type,content,created_at,delivery_status) VALUES($1,$2,$3,'outgoing','human','Resposta sintética','2026-10-01T10:01:00Z','sent'),($4,$2,$3,'incoming','client','Retorno sintético','2026-10-01T10:02:00Z',null)", [id(750), id(1), id(501), id(751)]);
+    const threeMessages = await snapshot('owner');
+    assert.equal(threeMessages.records.find(r => r.id === `case:${id(101)}`).data.stage, 'Lead', 'three messages do not meet more-than-three threshold');
+    assert.equal(threeMessages.sourceRevision, state.sourceRevision, 'messages without an effective stage change do not invalidate a form');
+    await db.query("INSERT INTO messages(id,company_id,conversation_id,direction,sender_type,content,created_at,delivery_status) VALUES($1,$2,$3,'outgoing','human','Resposta final sintética','2026-10-01T10:03:00Z','sent')", [id(752), id(1), id(501)]);
+    const engaged = await snapshot('owner');
+    assert.equal(engaged.records.find(r => r.id === `case:${id(101)}`).data.stage, 'Atendimento');
+    assert.notEqual(engaged.sourceRevision, threeMessages.sourceRevision);
+    assert.equal((await post('owner', { type: 'comment', id: `case:${id(101)}`, text: 'Formulário anterior à troca' }, threeMessages)).status, 409, 'an effective stage change requires stale forms to reload');
+    assert.deepEqual(await queryRow('leads', id(101)), canonicalBeforeEngagement, 'automatic GET changes neither lifecycle nor customer timestamps');
+    assert.equal(await workspaceVersion(), 0, 'automatic GET does not persist workspace or fabricate a stage event');
+    assert.ok(calls.filter(c => c.resource === 'messages').every(c => c.method === 'GET' && !c.query.get('select').split(',').includes('content')));
+    state = engaged;
 
     state=await save('owner',{type:'save',kind:'people',data:{name:'Contato novo sintético',phone:'5535999990022',personType:'Pessoa física',category:'Cliente',assignedTo:id(11)}},state);
     const person=state.records.find(r=>r.kind==='people'&&r.data.name==='Contato novo sintético'), realLeadId=person.legacy.id;

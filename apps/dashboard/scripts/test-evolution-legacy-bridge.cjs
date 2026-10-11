@@ -7,6 +7,8 @@ const crypto = require('node:crypto');
 const ts = require('typescript');
 const cache = new Map();
 const requests = [];
+const stageRequests = [];
+let conversationStages = new Map();
 let transportRows = {};
 function load(file) {
   if (cache.has(file)) return cache.get(file);
@@ -15,6 +17,7 @@ function load(file) {
   const mod = {exports:{}};
   const localRequire = name => {
     if (name === '../supabase') return { supabaseRequest:async (url,options) => { requests.push({url,options}); assert.ok(!options.method,'read adapter cannot mutate'); return transportRows[url.split('?')[0]]; } };
+    if (name === '../conversation-stage-reader') return { readAutomaticConversationStages: async (companyId, ids) => { stageRequests.push({ companyId, ids: [...ids] }); return new Map([...conversationStages].filter(([id]) => ids.includes(id))); } };
     if (name.startsWith('.')) return load(path.posix.normalize(path.posix.join(path.posix.dirname(file),name))+'.ts');
     return require(name);
   };
@@ -61,6 +64,34 @@ async function run() {
   const overlay=structuredClone(state);overlay.records.find(r=>r.kind==='cases').data.notes='Anotação local';overlay.records.find(r=>r.kind==='cases').data.stageEnteredAt=stamp;
   const refreshed=bridge.mergeLegacyBridge(overlay,changedRaw);
   assert.equal(refreshed.records.find(r=>r.kind==='people').data.name,'Atualização sintética');assert.equal(refreshed.records.find(r=>r.kind==='cases').data.stage,'Proposta');assert.equal(refreshed.records.find(r=>r.kind==='cases').data.stageEnteredAt,undefined);assert.equal(refreshed.records.find(r=>r.kind==='cases').data.notes,'Anotação local');
+  const waiting = source({ automaticStages: { [lead.id]: 'Lead' } });
+  const engaging = source({ automaticStages: { [lead.id]: 'Atendimento' } });
+  assert.notEqual(waiting.sourceRevision, engaging.sourceRevision, 'the effective automatic stage participates in stale-snapshot protection');
+  assert.equal(snapshot(waiting).records.find(r => r.kind === 'cases').data.stage, 'Lead');
+  assert.equal(snapshot(waiting).records.find(r => r.kind === 'leads').data.status, 'Pendente');
+  assert.equal(snapshot(engaging).records.find(r => r.kind === 'cases').data.stage, 'Atendimento');
+  assert.equal(waiting.leads[0].lifecycle_status, 'Em atendimento', 'automatic reading never rewrites the canonical lifecycle');
+  const waitingState = snapshot(waiting);
+  const leadRegistration = model.applyCommand(waitingState, broker, { type: 'register', caseId: mainCase.id, requestId: crypto.randomUUID(), action: 'lead', data: {} }, stamp);
+  assert.equal(bridge.planLegacyWrites(waitingState, leadRegistration, waiting, broker).writes.find(write => write.table === 'leads').data.lifecycle_status, 'Novo', 'explicit registration persists a derived stage even when the displayed stage already matches');
+  assert.equal(bridge.mergeLegacyBridge(overlay, waiting).records.find(r => r.kind === 'cases').data.stage, 'Lead', 'a notes-only overlay cannot freeze the derived stage');
+  for (const lifecycle of ['Visita', 'Proposta', 'Convertido', 'Perdido']) {
+    const existing = source({ leads: [{ ...lead, lifecycle_status: lifecycle }], automaticStages: { [lead.id]: 'Lead' } });
+    const expected = { Visita: 'Visita', Proposta: 'Proposta', Convertido: 'Negociado', Perdido: 'Atendimento' }[lifecycle];
+    assert.equal(snapshot(existing).records.find(r => r.kind === 'cases').data.stage, expected, 'untraced legacy/imported human stages must survive');
+  }
+  for (const humanStage of ['Lead', 'Atendimento', 'Agendamento', 'Visita', 'Proposta']) {
+    const manual = structuredClone(overlay), savedCase = manual.records.find(r => r.kind === 'cases');
+    savedCase.data.stage = humanStage;
+    manual.events.push({ id: id(890), recordId: savedCase.id, actorId: broker.brokerId, type: 'registration', registration: { action: humanStage === 'Lead' ? 'lead' : 'attendance' } });
+    const rawChange = source({ leads: [{ ...lead, lifecycle_status: 'Novo' }], automaticStages: { [lead.id]: 'Atendimento' } });
+    assert.equal(bridge.mergeLegacyBridge(manual, rawChange).records.find(r => r.kind === 'cases').data.stage, humanStage, 'a human registration takes precedence over message classification');
+  }
+  const manualEdit = structuredClone(overlay);
+  manualEdit.events.push({ id: id(891), recordId: mainCase.id, actorId: broker.brokerId, changes: { stage: { from: 'Lead', to: 'Atendimento' } } });
+  assert.equal(bridge.mergeLegacyBridge(manualEdit, waiting).records.find(r => r.kind === 'cases').data.stage, 'Atendimento');
+  const paused = structuredClone(overlay); paused.records.find(r => r.kind === 'cases').data.status = 'Pausado';
+  assert.equal(bridge.mergeLegacyBridge(paused, waiting).records.find(r => r.kind === 'cases').data.status, 'Pausado');
   const edited=edit(state,broker,'leads',interest.id,{budgetMax:700000,region:'Centro, Sul'});
   const plan=bridge.planLegacyWrites(state,edited,s,broker);assert.equal(plan.writes.length,1);assert.equal(plan.writes[0].table,'leads');assert.equal(plan.writes[0].expected.budget_max,600000);assert.equal(plan.writes[0].data.budget_max,700000);
   assert.equal(plan.writes[0].data.interest_profile.financingIntent,'Sim');assert.equal(plan.writes[0].data.interest_profile.bedrooms,2);assert.equal(plan.writes[0].data.interest_profile.features[0],'Elevador');assert.equal(plan.writes[0].data.interest_profile.regions[1],'Sul');assert.ok(!('last_contact_at' in plan.writes[0].data));
@@ -92,6 +123,24 @@ async function run() {
   const unrelated=nativeCase.records.at(-1), hiddenParentVisit=model.applyCommand(nativeCase,other,{type:'save',kind:'tasks',data:{name:'Tentativa via captação',caseId:unrelated.id,assignedTo:other.brokerId,type:'Visita',propertyId:listing.id,dueAt:'2026-10-09T10:00',priority:'Normal',status:'Pendente'}});
   assert.throws(()=>bridge.planLegacyWrites(nativeCase,hiddenParentVisit,s,other),/carteira/,'native case must not grant write access to canonical contact');
   transportRows={leads:[lead],properties:[property],appointments:[appointment],conversations:[conversation]};await bridge.readLegacyBridge(owner,members);assert.equal(requests.length,4);assert.ok(requests.every(r=>r.url.includes(`company_id=eq.${company}`)&&r.options.allRows));assert.ok(requests.every(r=>!r.url.includes('messages')));
+  assert.deepEqual(stageRequests.at(-1), { companyId: company, ids: [conversation.id] });
+  transportRows.conversations.push({ ...conversation, id: id(403) });
+  conversationStages = new Map([[conversation.id, 'Lead'], [id(403), 'Atendimento']]);
+  const multichannel = await bridge.readLegacyBridge(owner, members);
+  assert.equal(multichannel.automaticStages[lead.id], 'Atendimento', 'one independently engaged channel is enough');
+  conversationStages.set(conversation.id, 'Atendimento');
+  assert.equal((await bridge.readLegacyBridge(owner, members)).sourceRevision, multichannel.sourceRevision, 'unchanged effective lead stage keeps the revision stable');
+  conversationStages = new Map([[conversation.id, 'Lead']]);
+  const partialChannels = await bridge.readLegacyBridge(owner, members);
+  assert.equal(partialChannels.automaticStages[lead.id], undefined, 'Lead plus an unavailable channel is unknown, never evidence for a downgrade');
+  assert.equal(snapshot(partialChannels).records.find(r => r.kind === 'cases').data.stage, 'Atendimento');
+  conversationStages.set(conversation.id, 'Atendimento');
+  assert.equal((await bridge.readLegacyBridge(owner, members)).automaticStages[lead.id], 'Atendimento', 'one proved exchange survives an unavailable second channel');
+  await bridge.readLegacyBridge(owner, members, manualEdit);
+  assert.deepEqual(stageRequests.at(-1).ids, [], 'human stages do not read message histories');
+  transportRows.leads[0] = { ...lead, lifecycle_status: 'Visita' };
+  await bridge.readLegacyBridge(owner, members);
+  assert.deepEqual(stageRequests.at(-1).ids, [], 'advanced canonical stages do not read message histories');
   console.log('PASS: legacy bridge snapshot, provenance, assignment, canonical CAS plans, bidirectional reconciliation, no duplicate identities/history, visit lifecycle and synthetic-only transport.');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

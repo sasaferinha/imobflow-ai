@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { supabaseRequest } from '../supabase';
 import { analyzeLead, explainProfile, type LeadInput, type LeadLifecycleStatus } from '../leads';
+import type { AutomaticConversationStage } from '../conversation-stage';
+import { readAutomaticConversationStages } from '../conversation-stage-reader';
 import { CrmError, normalize, type Actor, type CrmCommand, type CrmMember, type CrmRecord, type CrmState, type Value } from './model';
 
 /** No network writes live here. The caller commits this plan and workspace CAS in ONE SQL transaction. */
@@ -8,7 +10,7 @@ export type LegacyTable = 'leads' | 'properties' | 'appointments';
 export type LegacyRow = Record<string, unknown> & { id: string; company_id: string };
 export type LegacySource = { table: LegacyTable; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; missingPurpose?: boolean };
 type MappedRecord = CrmRecord & { legacy?: LegacySource };
-export type LegacyBridge = { companyId: string; members: CrmMember[]; leads: LegacyRow[]; properties: LegacyRow[]; appointments: LegacyRow[]; conversations: LegacyRow[]; sourceRevision: string };
+export type LegacyBridge = { companyId: string; members: CrmMember[]; leads: LegacyRow[]; properties: LegacyRow[]; appointments: LegacyRow[]; conversations: LegacyRow[]; automaticStages: Record<string, AutomaticConversationStage>; sourceRevision: string };
 export type LegacyWrite = { table: LegacyTable; id: string; operation: 'insert' | 'update'; expected: Record<string, unknown> | null; data: Record<string, unknown> };
 export type LegacyPlan = { state: CrmState; writes: LegacyWrite[] };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,18 +35,40 @@ function checkedRows(rows: LegacyRow[], companyId: string, table: string) {
   return rows;
 }
 /** Public for isolated synthetic tests. It does not fabricate customers, chronology or assignments. */
-export function legacyBridgeFromRows(companyId: string, members: CrmMember[], input: { leads: LegacyRow[]; properties: LegacyRow[]; appointments: LegacyRow[]; conversations: LegacyRow[] }): LegacyBridge {
+export function legacyBridgeFromRows(companyId: string, members: CrmMember[], input: { leads: LegacyRow[]; properties: LegacyRow[]; appointments: LegacyRow[]; conversations: LegacyRow[]; automaticStages?: Record<string, AutomaticConversationStage> }): LegacyBridge {
   if (!uuid.test(companyId)) throw new CrmError('Empresa inválida.', 403);
   const rows = { leads: checkedRows(input.leads, companyId, 'leads'), properties: checkedRows(input.properties, companyId, 'imóveis'), appointments: checkedRows(input.appointments, companyId, 'agenda'), conversations: checkedRows(input.conversations, companyId, 'conversas') };
-  const sourceRevision = createHash('sha256').update(stable({ companyId, members: members.map(m => ({ id: m.id, name: m.name, role: m.role })).sort((a,b) => a.id.localeCompare(b.id)), ...Object.fromEntries(Object.entries(rows).map(([key, values]) => [key, [...values].sort((a,b) => a.id.localeCompare(b.id))])) })).digest('hex');
-  return { companyId, members, ...rows, sourceRevision };
+  const automaticStages = input.automaticStages || {};
+  if (Object.entries(automaticStages).some(([leadId, stage]) => !rows.leads.some(row => row.id === leadId) || !rows.conversations.some(row => row.lead_id === leadId) || !['Lead', 'Atendimento'].includes(stage))) throw new CrmError('Não foi possível validar as etapas das conversas.', 503);
+  // Only an effective stage change invalidates the snapshot, not every new message.
+  const sourceRevision = createHash('sha256').update(stable({ companyId, automaticStages, members: members.map(m => ({ id: m.id, name: m.name, role: m.role })).sort((a,b) => a.id.localeCompare(b.id)), ...Object.fromEntries(Object.entries(rows).map(([key, values]) => [key, [...values].sort((a,b) => a.id.localeCompare(b.id))])) })).digest('hex');
+  return { companyId, members, ...rows, automaticStages, sourceRevision };
 }
-export async function readLegacyBridge(actor: Actor, members: CrmMember[]): Promise<LegacyBridge> {
+function manualCaseIds(state: CrmState | undefined): Set<string> {
+  const cases = new Set(state?.records.filter(record => record.kind === 'cases').map(record => record.id));
+  const manual = new Set(state?.records.filter(record => record.kind === 'cases' && (!['Lead', 'Atendimento'].includes(str(record.data.stage)) || record.data.status !== 'Aberto')).map(record => record.id));
+  for (const event of state?.events || []) if (cases.has(event.recordId) && (event.registration || event.changes?.stage || event.changes?.status)) manual.add(event.recordId);
+  return manual;
+}
+export async function readLegacyBridge(actor: Actor, members: CrmMember[], stored?: CrmState): Promise<LegacyBridge> {
   if (!members.some(m => m.id === actor.brokerId && m.role === actor.role)) throw new CrmError('Seu acesso mudou. Entre novamente.', 403);
   const company = encodeURIComponent(actor.companyId);
   const query = <T>(table: string, columns: string) => supabaseRequest<T>(`${table}?company_id=eq.${company}&select=${columns}&order=id.asc`, { allRows: true });
   const [leads, properties, appointments, conversations] = await Promise.all([query<LegacyRow[]>('leads', LEAD_COLUMNS), query<LegacyRow[]>('properties', PROPERTY_COLUMNS), query<LegacyRow[]>('appointments', APPOINTMENT_COLUMNS), query<LegacyRow[]>('conversations', CONVERSATION_COLUMNS)]);
-  return legacyBridgeFromRows(actor.companyId, members, { leads, properties, appointments, conversations });
+  const bridge = legacyBridgeFromRows(actor.companyId, members, { leads, properties, appointments, conversations });
+  const manual = manualCaseIds(stored);
+  const candidates = new Set(leads.filter(lead => ['Novo', 'Em atendimento'].includes(str(lead.lifecycle_status)) && !manual.has(canonicalId('case', lead.id))).map(lead => lead.id));
+  const eligibleConversations = conversations.filter(conversation => candidates.has(str(conversation.lead_id)));
+  const stages = await readAutomaticConversationStages(actor.companyId, eligibleConversations.map(conversation => conversation.id));
+  const automaticStages: Record<string, AutomaticConversationStage> = {};
+  for (const leadId of candidates) {
+    const leadConversations = eligibleConversations.filter(conversation => conversation.lead_id === leadId);
+    // Any engaged channel is proof; Lead needs a complete view of every channel.
+    // Their message counts are never added and an unavailable channel is unknown.
+    if (leadConversations.some(conversation => stages.get(conversation.id) === 'Atendimento')) automaticStages[leadId] = 'Atendimento';
+    else if (leadConversations.length && leadConversations.every(conversation => stages.get(conversation.id) === 'Lead')) automaticStages[leadId] = 'Lead';
+  }
+  return Object.keys(automaticStages).length ? legacyBridgeFromRows(actor.companyId, members, { ...bridge, automaticStages }) : bridge;
 }
 function resolveName(bridge: LegacyBridge, value: unknown) {
   const matches = bridge.members.filter(member => normalize(member.name) === normalize(value) && normalize(value));
@@ -101,20 +125,30 @@ const canonicalFields: Partial<Record<CrmRecord['kind'], string[]>> = {
 export function mergeLegacyBridge(state: CrmState, bridge: LegacyBridge): CrmState {
   if (state.companyId !== bridge.companyId) throw new CrmError('Empresa inválida.', 403);
   const mapped = mapLegacyRecords(bridge), mappedIds = new Set(mapped.map(r => r.id));
+  const manual = manualCaseIds(state);
   const native = (state.records as MappedRecord[]).filter(r => !r.legacy && !/^(person|lead|case|property|appointment):/.test(r.id));
   const merged = mapped.map(record => {
     const saved = (state.records as MappedRecord[]).find(r => r.id === record.id && r.kind === record.kind);
-    if (!saved) return record;
-    const data = { ...record.data, ...saved.data };
+    const data = { ...record.data, ...saved?.data };
     for (const key of canonicalFields[record.kind] || []) data[key] = record.data[key];
-    if (record.kind === 'cases' && saved.legacy?.lifecycleStatus !== record.legacy?.lifecycleStatus) {
+    const manualStage = record.kind === 'cases' && manual.has(record.id);
+    if (record.kind === 'cases' && saved && (!manualStage || !['Novo', 'Em atendimento'].includes(record.legacy?.lifecycleStatus || '')) && saved.legacy?.lifecycleStatus !== record.legacy?.lifecycleStatus) {
       for (const key of ['stage','status']) data[key] = record.data[key];
       delete data.stageEnteredAt;
       delete data.closedAt;
     }
+    const automaticStage = record.kind === 'cases' && !manualStage && ['Novo', 'Em atendimento'].includes(record.legacy?.lifecycleStatus || '') && bridge.automaticStages[record.legacy?.id || ''];
+    if (automaticStage) {
+      if (data.stage !== automaticStage) delete data.stageEnteredAt;
+      data.stage = automaticStage;
+    }
+    if (record.kind === 'leads' && !manual.has(canonicalId('case', record.legacy!.id)) && ['Novo', 'Em atendimento'].includes(record.legacy?.lifecycleStatus || '')) {
+      const leadStage = bridge.automaticStages[record.legacy!.id];
+      if (leadStage) data.status = leadStage === 'Lead' ? 'Pendente' : 'Em atendimento';
+    }
     // A legacy edit can invalidate a reference but must never attach data from another tenant.
     for (const key of ['propertyId','ownerId','personId','leadId','caseId']) if (data[key] && !mappedIds.has(str(data[key])) && !native.some(r => r.id === data[key])) data[key] = '';
-    return { ...saved, ...record, data, updatedAt: [saved.updatedAt, record.updatedAt].filter(Boolean).sort().at(-1) || '', createdAt: record.createdAt };
+    return { ...saved, ...record, data, updatedAt: [saved?.updatedAt, record.updatedAt].filter(Boolean).sort().at(-1) || '', createdAt: record.createdAt };
   });
   return { ...state, records: [...native, ...merged], sourceRevision: bridge.sourceRevision } as CrmState;
 }
@@ -169,7 +203,9 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
     if (!plans.has(key)) plans.set(key, { table, id, operation: row ? 'update' : 'insert', expected: row ? { ...row } : null, data: row ? {} : { id, company_id: actor.companyId } });
     return plans.get(key)!;
   };
-  const modified = (after.records as MappedRecord[]).filter(r => { const previous = before.records.find(p => p.id === r.id); return !previous || stable(previous.data) !== stable(r.data); });
+  const existingEvents = new Set(before.events.map(event => event.id));
+  const registeredCases = new Set(after.events.filter(event => event.registration && !existingEvents.has(event.id)).map(event => event.recordId));
+  const modified = (after.records as MappedRecord[]).filter(r => { const previous = before.records.find(p => p.id === r.id); return !previous || stable(previous.data) !== stable(r.data) || (r.kind === 'cases' && registeredCases.has(r.id)); });
   // Allocate stable IDs before resolving the references of other records.
   for (const record of modified) {
     if (before.records.some(r => r.id === record.id) || record.legacy) continue;
@@ -213,7 +249,7 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
         const row = bridge.leads.find(r => r.id === id), target = write('leads',id,row);
         if (changed(previous,record,'assignedTo')) target.data.assigned_to = memberName(bridge,d.assignedTo);
         if (changed(previous,record,'purpose') && d.purpose) target.data.goal = d.purpose === 'Aluguel' ? 'Alugar' : 'Comprar';
-        if (changed(previous,record,'stage') || changed(previous,record,'status')) target.data.lifecycle_status = d.status === 'Perdido' ? 'Perdido' : d.status === 'Ganho' ? 'Convertido' : d.stage === 'Proposta' ? 'Proposta' : d.stage === 'Visita' ? 'Visita' : d.stage === 'Lead' ? 'Novo' : 'Em atendimento';
+        if (changed(previous,record,'stage') || changed(previous,record,'status') || registeredCases.has(record.id)) target.data.lifecycle_status = d.status === 'Perdido' ? 'Perdido' : d.status === 'Ganho' ? 'Convertido' : d.stage === 'Proposta' ? 'Proposta' : d.stage === 'Visita' ? 'Visita' : d.stage === 'Lead' ? 'Novo' : 'Em atendimento';
       }
     }
     if (record.kind === 'properties' && (record.legacy?.table === 'properties' || !previous)) {
