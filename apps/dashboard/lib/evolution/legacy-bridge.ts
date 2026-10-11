@@ -208,6 +208,18 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
   const newEvents = after.events.filter(event => !existingEvents.has(event.id));
   const registeredCases = new Set(newEvents.filter(event => event.registration).map(event => event.recordId));
   const registeredSources = new Map<string, string>();
+  const reopenedContacts = new Set<string>();
+  for (const event of newEvents.filter(event => event.registration?.action === 'correct_close' && event.actorId === actor.brokerId)) {
+    let payload: { caseId?: string; action?: string; data?: { mode?: string; confirmed?: boolean; reason?: string } } = {};
+    try { payload = JSON.parse(event.registration!.fingerprint); } catch { /* A malformed audit cannot unlock a confirmed result. */ }
+    if (payload?.caseId !== event.recordId || payload.action !== 'correct_close' || payload.data?.mode !== 'reopen' || payload.data.confirmed !== true || !payload.data.reason?.trim()) continue;
+    const previous = before.records.find(record => record.kind === 'cases' && record.id === event.recordId);
+    const current = after.records.find(record => record.kind === 'cases' && record.id === event.recordId);
+    const audit = newEvents.find(change => change.recordId === event.recordId && change.actorId === actor.brokerId && change.changes?.status?.from === 'Ganho' && change.changes.status.to === 'Aberto');
+    if (previous?.data.status === 'Ganho' && previous.data.stage === 'Negociado' && current?.legacy?.table === 'leads' && current.data.status === 'Aberto' && ['Proposta', 'Atendimento'].includes(str(current.data.stage)) && !current.data.closedAt && audit
+      && ['personId','leadId','source','purpose','assignedTo','propertyId'].every(key => previous.data[key] === current.data[key])
+      && !after.records.some(record => record.kind === 'proposals' && record.data.caseId === current.id && record.data.status === 'Aceita')) reopenedContacts.add(current.legacy.id);
+  }
   for (const event of newEvents.filter(event => event.registration && event.actorId === actor.brokerId)) {
     const previous = before.records.find(record => record.kind === 'cases' && record.id === event.recordId);
     const current = after.records.find(record => record.kind === 'cases' && record.id === event.recordId);
@@ -313,7 +325,7 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
     if (target.table !== 'leads') continue;
     const row = bridge.leads.find(r => r.id === target.id), raw = { ...row, ...target.data };
     if (row && Object.hasOwn(target.data,'source') && target.data.source !== row.source && registeredSources.get(target.id) !== target.data.source) throw new CrmError('A origem original deste contato é preservada. Corrija a origem pelo botão Registro na conversa.',409);
-    if (row?.lifecycle_status === 'Convertido' && target.data.lifecycle_status && target.data.lifecycle_status !== 'Convertido') throw new CrmError('O resultado confirmado está preservado. Uma correção de fechamento exige um fluxo de estorno.',409);
+    if (row?.lifecycle_status === 'Convertido' && target.data.lifecycle_status && target.data.lifecycle_status !== 'Convertido' && !reopenedContacts.has(target.id)) throw new CrmError('O resultado confirmado está preservado. Use Corrigir fechamento no atendimento.',409);
     if (Object.hasOwn(target.data,'assigned_to') && str(target.data.assigned_to) !== str(row?.assigned_to) && bridge.conversations.some(c => c.lead_id === target.id)) throw new CrmError('Altere o responsável na área de Conversas. Isso preserva o atendimento automático e as mensagens em andamento.',409);
     if (['goal','property_type','region','budget_min','budget_max'].some(key => Object.hasOwn(target.data,key))) {
       const profile = { ...object(row?.interest_profile), ...object(target.data.interest_profile) };

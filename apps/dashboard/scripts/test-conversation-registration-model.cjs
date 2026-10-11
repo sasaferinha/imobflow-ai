@@ -154,6 +154,72 @@ assert.equal(record(caseId).data.status, 'Ganho');
 assert.equal(record(propertyId).data.status, 'Vendido');
 assert.equal(model.applyCommand(state, actor, closing, now), state, 'closing replay remains safe after the case is closed');
 rejected(command('lead', { reason: 'Não pode apagar resultado confirmado.' }), /preservados/);
+const acceptedAt = record(proposal.id).data.acceptedAt, closedAt = record(caseId).data.closedAt, originalOrigin = record(caseId).data.source;
+const correction = (mode, extra = {}) => command('correct_close', { mode, proposalId: proposal.id, reason: 'Correção solicitada pelo responsável.', confirmed: true, ...extra });
+for (const invalid of [
+  correction('edit', { amount: 0, conditions: 'Revisada' }), correction('edit', { amount: 420000, conditions: '' }),
+  correction('edit', { amount: 420000, conditions: 'Revisada', reason: ' ' }), correction('edit', { amount: 420000, conditions: 'Revisada', confirmed: false }),
+  correction('edit', { amount: 420000, conditions: 'Revisada', source: 'Facebook' }), correction('edit', { amount: 420000, conditions: 'Revisada', purpose: 'Aluguel' }),
+  correction('reopen', { amount: 420000 }), correction('reopen', { notes: 'Not allowed' }), correction('unknown'),
+]) rejected(invalid);
+const editClosed = correction('edit', { amount: 420000, conditions: 'Condições corrigidas pelo responsável.' });
+apply(editClosed);
+assert.equal(record(proposal.id).data.amount, 420000);
+assert.equal(record(proposal.id).data.acceptedAt, acceptedAt);
+assert.equal(record(caseId).data.closedAt, closedAt);
+assert.equal(record(caseId).data.source, originalOrigin);
+assert.equal(record(propertyId).data.status, 'Vendido');
+assert.equal(model.applyCommand(state, actor, editClosed, now), state);
+rejected({ ...editClosed, data: { ...editClosed.data, amount: 430000 } }, /identificador/);
+rejected({ type: 'save', kind: 'proposals', id: proposal.id, data: { amount: 430000 } }, /Corrigir fechamento/);
+rejected({ type: 'save', kind: 'cases', id: caseId, data: { status: 'Aberto', stage: 'Proposta' } }, /resultado confirmado/);
+for (const tamper of [
+  value => { value.events = value.events.filter(event => event.recordId !== propertyId); },
+  value => { value.events.push({ id: 'later-property-status', recordId: propertyId, at: '2026-10-09T16:00:00Z', actorId: actor.brokerId, changes: { status: { from: 'Disponível', to: 'Vendido' } } }); },
+  value => { value.records.find(item => item.id === propertyId).data.status = 'Reservado'; },
+  value => { value.records.push({ ...structuredClone(value.records.find(item => item.id === proposal.id)), id: 'another-accepted', data: { ...value.records.find(item => item.id === proposal.id).data, caseId: 'another-case' } }); },
+  value => { value.records.find(item => item.id === caseId).data.closedAt = ''; },
+]) {
+  const conflicted = structuredClone(state); tamper(conflicted);
+  const before = JSON.stringify(conflicted);
+  assert.throws(() => model.applyCommand(conflicted, actor, correction('reopen'), now), /revisão|outro fechamento/);
+  assert.equal(JSON.stringify(conflicted), before);
+}
+const reopen = correction('reopen');
+apply(reopen);
+assert.equal(record(caseId).data.status, 'Aberto'); assert.equal(record(caseId).data.stage, 'Proposta');
+assert.equal(record(caseId).data.closedAt, ''); assert.equal(record(proposal.id).data.acceptedAt, '');
+assert.equal(record(proposal.id).data.status, 'Em negociação'); assert.equal(record(propertyId).data.status, 'Disponível');
+assert.equal(record(caseId).data.source, originalOrigin);
+assert(state.events.some(event => event.recordId === caseId && event.changes?.status?.from === 'Ganho' && event.changes.status.to === 'Aberto' && event.changes.closedAt.from === closedAt));
+assert.equal(model.applyCommand(state, actor, reopen, now), state);
+rejected(correction('reopen'), /não possui/);
+// The same flow restores a rental that was reserved before its acceptance.
+record(caseId).data.purpose = 'Aluguel'; record('demo-lead-1').data.purpose = 'Aluguel'; record(propertyId).data.purpose = 'Aluguel'; record(propertyId).data.status = 'Reservado';
+apply(command('close', { proposalId: proposal.id, confirmed: true }));
+assert.equal(record(propertyId).data.status, 'Alugado');
+apply(correction('reopen'));
+assert.equal(record(propertyId).data.status, 'Reservado');
+for (const previousStatus of ['Rascunho', 'Enviada', 'Em negociação', 'Recusada', 'Expirada']) {
+  const ordinary = structuredClone(state);
+  ordinary.records.find(item => item.id === proposal.id).data.status = previousStatus;
+  const accepted = model.applyCommand(ordinary, actor, { type: 'save', kind: 'proposals', id: proposal.id, data: { status: 'Aceita' } }, now);
+  const undone = model.applyCommand(accepted, actor, correction('reopen'), now);
+  assert.equal(undone.records.find(item => item.id === proposal.id).data.status, previousStatus, 'ordinary proposal editor acceptance restores its exact recorded previous status');
+}
+const directAccepted = model.applyCommand(state, actor, { type: 'save', kind: 'proposals', data: { name: 'Proposta criada já aceita', caseId, propertyId, amount: 440000, conditions: 'Condição sintética', expiresAt: '2026-10-09', status: 'Aceita' } }, now);
+const directProposal = directAccepted.records.find(item => item.kind === 'proposals' && item.data.status === 'Aceita');
+const directUndone = model.applyCommand(directAccepted, actor, correction('reopen', { proposalId: directProposal.id }), now);
+assert.equal(directUndone.records.find(item => item.id === directProposal.id).data.status, 'Rascunho', 'a proposal created as accepted is preserved as a draft');
+const imported = structuredClone(state), importedCase = imported.records.find(item => item.id === caseId);
+imported.records = imported.records.filter(item => item.id !== proposal.id);
+importedCase.legacy = { table: 'leads', id: 'imported-id', access: 'owner', lifecycleStatus: 'Convertido' };
+importedCase.data.status = 'Ganho'; importedCase.data.stage = 'Negociado'; importedCase.data.closedAt = '';
+const importedPropertyBefore = JSON.stringify(imported.records.find(item => item.id === propertyId));
+const importedOpened = model.applyCommand(imported, actor, command('correct_close', { mode: 'reopen', reason: 'Classificação importada incorreta.', confirmed: true }), now);
+assert.equal(importedOpened.records.find(item => item.id === caseId).data.stage, 'Atendimento');
+assert.equal(JSON.stringify(importedOpened.records.find(item => item.id === propertyId)), importedPropertyBefore);
+assert.match(importedOpened.events.at(-1).summary, /Nenhum imóvel foi alterado/);
 assert.equal(state.records.filter(item => item.kind === 'messages').length, 0);
 assert.ok(!state.events.some(item => item.type === 'automatic'), 'all registrations record explicit human actions');
 console.log('PASS registration model: strict command/data validation, immutable failures, no account reassignment, explicit missing purpose, São Paulo scheduling, no duplicate visits, valid completion only, no accidental stage regression, preserved prior history, proposal/closure separation, expiry/property/case guards and exact replay.');

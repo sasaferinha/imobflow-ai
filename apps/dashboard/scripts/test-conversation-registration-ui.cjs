@@ -22,11 +22,22 @@ function text(tree) {
 }
 const find = (tree, predicate) => nodes(tree).find(predicate);
 const button = (tree, label) => find(tree, node => node.type === 'button' && text(node) === label);
-const trigger = tree => button(tree, 'Registro');
+const trigger = tree => button(tree, 'Registro') || button(tree, 'Editar fechamento');
 const menuItem = (tree, label) => find(tree, node => node.props.role === 'menuitem' && text(find(node, child => child.type === 'strong')) === label);
 const formNode = tree => find(tree, node => node.type === 'form');
 const submitButton = tree => find(tree, node => node.type === 'button' && node.props.type === 'submit');
 const control = (tree, label) => find(find(tree, node => node.type === 'label' && text(node).startsWith(label)), node => ['input', 'select', 'textarea'].includes(node.type));
+function cancelNestedDialog(instance) {
+  let prevented = false, stopped = false, parentClosed = false;
+  const event = { preventDefault() { prevented = true; }, stopPropagation() { stopped = true; } };
+  find(instance.tree, node => node.type === 'dialog').props.onCancel(event);
+  // React bubbles cancel from a nested dialog to RecordDetail. Its onClose
+  // would unmount the child and abort its pending request if not stopped.
+  if (!stopped) { parentClosed = true; instance.unmount(); }
+  instance.render();
+  assert.equal(prevented, true, 'native dialog closing is handled by the component');
+  assert.equal(parentClosed, false, 'Escape in the nested dialog must not close the parent record detail');
+}
 
 function fixture({ role = 'broker', closed = false, source = 'WhatsApp' } = {}) {
   const actor = { companyId: uuid(1), brokerId: uuid(role === 'owner' ? 11 : 12), name: 'Responsável sintético', role };
@@ -44,6 +55,21 @@ function fixture({ role = 'broker', closed = false, source = 'WhatsApp' } = {}) 
       record(uuid(903), 'proposals', { name: 'Proposta teste', caseId, propertyId, status: 'Enviada', amount: 500000, expiresAt: '2030-01-01' }),
     ],
   } };
+}
+function closedFixture({ role = 'owner', legacyOnly = false, withHistory = true } = {}) {
+  const result = fixture({ role, closed: true });
+  const record = result.state.records.find(item => item.id === caseId);
+  record.data.stage = 'Negociado'; record.legacy.lifecycleStatus = 'Convertido'; record.data.closedAt = '2026-10-01T12:00:00.000Z';
+  const proposal = result.state.records.find(item => item.kind === 'proposals');
+  if (legacyOnly) result.state.records = result.state.records.filter(item => item !== proposal);
+  else { proposal.data.status = 'Aceita'; proposal.data.conditions = 'Entrada de 20%'; proposal.data.acceptedAt = '2026-10-01T12:00:00.000Z'; }
+  result.state.records.find(item => item.id === propertyId).data.status = 'Vendido';
+  if (withHistory && !legacyOnly) result.state.events = [
+    { id: uuid(951), recordId: proposal.id, at: proposal.data.acceptedAt, actorId: result.actor.brokerId, type: 'updated', changes: { status: { from: 'Em negociação', to: 'Aceita' } } },
+    { id: uuid(952), recordId: propertyId, at: proposal.data.acceptedAt, actorId: result.actor.brokerId, type: 'updated', changes: { status: { from: 'Reservado', to: 'Vendido' } } },
+    { id: uuid(953), recordId: caseId, at: proposal.data.acceptedAt, actorId: result.actor.brokerId, type: 'updated', changes: { status: { from: 'Aberto', to: 'Ganho' }, closedAt: { from: '', to: proposal.data.acceptedAt } } },
+  ];
+  return result;
 }
 
 function harness({ props = {}, response, snapshot = fixture(), demoPath = false } = {}) {
@@ -140,6 +166,8 @@ async function run() {
   const popup = find(menu.tree, node => node.type === 'dialog' && node.props['aria-label'] === 'Opções de registro');
   popup.props.onClick({ target: popup.props.ref.current, clientX: -1, clientY: -1 }); menu.render();
   assert.equal(trigger(menu.tree).props['aria-expanded'], false);
+  await menu.open(); cancelNestedDialog(menu);
+  assert.equal(trigger(menu.tree).props['aria-expanded'], false, 'Escape closes only the child menu');
   menu.unmount(); assert.equal(menu.listenerCount(), 0);
 
   for (const configuration of [{ props: { demonstration: true } }, { demoPath: true }]) {
@@ -231,6 +259,67 @@ async function run() {
   owner.change('Confirmo que', true); await owner.submit();
   assert.equal(JSON.parse(owner.calls.at(-1).options.body).command.data.confirmed, true); owner.unmount();
 
+  const correction = harness({ snapshot: closedFixture(), props: { caseId, triggerAction: 'correct_close' } });
+  await correction.open();
+  assert(formNode(correction.tree), 'detail button opens correction directly after a fresh read');
+  assert.equal(control(correction.tree, 'O que deseja corrigir?').props.value, 'edit');
+  assert.equal(control(correction.tree, 'Valor correto').props.value, '500000');
+  assert.equal(control(correction.tree, 'Condições corretas').props.value, 'Entrada de 20%');
+  assert(!text(correction.tree).includes('Origem do cliente'), 'a closure correction cannot change acquisition source');
+  await correction.submit(); assert.equal(correction.saved, 0, 'correction requires reason and explicit confirmation');
+  correction.change('Valor correto', '480000'); correction.change('Condições corretas', 'Pagamento à vista'); correction.change('Motivo da correção', 'Valor digitado incorretamente'); correction.change('Conferi os dados e confirmo', true);
+  await correction.submit();
+  const correctionCommand = JSON.parse(correction.calls.at(-1).options.body).command;
+  assert.equal(correctionCommand.action, 'correct_close');
+  assert.deepEqual(correctionCommand.data, { mode: 'edit', proposalId: uuid(903), amount: 480000, conditions: 'Pagamento à vista', reason: 'Valor digitado incorretamente', confirmed: true }); correction.unmount();
+
+  const reopening = harness({ snapshot: closedFixture() }); await reopening.open();
+  assert.equal(menuItem(reopening.tree, 'Iniciar atendimento').props.disabled, true, 'normal registrations remain locked for closed cases');
+  reopening.select('Editar fechamento'); reopening.change('O que deseja corrigir?', 'reopen');
+  assert.match(text(reopening.tree), /Proposta, com situação Aberto/); assert.match(text(reopening.tree), /Proposta: Aceita → Em negociação/); assert.match(text(reopening.tree), /Imóvel: Vendido → Reservado/);
+  reopening.change('Motivo da correção', 'Fechamento selecionado por engano'); reopening.change('Confirmo que o fechamento', true); await reopening.submit();
+  assert.deepEqual(JSON.parse(reopening.calls.at(-1).options.body).command.data, { mode: 'reopen', proposalId: uuid(903), reason: 'Fechamento selecionado por engano', confirmed: true }); reopening.unmount();
+
+  const limitedCorrection = harness({ snapshot: closedFixture({ role: 'broker' }) }); await limitedCorrection.open(); limitedCorrection.select('Editar fechamento');
+  assert.equal(find(limitedCorrection.tree, node => node.type === 'option' && node.props.value === 'reopen').props.disabled, true, 'canonical property write permission is required to undo closing');
+  assert.match(text(limitedCorrection.tree), /peça ao administrador/);
+  limitedCorrection.change('Valor correto', '490000'); limitedCorrection.change('Motivo da correção', 'Ajuste de valor'); limitedCorrection.change('Conferi os dados e confirmo', true); await limitedCorrection.submit();
+  assert.equal(JSON.parse(limitedCorrection.calls.at(-1).options.body).command.data.mode, 'edit', 'a broker with case/proposal access can still correct the recorded amount'); limitedCorrection.unmount();
+
+  const classification = harness({ snapshot: closedFixture({ role: 'broker', legacyOnly: true }) }); await classification.open(); classification.select('Editar fechamento');
+  assert.match(text(classification.tree), /voltará a Atendimento/); assert.match(text(classification.tree), /Nenhum imóvel será alterado/);
+  assert.equal(control(classification.tree, 'Valor correto'), undefined);
+  classification.change('Motivo da correção', 'Classificação antiga incorreta'); classification.change('Confirmo que a classificação', true); await classification.submit();
+  assert.deepEqual(JSON.parse(classification.calls.at(-1).options.body).command.data, { mode: 'reopen', reason: 'Classificação antiga incorreta', confirmed: true }); classification.unmount();
+
+  const noEvidence = harness({ snapshot: closedFixture({ withHistory: false }) }); await noEvidence.open(); noEvidence.select('Editar fechamento'); noEvidence.change('O que deseja corrigir?', 'reopen');
+  assert.match(text(noEvidence.tree), /Situação anterior da proposta e do imóvel não comprovada/);
+  assert(!text(noEvidence.tree).includes('Vendido → Reservado'), 'a previous inventory status is never invented'); noEvidence.unmount();
+  let demoCorrectionState;
+  const demoCorrection = harness({ props: { caseId, triggerAction: 'correct_close', demonstration: true, demoSnapshot: closedFixture(), onDemoSaved: state => { demoCorrectionState = state; } } });
+  await demoCorrection.open(); demoCorrection.change('Valor correto', '470000'); demoCorrection.change('Motivo da correção', 'Conferência sintética'); demoCorrection.change('Conferi os dados e confirmo', true); await demoCorrection.submit();
+  assert.equal(demoCorrection.calls.length, 0, 'a real closed demonstration snapshot is edited entirely locally');
+  assert.equal(demoCorrectionState.records.find(item => item.id === uuid(903)).data.amount, 470000); assert.equal(demoCorrection.saved, 0); demoCorrection.unmount();
+
+  let correctionFailed = true;
+  const uncertainCorrection = harness({ snapshot: closedFixture(), response: call => call.options.method === 'POST' && correctionFailed ? Response.json({ error: 'Unknown result' }, { status: 503 }) : Response.json(closedFixture()) });
+  await uncertainCorrection.open(); uncertainCorrection.select('Editar fechamento'); uncertainCorrection.change('Valor correto', '475000'); uncertainCorrection.change('Motivo da correção', 'Valor conferido no contrato'); uncertainCorrection.change('Conferi os dados e confirmo', true); await uncertainCorrection.submit();
+  const uncertainCommand = JSON.parse(uncertainCorrection.calls.at(-1).options.body).command;
+  assert.equal(find(uncertainCorrection.tree, node => node.type === 'fieldset').props.disabled, true);
+  await button(uncertainCorrection.tree, 'Verificar dados atualizados').props.onClick(); await uncertainCorrection.settle();
+  uncertainCorrection.change('Conferi os dados atualizados', true); correctionFailed = false; await uncertainCorrection.submit();
+  assert.deepEqual(JSON.parse(uncertainCorrection.calls.at(-1).options.body).command, uncertainCommand, 'closure correction retries reuse the same UUID and exact payload'); uncertainCorrection.unmount();
+  let resolveDirectRead;
+  const dismissedDirect = harness({ props: { caseId, triggerAction: 'correct_close' }, response: () => new Promise(resolve => { resolveDirectRead = resolve; }) });
+  trigger(dismissedDirect.tree).props.onClick(); dismissedDirect.render();
+  cancelNestedDialog(dismissedDirect);
+  resolveDirectRead(Response.json(closedFixture())); await dismissedDirect.settle();
+  assert.equal(formNode(dismissedDirect.tree), undefined, 'a direct correction cannot reopen itself after the user cancels loading'); dismissedDirect.unmount();
+  const idleCorrection = harness({ snapshot: closedFixture(), props: { caseId, triggerAction: 'correct_close' } }); await idleCorrection.open();
+  cancelNestedDialog(idleCorrection);
+  assert.equal(formNode(idleCorrection.tree), undefined, 'Escape while idle closes only the correction form');
+  assert.equal(idleCorrection.calls.filter(call => call.options.method === 'POST').length, 0); idleCorrection.unmount();
+
   let resolvePost;
   const busy = harness({ response: call => call.options.method === 'POST' ? new Promise(resolve => { resolvePost = resolve; }) : Response.json(fixture()) });
   await busy.open(); busy.select('Iniciar atendimento');
@@ -238,6 +327,9 @@ async function run() {
   const inFlight = submit({ preventDefault() {} }); submit({ preventDefault() {} }); busy.render();
   assert.equal(busy.calls.filter(call => call.options.method === 'POST').length, 1, 'double click does not submit twice');
   assert.equal(submitButton(busy.tree).props.disabled, true);
+  cancelNestedDialog(busy);
+  assert(formNode(busy.tree), 'Escape during saving keeps the form and pending request mounted');
+  assert.equal(busy.calls.find(call => call.options.method === 'POST').options.signal.aborted, false, 'nested Escape does not abort the active save');
   assert([...busy.timers.values()].some(timer => timer.ms === 15000), 'requests have a 15-second timeout');
   resolvePost(Response.json(fixture())); await inFlight; await busy.settle(); busy.unmount();
 
