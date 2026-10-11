@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { canAccess, dashboardMetrics, filterCases, freshness, type Actor, type CrmState, type CrmRecord, type CrmCommand as Command } from '@/lib/evolution/model';
 import { CAPTURE_STAGES, MODULES, NEGOTIATION_STAGES, type Field, type Kind } from '@/lib/evolution/schema';
 import s from './evolution.module.css';
@@ -90,6 +90,21 @@ function Dialog({ title, subtitle, onClose, children, wide }: { title: string; s
 
 const recordFreshness = (record: CrmRecord, state: CrmState) => FRESHNESS_LABELS[freshness(record, state.settings)];
 
+/** The stage marker is informational; opening a card never advances a lead. */
+function StagePyramid({ stage, journey }: { stage: string; journey: string }) {
+  const clipId = useId();
+  const stages = journey === 'Captação' ? CAPTURE_STAGES : NEGOTIATION_STAGES;
+  const colors = journey === 'Captação' ? ['#2c85c7', '#feb54e', '#2aa8a4'] : ['#2c85c7', '#feb54e', '#ce8f64', '#d22b3f', '#637d6e', '#2aa8a4'];
+  const index = stages.indexOf(stage);
+  const bandHeight = 135 / stages.length;
+  const y = 7 + index * bandHeight + bandHeight / 2;
+  return <svg className={s.stagePyramid} viewBox="0 0 180 150" role="img" aria-label={`Funil de ${journey.toLowerCase()}: ${index >= 0 ? `etapa ${stage}, ${index + 1} de ${stages.length}` : 'sem etapa de atendimento'}`}>
+    <defs><clipPath id={clipId}><path d="M27 7H153Q166 7 160 20L98 137Q90 151 82 137L20 20Q14 7 27 7Z" /></clipPath></defs>
+    <g clipPath={`url(#${clipId})`}>{stages.map((item, position) => <rect key={item} x="15" y={7 + position * bandHeight} width="150" height={bandHeight + 0.5} fill={position % 2 === 0 ? '#ededed' : '#dcdcdc'} />)}</g>
+    {index >= 0 && <g><rect x="5" y={y - 15} width="170" height="30" rx="15" fill={colors[index]} opacity="0.3" /><rect x="9" y={y - 11} width="162" height="22" rx="11" fill={colors[index]} opacity="0.85" /><text x="90" y={y + 4} textAnchor="middle" fill="#fff" fontFamily="Arial, sans-serif" fontWeight="700" fontSize="11">{stage.toLocaleUpperCase('pt-BR')}</text></g>}
+  </svg>;
+}
+
 function matches(record: CrmRecord, filters: Filters, state: CrmState) {
   const relatedCase = record.kind === 'cases' ? record : state.records.find(candidate => candidate.id === v(record, 'caseId'));
   if (relatedCase && ['cases', 'tasks', 'proposals'].includes(record.kind)) {
@@ -123,7 +138,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [view, setView] = useState<'list' | 'board'>('list');
+  const [view, setView] = useState<'cards' | 'list' | 'board'>('cards');
   const [recordView, setRecordView] = useState<'cards' | 'list'>('cards');
   const [taskRange, setTaskRange] = useState('all');
   const [menu, setMenu] = useState<string | null>(null);
@@ -206,6 +221,8 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     if (operationalPage && !isOperationalPage(next)) void refresh(true);
     if (mobileNavOpen) focusContentOnCloseRef.current = true;
     setMobileNavOpen(false);
+    if (next === 'cases') setView('cards');
+    if (next === 'leads') setRecordView('cards');
     setPage(next); setFilters({ ...INITIAL_FILTERS, ...nextFilters }); setQuery(''); setMenu(null); setGlobalQuery(''); setSelectedId(null); setTaskRange('all');
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${next}`);
   }
@@ -279,6 +296,27 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
 
   function recordTable(records: CrmRecord[], kind: Kind, compact = false) {
     const fields = COLUMNS[kind] || MODULES[kind].fields.filter(field => field.key !== 'name').slice(0, 3).map(field => field.key);
+    if (!compact && records.length && ((kind === 'cases' && view === 'cards') || (kind === 'leads' && recordView === 'cards'))) return <div className={s.attendanceGrid}>{records.map(record => {
+      const linkedCases = kind === 'leads' ? state.records.filter(candidate => candidate.kind === 'cases' && v(candidate, 'leadId') === record.id) : [];
+      // One lead can have several journeys. Never silently choose one of them.
+      const attendance = kind === 'cases' ? record : linkedCases.length === 1 ? linkedCases[0] : undefined;
+      const person = state.records.find(candidate => candidate.kind === 'people' && candidate.id === v(record, 'personId'));
+      const journey = attendance ? v(attendance, 'journey') : 'Negociação';
+      const stage = attendance ? v(attendance, 'stage') : kind === 'leads' && v(record, 'status') === 'Pendente' && !linkedCases.length ? 'Lead' : '';
+      const phone = person ? v(person, 'phone') : '';
+      const isOpen = attendance && v(attendance, 'status') === 'Aberto';
+      const health = isOpen ? freshness(attendance, state.settings) : '';
+      const elapsedDays = attendance ? Math.max(0, Date.now() - Date.parse(attendance.updatedAt)) / 86400000 : 0;
+      const remainingDays = attendance ? Math.max(0, Math.ceil((state.settings.inactivityDays[stage] ?? 7) - elapsedDays)) : 0;
+      return <article key={record.id} className={s.attendanceCard} data-record-id={record.id}>
+        <header className={s.attendanceCardHead}><span className={s.attendanceCode} title={record.id}>{v(record, 'code') || `Ref. ${record.id.slice(-8)}`}</span><button className={s.recordName} onClick={() => setSelectedId(record.id)}>{kind === 'cases' ? stage : label(record)}</button><button className={s.iconButton} aria-label={`Abrir ${label(record)}`} onClick={() => setSelectedId(record.id)}><Icon name="arrow" size={18} /></button></header>
+        <div className={s.attendanceCardBody}><div className={s.attendanceProgress}><StagePyramid stage={stage} journey={journey} /><Pill>{v(record, 'status')}</Pill>{!stage && <small>{linkedCases.length > 1 ? `${linkedCases.length} atendimentos vinculados` : 'Sem atendimento vinculado'}</small>}</div>
+          <dl className={s.attendanceFields}><div><dt>Cliente</dt><dd>{person ? <button className={s.recordName} onClick={() => setSelectedId(person.id)}>{label(person)}</button> : <span>Não informado</span>}<span className={s.attendancePhone}>{phone || 'Telefone não informado'}</span></dd></div><div><dt>Jornada</dt><dd>{attendance ? journey : 'Triagem de lead'}</dd></div><div><dt>Negociação</dt><dd>{v(record, 'purpose') === 'Aluguel' ? 'Locação' : v(record, 'purpose') || 'Não informada'}</dd></div><div><dt>Atendente</dt><dd>{memberName(v(record, 'assignedTo'))}</dd></div><div><dt>Origem</dt><dd>{v(record, 'source') || 'Não informada'}</dd></div></dl>
+        </div>
+        <footer className={s.attendanceCardFooter}><span className={s.attendanceHealth} data-health={health}><Icon name="clock" size={23} /><span>{isOpen ? health === 'overdue' ? 'Atualização atrasada' : `${remainingDays} ${remainingDays === 1 ? 'dia' : 'dias'}` : v(record, 'status')}<small>{isOpen ? health === 'overdue' ? 'Revisar atendimento' : 'para revisar atendimento' : 'Situação atual'}</small></span></span><span>Criado em <time dateTime={record.createdAt}>{date(record.createdAt, true)}</time></span><span>Alterado em <time dateTime={record.updatedAt}>{date(record.updatedAt, true)}</time></span></footer>
+        {kind === 'leads' && linkedCases.length > 0 && <div className={s.attendanceLinks}>{linkedCases.map(item => <button key={item.id} className={s.textButton} onClick={() => setSelectedId(item.id)}>Abrir atendimento · {v(item, 'journey')} · {v(item, 'stage')} <Icon name="arrow" size={14} /></button>)}</div>}
+      </article>;
+    })}</div>;
     if (!compact && records.length && ['people', 'properties'].includes(kind) && recordView === 'cards') return <div className={s.cardGrid}>{records.map(record => <article className={s.recordCard} key={record.id}>
       <header className={s.recordCardHead}><Icon name={kind === 'people' ? 'people' : 'home'} size={21} /><button className={s.recordName} onClick={() => setSelectedId(record.id)}>{label(record)}</button><button className={s.iconButton} aria-label={`Abrir ${label(record)}`} onClick={() => setSelectedId(record.id)}><Icon name="arrow" size={19} /></button></header>
       <dl className={s.recordCardBody}>{fields.map(key => <div key={key}><dt>{MODULES[kind].fields.find(field => field.key === key)?.label || key}</dt><dd>{display(record, key)}</dd></div>)}</dl>
@@ -361,8 +399,8 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   function moduleView(kind: Kind) {
     const definition = MODULES[kind];
     const stages = filters.journey === 'Captação' ? CAPTURE_STAGES : filters.journey === 'Negociação' ? NEGOTIATION_STAGES : [...NEGOTIATION_STAGES, 'Avaliação', 'Captado'];
-    return <><section className={s.panel}>
-      <div className={s.listToolbar}>{['people', 'properties'].includes(kind) && <div className={s.segmented}><button aria-label="Visualização em cartões" aria-pressed={recordView === 'cards'} className={recordView === 'cards' ? s.segmentActive : ''} onClick={() => setRecordView('cards')}><Icon name="dashboard" size={18} /></button><button aria-label="Visualização em tabela" aria-pressed={recordView === 'list'} className={recordView === 'list' ? s.segmentActive : ''} onClick={() => setRecordView('list')}><Icon name="list" size={18} /></button></div>}<div className={s.searchInput}><Icon name="search" size={17} /><input aria-label={`Buscar em ${definition.title}`} placeholder={`Buscar em ${definition.title.toLowerCase()}…`} value={query} onChange={event => setQuery(event.target.value)} /></div><span className={s.resultCount}>{filteredRecords.length} {filteredRecords.length === 1 ? 'registro' : 'registros'}</span>{definition.fields.some(field => field.key === 'status') && <select aria-label="Situação" value={filters.status} onChange={event => setFilters(current => ({ ...current, status: event.target.value }))}><option value="">Todas as situações</option>{definition.fields.find(field => field.key === 'status')?.options?.map(status => <option key={status}>{status}</option>)}</select>}{kind === 'cases' && <><select aria-label="Jornada" value={filters.journey} onChange={event => setFilters(current => ({ ...current, journey: event.target.value, stage: '' }))}><option value="">Todas as jornadas</option><option>Negociação</option><option>Captação</option></select><select aria-label="Etapa" value={filters.stage} onChange={event => setFilters(current => ({ ...current, stage: event.target.value }))}><option value="">Todas as etapas</option>{[...NEGOTIATION_STAGES, 'Avaliação', 'Captado'].map(stage => <option key={stage}>{stage}</option>)}</select><div className={s.segmented}><button onClick={() => setView('list')} className={view === 'list' ? s.segmentActive : ''} aria-label="Visualização em lista" aria-pressed={view === 'list'}><Icon name="list" size={17} /></button><button onClick={() => setView('board')} className={view === 'board' ? s.segmentActive : ''} aria-label="Visualização em funil" aria-pressed={view === 'board'}><Icon name="board" size={17} /></button></div></>}</div>
+    return <>{kind === 'cases' && <nav className={s.attendanceBreadcrumb} aria-label="Filtro dos atendimentos"><button className={s.textButton} onClick={() => navigate('dashboard', { from: filters.from, to: filters.to, assignedTo: filters.assignedTo })}>Dashboard</button><span>›</span><strong>Atendimentos</strong>{[filters.purpose === 'Aluguel' ? 'Locação' : filters.purpose, filters.journey, filters.stage].filter(Boolean).map(item => <span key={item}>› {item}</span>)}</nav>}<section className={s.panel}>
+      <div className={s.listToolbar}>{['people', 'properties', 'leads'].includes(kind) && <div className={s.segmented}><button aria-label="Visualização em cartões" aria-pressed={recordView === 'cards'} className={recordView === 'cards' ? s.segmentActive : ''} onClick={() => setRecordView('cards')}><Icon name="dashboard" size={18} /></button><button aria-label="Visualização em tabela" aria-pressed={recordView === 'list'} className={recordView === 'list' ? s.segmentActive : ''} onClick={() => setRecordView('list')}><Icon name="list" size={18} /></button></div>}<div className={s.searchInput}><Icon name="search" size={17} /><input aria-label={`Buscar em ${definition.title}`} placeholder={`Buscar em ${definition.title.toLowerCase()}…`} value={query} onChange={event => setQuery(event.target.value)} /></div><span className={s.resultCount}>{filteredRecords.length} {filteredRecords.length === 1 ? 'registro' : 'registros'}</span>{definition.fields.some(field => field.key === 'status') && <select aria-label="Situação" value={filters.status} onChange={event => setFilters(current => ({ ...current, status: event.target.value }))}><option value="">Todas as situações</option>{definition.fields.find(field => field.key === 'status')?.options?.map(status => <option key={status}>{status}</option>)}</select>}{kind === 'cases' && <><select aria-label="Jornada" value={filters.journey} onChange={event => setFilters(current => ({ ...current, journey: event.target.value, stage: '' }))}><option value="">Todas as jornadas</option><option>Negociação</option><option>Captação</option></select><select aria-label="Etapa" value={filters.stage} onChange={event => setFilters(current => ({ ...current, stage: event.target.value }))}><option value="">Todas as etapas</option>{[...NEGOTIATION_STAGES, 'Avaliação', 'Captado'].map(stage => <option key={stage}>{stage}</option>)}</select><div className={s.segmented}><button onClick={() => setView('cards')} className={view === 'cards' ? s.segmentActive : ''} aria-label="Visualização em cartões" aria-pressed={view === 'cards'}><Icon name="dashboard" size={17} /></button><button onClick={() => setView('list')} className={view === 'list' ? s.segmentActive : ''} aria-label="Visualização em lista" aria-pressed={view === 'list'}><Icon name="list" size={17} /></button><button onClick={() => setView('board')} className={view === 'board' ? s.segmentActive : ''} aria-label="Visualização em funil" aria-pressed={view === 'board'}><Icon name="board" size={17} /></button></div></>}</div>
       {kind === 'tasks' && <div className={s.taskTabs}>{[['all', 'Todas'], ['today', 'Hoje'], ['upcoming', 'Próximas'], ['late', 'Atrasadas'], ['done', 'Realizadas']].map(([key, text]) => <button key={key} className={taskRange === key ? s.taskTabActive : ''} onClick={() => setTaskRange(key)}>{text}</button>)}</div>}{definition.description && <div className={s.infoStrip}><Icon name="shield" size={15} />{definition.description}</div>}
       {filters.status && <div className={s.appliedFilters}><Pill>{filters.status}</Pill><button onClick={() => setFilters(current => ({ ...current, status: '' }))}>Remover situação ×</button></div>}{filters.freshness && <div className={s.appliedFilters}><Pill>{filters.freshness}</Pill><button onClick={() => setFilters(current => ({ ...current, freshness: '' }))}>Remover filtro ×</button></div>}
       {kind === 'cases' && view === 'board' ? <div className={s.board}>{stages.map(stage => { const cards = filteredRecords.filter(record => v(record, 'stage') === stage); return <section className={s.boardColumn} key={stage}><header><span>{stage}</span><b>{cards.length}</b></header>{cards.map(record => <button className={s.boardCard} key={record.id} onClick={() => setSelectedId(record.id)}><small>{v(record, 'purpose')} · {v(record, 'source')}</small><strong>{label(record)}</strong><span>{String(refName(v(record, 'personId')))}</span><div><Pill>{v(record, 'status')}</Pill><i title={memberName(v(record, 'assignedTo'))}>{initials(memberName(v(record, 'assignedTo')))}</i></div>{v(record, 'nextActivityAt') && <time><Icon name="clock" size={12} />{date(v(record, 'nextActivityAt'), true)}</time>}</button>)}<button className={s.boardAdd} onClick={() => create('cases', { stage, journey: filters.journey || (['Avaliação', 'Captado'].includes(stage) ? 'Captação' : 'Negociação'), purpose: filters.purpose || 'Venda' })}><Icon name="plus" size={14} />Adicionar</button></section>; })}</div> : recordTable(filteredRecords, kind)}

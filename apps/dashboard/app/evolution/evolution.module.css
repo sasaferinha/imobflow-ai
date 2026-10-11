@@ -77,6 +77,41 @@
 }
 
 .app { min-width: 0; min-height: 100vh; background: var(--ev-canvas); }
+.attendanceBreadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; color: var(--ev-muted); font-size: 13px; }
+.attendanceBreadcrumb strong { color: var(--ev-ink); }
+.attendanceGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; padding: 22px; background: var(--ev-canvas); }
+.attendanceCard { min-width: 0; overflow: hidden; border: 1px solid var(--ev-input-line); border-radius: 10px; background: var(--ev-paper); box-shadow: var(--ev-shadow); }
+.attendanceCard:focus-within { border-color: var(--ev-brand); box-shadow: var(--ev-focus); }
+.attendanceCardHead { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; min-height: 52px; padding: 8px 16px; border-bottom: 1px solid var(--ev-line); }
+.attendanceCardHead > button:first-of-type { text-align: center; overflow-wrap: anywhere; }
+.attendanceCode { background: var(--ev-toolbar); border-radius: 4px; padding: 4px 8px; font-size: 11px; color: var(--ev-muted); }
+.attendanceCardBody { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; min-height: 292px; padding: 28px 20px; background: color-mix(in srgb, var(--ev-brand-wash) 28%, var(--ev-paper)); }
+.attendanceProgress { display: flex; align-items: center; flex-direction: column; gap: 14px; padding-top: 8px; }
+.attendanceProgress > small { text-align: center; color: var(--ev-muted); font-size: 11px; }
+.stagePyramid { display: block; width: 180px; height: 150px; flex: none; }
+.attendanceFields { min-width: 0; margin: 0; align-self: start; }
+.attendanceFields > div { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--ev-line); }
+.attendanceFields > div:first-child { padding-top: 0; }
+.attendanceFields dt { font-size: 12px; color: var(--ev-muted); }
+.attendanceFields dd { min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.attendanceFields .recordName { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.attendancePhone { display: block; margin-top: 7px; font-weight: 400; font-size: 12px; color: var(--ev-muted); }
+.attendanceCardFooter { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; min-height: 62px; border-top: 1px solid var(--ev-line); background: var(--ev-toolbar); padding: 12px 16px; color: var(--ev-muted); font-size: 10px; }
+.attendanceCardFooter time { color: var(--ev-ink); font-weight: 600; }
+.attendanceHealth { display: flex; align-items: center; gap: 8px; margin-right: auto; color: var(--ev-brand-ink); font-size: 12px; }
+.attendanceHealth small { display: block; color: var(--ev-muted); font-size: 10px; }
+.attendanceHealth[data-health='overdue'] { color: var(--ev-red-text); }
+.attendanceHealth[data-health='near'] { color: var(--ev-yellow-text); }
+.attendanceLinks { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--ev-line); }
+@media (max-width: 1400px) { .attendanceGrid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) {
+  .attendanceGrid { padding: 10px; gap: 14px; }
+  .attendanceCardHead { padding: 8px 10px; gap: 8px; }
+  .attendanceCardBody { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 16px; }
+  .attendanceProgress { padding: 0; }
+  .attendanceFields > div { grid-template-columns: 80px minmax(0, 1fr); }
+  .attendanceCardFooter { align-items: start; flex-direction: column; padding: 12px; gap: 8px; }
+}
 .attentionBadge { display: inline-flex; justify-content: center; align-items: center; min-width: 18px; min-height: 18px; padding: 0 4px; border-radius: 10px; background: #e8f1fc; color: #005ecb; font-size: 10px; }
 .catalogCardStatus { padding: 0 18px 12px; background: var(--ev-card-body); }
 .detailCatalog { padding: 14px 24px 0; }
@@ -1050,6 +1085,11 @@
 .table td { border-color: var(--ev-line); font-size: 13px; }
 .listToolbar { gap: 12px; padding: 16px 18px; background: var(--ev-paper); border-bottom: 1px solid var(--ev-line); }
 .listToolbar input, .listToolbar select { font-size: 12px; }
+@media (max-width: 600px) {
+  .listToolbar .searchInput { flex: 1 0 100%; min-width: 0; order: -1; }
+  .listToolbar select { flex: 1 1 140px; min-width: 0; }
+  .listToolbar input, .listToolbar select { font-size: 16px; }
+}
 .cardGrid { gap: 18px; padding: 18px; }
 .recordCard { border-color: var(--ev-line); border-radius: 10px; box-shadow: none; }
 .recordCardHead, .recordCardBody, .catalogCardStatus { background: var(--ev-paper); }
