@@ -35,7 +35,9 @@ function runtime(react = React, environment = {}) {
         if (id === 'react/jsx-runtime') return require(id);
         if (id.endsWith('.css')) return css;
         if (id === './account-menu') return load('app/evolution/account-menu.tsx');
+        if (id === '../lead-source-picker') return load('app/lead-source-picker.tsx');
         if (id === '@/lib/evolution/model') return load('lib/evolution/model.ts');
+        if (id === '../lead-sources' || id === '@/lib/lead-sources') return load('lib/lead-sources.ts');
         if (id === '@/lib/evolution/schema' || id === './schema') return load('lib/evolution/schema.ts');
         if (id === './registration-contract') return load('lib/evolution/registration-contract.ts');
         if (id === './operations' || id === '@/lib/evolution/operations') return load('lib/evolution/operations.ts');
@@ -206,7 +208,58 @@ const leadForm = renderEditor({ ...property, id: 'legacy-lead-test', kind: 'lead
 assert(/<select[^>]*id="edit-assignedTo"[^>]*disabled/.test(leadForm));
 assert(leadForm.includes('ao assumir ou devolver'));
 
-console.log('PASS evolution navigation: SSR preview isolation; integration capability; retained native host; refresh without remount; owner/broker menu boundaries; canonical editor preservation.');
+// Test the editor's submitted values as well as its rendered source control.
+// A person already in the canonical CRM must retain the existing acquisition
+// source instead of offering a choice that the server would reject or replace.
+function editorHarness(editor, editorState = state) {
+  let cursor = 0, tree;
+  const slots = [], saves = [];
+  const hooks = { ...React, useState(initial) {
+    const index = cursor++;
+    if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
+    return [slots[index], next => { slots[index] = typeof next === 'function' ? next(slots[index]) : next; }];
+  } };
+  const Component = runtime(hooks).load(clientPath).RecordEditor;
+  const props = { editor, state: editorState, actor: owner, busy: false, error: '', onClose() {}, onSave: async data => { saves.push(data); } };
+  function render() { cursor = 0; tree = Component(props); }
+  render();
+  return {
+    saves, get tree() { return tree; },
+    source() { return find(tree, node => node.props?.id === 'edit-source'); },
+    change(id, value) { const control = find(tree, node => node.props?.id === id); assert(control, id); control.props.onChange({ target: { value } }); render(); },
+    changeSource(value) { this.source().props.onChange(value); render(); },
+    submit() { find(tree, node => node.type === 'form').props.onSubmit({ preventDefault() {} }); },
+  };
+}
+const sourceState = structuredClone(state);
+const canonicalSourceLead = sourceState.records.find(record => record.kind === 'leads');
+canonicalSourceLead.legacy = { table: 'leads', id: 'source-test', access: 'owner' };
+canonicalSourceLead.data.source = '  Origem histórica específica  ';
+for (const kind of ['leads', 'cases']) {
+  const editor = editorHarness({ kind, defaults: { source: 'Instagram' } }, sourceState);
+  assert.equal(editor.source().props.disabled, false, `${kind}: source can be chosen before selecting an existing person`);
+  editor.change('edit-personId', canonicalSourceLead.data.personId);
+  assert.equal(editor.source().props.disabled, true, `${kind}: selecting the canonical person locks its source`);
+  assert.equal(editor.source().props.value, canonicalSourceLead.data.source, `${kind}: the displayed source comes from the canonical contact`);
+  assert(text(editor.tree).includes('Para corrigir, use Registro em Conversas.'));
+  editor.submit();
+  assert.equal(editor.saves[0].source, canonicalSourceLead.data.source, `${kind}: submitted origin matches the locked choice, preserving historical spaces`);
+  assert.equal(editor.saves[0].personId, canonicalSourceLead.data.personId);
+}
+for (const kind of ['leads', 'cases']) {
+  const record = { ...canonicalSourceLead, kind, data: { ...canonicalSourceLead.data, journey: 'Negociação', stage: 'Lead', status: kind === 'cases' ? 'Aberto' : 'Pendente' } };
+  const editor = editorHarness({ kind, record }, sourceState);
+  assert.equal(editor.source().props.disabled, true, `${kind}: an existing canonical origin cannot be changed through the generic editor`);
+  assert.equal(editor.source().props.value, record.data.source);
+  editor.change('edit-name', 'Nome revisto sem mudar a origem'); editor.submit();
+  assert.equal(editor.saves[0].source, record.data.source, `${kind}: unrelated edits never trim an untouched historical origin`);
+}
+const editableSource = editorHarness({ kind: 'leads', defaults: { source: '  Fonte antiga  ' } });
+editableSource.submit(); assert.equal(editableSource.saves[0].source, '  Fonte antiga  ', 'the original source is kept byte-for-byte when untouched');
+editableSource.changeSource('Outros: Feira local  '); editableSource.submit();
+assert.equal(editableSource.saves[1].source, 'Outros: Feira local', 'only an explicitly changed source is trimmed on submit');
+
+console.log('PASS evolution navigation: SSR preview isolation; integration capability; retained native host; refresh without remount; owner/broker menu boundaries; canonical editor preservation; inherited origin on new lead/case, locked historical source, exact untouched values and explicit source normalization.');
 
 // Shared isolated hook harness for the Linha navigation/accessibility contracts.
 module.exports = { navigationHarness, find, text, button, click, owner, state, runtime };

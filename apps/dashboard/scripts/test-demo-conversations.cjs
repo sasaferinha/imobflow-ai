@@ -14,7 +14,14 @@ function load(file) {
   const module = { exports: {} };
   vm.runInNewContext(output, {
     module, exports: module.exports,
-    require: name => name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name.startsWith('@/lib/') ? load(name.replace('@/', '') + '.ts') : name.startsWith('./') ? load(path.posix.join(path.posix.dirname(file),name+(file.endsWith('.tsx')?'.tsx':'.ts'))) : require(name),
+    require(name) {
+      if (name.endsWith('.css')) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
+      if (name.startsWith('@/') || name.startsWith('.')) {
+        const target = name.startsWith('@/') ? name.slice(2) : path.posix.join(path.posix.dirname(file), name);
+        return load(target + (fs.existsSync(path.join(__dirname, '..', target + '.tsx')) ? '.tsx' : '.ts'));
+      }
+      return require(name);
+    },
   });
   modules.set(file, module.exports);
   return module.exports;

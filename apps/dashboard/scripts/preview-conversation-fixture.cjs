@@ -22,12 +22,14 @@ function load(file) {
     {
       module: mod,
       exports: mod.exports,
-      require: (n) =>
-        n.startsWith("@/lib/")
-          ? load(n.replace("@/", "") + ".ts")
-          : n.startsWith("./")
-            ? load(path.posix.join(path.posix.dirname(file), n + ".tsx"))
-            : require(n),
+      require(n) {
+        if (n.endsWith('.css')) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
+        if (n.startsWith('@/') || n.startsWith('.')) {
+          const target = n.startsWith('@/') ? n.slice(2) : path.posix.join(path.posix.dirname(file), n);
+          return load(target + (fs.existsSync(path.join(base, target + '.tsx')) ? '.tsx' : '.ts'));
+        }
+        return require(n);
+      },
       Date,
       Intl,
       Map,

@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const crypto = require('node:crypto').webcrypto;
 const root = path.resolve(__dirname, '..');
-const jsx = (type, props) => ({ type, props: props || {} });
+const jsx = (type, props) => typeof type === 'function' ? type(props || {}) : ({ type, props: props || {} });
 const css = { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) };
 const uuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const caseId = `case:${uuid(102)}`, propertyId = `property:${uuid(301)}`;
@@ -28,7 +28,7 @@ const formNode = tree => find(tree, node => node.type === 'form');
 const submitButton = tree => find(tree, node => node.type === 'button' && node.props.type === 'submit');
 const control = (tree, label) => find(find(tree, node => node.type === 'label' && text(node).startsWith(label)), node => ['input', 'select', 'textarea'].includes(node.type));
 
-function fixture({ role = 'broker', closed = false } = {}) {
+function fixture({ role = 'broker', closed = false, source = 'WhatsApp' } = {}) {
   const actor = { companyId: uuid(1), brokerId: uuid(role === 'owner' ? 11 : 12), name: 'Responsável sintético', role };
   const now = new Date().toISOString();
   const record = (id, kind, data, legacy) => ({ id, kind, data, createdAt: now, updatedAt: now, createdBy: uuid(12), ...(legacy ? { legacy } : {}) });
@@ -37,7 +37,7 @@ function fixture({ role = 'broker', closed = false } = {}) {
     companyId: uuid(1), version: 4, sourceRevision: 'a'.repeat(64), events: [],
     members: [{ id: uuid(11), name: 'Administrador teste', role: 'owner' }, { id: uuid(12), name: 'Corretor teste', role: 'broker' }], settings: {},
     records: [
-      record(caseId, 'cases', { name: 'Cliente teste', purpose: 'Venda', stage: 'Atendimento', journey: 'Negociação', status: closed ? 'Ganho' : 'Aberto', assignedTo: uuid(12), personId: `person:${uuid(102)}`, propertyId }, legacy),
+      record(caseId, 'cases', { name: 'Cliente teste', source, purpose: 'Venda', stage: 'Atendimento', journey: 'Negociação', status: closed ? 'Ganho' : 'Aberto', assignedTo: uuid(12), personId: `person:${uuid(102)}`, propertyId }, legacy),
       record(`person:${uuid(102)}`, 'people', { name: 'Cliente teste' }, legacy),
       record(propertyId, 'properties', { name: 'Imóvel teste', code: 'TEST-301', purpose: 'Venda', status: 'Disponível' }, { table: 'properties', id: uuid(301), access: 'shared' }),
       record(`appointment:${uuid(902)}`, 'tasks', { caseId, type: 'Visita', status: 'Confirmada', propertyId, dueAt: new Date(Date.now() - 86400000).toISOString(), assignedTo: uuid(12) }, { table: 'appointments', id: uuid(902), access: 'assigned', assignedTo: uuid(12) }),
@@ -66,6 +66,7 @@ function harness({ props = {}, response, snapshot = fixture(), demoPath = false 
   const window = { innerWidth: 1280, innerHeight: 900, addEventListener: document.addEventListener, removeEventListener: document.removeEventListener };
   const focusTarget = () => ({ __inside: true, focus() { focusCount++; document.activeElement = this; } });
   function load(file) {
+    if (!fs.existsSync(path.join(root, file)) && file.endsWith('.ts') && fs.existsSync(path.join(root, `${file}x`))) file += 'x';
     if (cache.has(file)) return cache.get(file);
     const mod = { exports: {} }; cache.set(file, mod.exports);
     const compiled = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), { reportDiagnostics: true, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } });
@@ -180,11 +181,42 @@ async function run() {
     assert.equal(payload.command.caseId, caseId); assert.match(payload.command.requestId, /^[0-9a-f-]{36}$/);
     assert.equal(payload.expectedVersion, 4); assert.equal(payload.expectedSourceRevision, 'a'.repeat(64));
     assert.equal(payload.command.data.assignedTo, undefined, 'registration cannot reassign accounts');
+    assert.equal(payload.command.data.source, undefined, 'an untouched origin is never silently rewritten');
     if (action === 'schedule') assert.equal(payload.command.data.dueAt, '2030-10-10T10:30');
     if (action === 'attendance') assert.equal(payload.command.data.outcome, 'Tentativa sem resposta');
     assert.equal(form.saved, 1); assert.equal(form.notifications.length, 1); assert.equal(formNode(form.tree), undefined);
     assert.equal(form.timers.size, 0); form.unmount();
   }
+  const sourceForm = harness(); await sourceForm.open(); sourceForm.select('Iniciar atendimento');
+  const originGroup = find(sourceForm.tree, node => node.type === 'fieldset' && text(find(node, child => child.type === 'legend')) === 'Origem do cliente');
+  assert(originGroup, 'each registration form has a named source group');
+  const sourceRadios = nodes(originGroup).filter(node => node.type === 'input' && node.props.type === 'radio');
+  assert.deepEqual(sourceRadios.map(node => node.props.value), ['Facebook', 'Instagram', 'Cliente pessoal', 'Tráfego pago', 'Indicação', 'WhatsApp', 'Site', 'Portal imobiliário', 'Placa no imóvel', 'Atendimento presencial', 'Outros']);
+  assert.equal(sourceRadios.filter(node => node.props.checked).length, 1);
+  assert.equal(sourceRadios.find(node => node.props.checked).props.value, 'WhatsApp');
+  assert.equal(new Set(sourceRadios.map(node => node.props.name)).size, 1, 'one accessible native radio group enforces a single origin');
+  sourceForm.change('Facebook', 'Facebook');
+  assert.equal(control(sourceForm.tree, 'Facebook').props.checked, true);
+  assert.equal(control(sourceForm.tree, 'WhatsApp').props.checked, false);
+  await sourceForm.submit();
+  const sourcePayload = JSON.parse(sourceForm.calls.at(-1).options.body).command.data;
+  assert.equal(sourcePayload.source, 'Facebook'); assert.equal(sourcePayload.channel, 'WhatsApp', 'commercial origin is independent from conversation channel'); sourceForm.unmount();
+
+  const other = harness(); await other.open(); other.select('Lead'); other.change('Outros', 'Outros');
+  assert.equal(control(other.tree, 'Qual foi a origem?').props.maxLength, 192);
+  assert.equal(control(other.tree, 'Qual foi a origem?').props.required, undefined, 'other description is optional');
+  other.change('Qual foi a origem?', 'Evento da região'); await other.submit();
+  assert.equal(JSON.parse(other.calls.at(-1).options.body).command.data.source, 'Outros: Evento da região'); other.unmount();
+  const otherBare = harness(); await otherBare.open(); otherBare.select('Lead'); otherBare.change('Outros', 'Outros'); await otherBare.submit();
+  assert.equal(JSON.parse(otherBare.calls.at(-1).options.body).command.data.source, 'Outros'); otherBare.unmount();
+  const oldSource = harness({ snapshot: fixture({ source: 'Parceiro antigo' }) }); await oldSource.open(); oldSource.select('Iniciar atendimento');
+  assert.equal(control(oldSource.tree, 'Parceiro antigo').props.checked, true, 'legacy origin stays visible and selected');
+  await oldSource.submit(); assert.equal(JSON.parse(oldSource.calls.at(-1).options.body).command.data.source, undefined); oldSource.unmount();
+  const oldOther = harness({ snapshot: fixture({ source: 'Outros: Feira local' }) }); await oldOther.open(); oldOther.select('Iniciar atendimento');
+  assert.equal(control(oldOther.tree, 'Outros').props.checked, true);
+  assert.equal(control(oldOther.tree, 'Qual foi a origem?').props.value, 'Feira local');
+  assert.equal(nodes(oldOther.tree).filter(node => node.type === 'input' && node.props.type === 'radio' && node.props.value.startsWith('Outros')).length, 1);
+  oldOther.unmount();
   const historical = harness(); await historical.open(); historical.select('Visita realizada');
   historical.change('Visita realizada', ''); historical.change('Imóvel', propertyId);
   historical.change('Data em que aconteceu', '2026-01-02'); historical.change('Horário da visita', '11:45'); await historical.submit();
@@ -211,7 +243,7 @@ async function run() {
 
   let failed = true;
   const uncertain = harness({ response: call => call.options.method === 'POST' && failed ? Response.json({ error: 'Outcome unknown' }, { status: 503 }) : Response.json(fixture()) });
-  await uncertain.open(); uncertain.select('Iniciar atendimento'); await uncertain.submit();
+  await uncertain.open(); uncertain.select('Iniciar atendimento'); uncertain.change('Instagram', 'Instagram'); await uncertain.submit();
   assert.equal(uncertain.saved, 0); assert.equal(submitButton(uncertain.tree).props.disabled, true);
   assert.equal(find(uncertain.tree, node => node.type === 'fieldset').props.disabled, true, 'uncertain form is immutable until reconciled');
   const first = JSON.parse(uncertain.calls.find(call => call.options.method === 'POST').options.body).command;
@@ -221,6 +253,7 @@ async function run() {
   failed = false; await uncertain.submit();
   const second = JSON.parse(uncertain.calls.filter(call => call.options.method === 'POST')[1].options.body).command;
   assert.deepEqual(first, second, 'retry reuses identical request id and payload');
+  assert.equal(first.data.source, 'Instagram', 'an uncertain write preserves its selected origin across retries');
   assert.equal(uncertain.saved, 1); uncertain.unmount();
 
   let committed;
@@ -242,6 +275,26 @@ async function run() {
   conflict = false; await stale.submit();
   const requests = stale.calls.filter(call => call.options.method === 'POST').map(call => JSON.parse(call.options.body).command);
   assert.notEqual(requests[0].requestId, requests[1].requestId, 'known rejected 409 gets a new request after explicit review'); stale.unmount();
+
+  let sourceChangedElsewhere = false;
+  const remoteSource = harness({ response: call => {
+    if (call.options.method === 'POST' && !sourceChangedElsewhere) { sourceChangedElsewhere = true; return Response.json({ error: 'Changed' }, { status: 409 }); }
+    return Response.json(fixture({ source: sourceChangedElsewhere ? 'Indicação' : 'WhatsApp' }));
+  } });
+  await remoteSource.open(); remoteSource.select('Iniciar atendimento'); await remoteSource.submit();
+  assert.equal(control(remoteSource.tree, 'Indicação').props.checked, true, 'untouched origin follows the refreshed server snapshot after conflict');
+  remoteSource.change('Conferi os dados', true); await remoteSource.submit();
+  assert.equal(JSON.parse(remoteSource.calls.at(-1).options.body).command.data.source, undefined, 'review cannot overwrite a concurrent origin with a stale default'); remoteSource.unmount();
+  let explicitConflict = true;
+  const chosenSource = harness({ response: call => {
+    if (call.options.method === 'POST' && explicitConflict) return Response.json({ error: 'Changed' }, { status: 409 });
+    return Response.json(fixture({ source: 'Indicação' }));
+  } });
+  await chosenSource.open(); chosenSource.select('Iniciar atendimento'); chosenSource.change('Instagram', 'Instagram'); await chosenSource.submit();
+  assert.equal(control(chosenSource.tree, 'Instagram').props.checked, true, 'an explicit draft choice is retained for review');
+  assert.match(text(chosenSource.tree), /Origem atual: Indicação. Sua seleção: Instagram/, 'the current saved source is visible before confirming an overwrite');
+  chosenSource.change('Conferi os dados', true); explicitConflict = false; await chosenSource.submit();
+  assert.equal(JSON.parse(chosenSource.calls.at(-1).options.body).command.data.source, 'Instagram'); chosenSource.unmount();
 
   let racedCommand;
   const reconciledRace = harness({ response: call => {
@@ -286,6 +339,6 @@ async function run() {
   trigger(unmounted.tree).props.onClick(); unmounted.render(); unmounted.unmount(); await unmounted.settle();
   assert.equal(unmounted.calls[0].options.signal.aborted, true, 'leaving the conversation aborts its old request');
   assert.equal(unmounted.saved, 0);
-  console.log('PASS registration UI: one accessible disclosure, GET-only opening, six explicit forms, no demo network, closed/role guards, explicit closing, timeout and duplicate-click protection, preserved idempotent recovery and post-commit reconciliation. Synthetic hooks and network only.');
+  console.log('PASS registration UI: six explicit forms, one accessible origin choice, legacy origins preserved, optional Others detail, channel independent from origin, no demo network, closed/role guards, timeout and duplicate-click protection, preserved origin on idempotent retries and conflict reconciliation. Synthetic hooks and network only.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

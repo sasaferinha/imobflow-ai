@@ -4,11 +4,12 @@ import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent 
 import { dashboardFetch, isProductDemo } from '@/lib/dashboard-transport';
 import { applyCommand, canAccess, createDemoState, type Actor, type CrmRecord, type CrmState } from '@/lib/evolution/model';
 import { REGISTRATION_CHANNELS, REGISTRATION_OUTCOMES, type RegistrationAction, type RegistrationCommand } from '@/lib/evolution/registration-contract';
+import LeadSourcePicker from './lead-source-picker';
 import s from './conversation-registration.module.css';
 
 type Props = { leadId: string; customerName: string; demonstration?: boolean; disabled?: boolean; onSaved?: () => void; notify?: (message: string) => void };
 type Snapshot = { state: CrmState; actor: Actor };
-type FormValues = { purpose: string; notes: string; reason: string; channel: string; outcome: string; propertyId: string; date: string; time: string; taskId: string; proposalId: string; amount: string; conditions: string; expiresAt: string; status: string; confirmed: boolean };
+type FormValues = { purpose: string; source: string; sourceChanged: boolean; notes: string; reason: string; channel: string; outcome: string; propertyId: string; date: string; time: string; taskId: string; proposalId: string; amount: string; conditions: string; expiresAt: string; status: string; confirmed: boolean };
 const options: { action: RegistrationAction; label: string; description: string; number: string }[] = [
   { action: 'lead', label: 'Lead', description: 'Manter no catálogo, aguardando atendimento', number: '01' },
   { action: 'attendance', label: 'Iniciar atendimento', description: 'Registrar o contato e seu resultado', number: '02' },
@@ -17,7 +18,7 @@ const options: { action: RegistrationAction; label: string; description: string;
   { action: 'proposal', label: 'Proposta', description: 'Registrar os detalhes da negociação', number: '05' },
   { action: 'close', label: 'Negociado', description: 'Confirmar o fechamento de uma proposta', number: '06' },
 ];
-const blankForm = (): FormValues => ({ purpose: '', notes: '', reason: '', channel: 'WhatsApp', outcome: 'Contato realizado', propertyId: '', date: '', time: '', taskId: '', proposalId: '', amount: '', conditions: '', expiresAt: '', status: 'Enviada', confirmed: false });
+const blankForm = (): FormValues => ({ purpose: '', source: '', sourceChanged: false, notes: '', reason: '', channel: 'WhatsApp', outcome: 'Contato realizado', propertyId: '', date: '', time: '', taskId: '', proposalId: '', amount: '', conditions: '', expiresAt: '', status: 'Enviada', confirmed: false });
 const value = (record: CrmRecord | undefined, key: string) => String(record?.data[key] || '');
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateTime = (date: string) => Number.isFinite(Date.parse(date)) ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }).format(new Date(date)) : 'Horário não informado';
@@ -58,6 +59,8 @@ export default function ConversationRegistration({ leadId, customerName, demonst
   const [contextAt, setContextAt] = useState(() => Date.now());
   const demo = demonstration || isProductDemo();
   const caseRecord = snapshot?.state.records.find(record => record.kind === 'cases' && record.id === `case:${leadId}`);
+  const recordedSource = value(caseRecord, 'source');
+  const source = form.sourceChanged ? form.source : recordedSource;
   const canEdit = Boolean(snapshot && caseRecord && canAccess(snapshot.state, snapshot.actor, caseRecord, 'write'));
   const editable = canEdit && value(caseRecord, 'status') === 'Aberto' && value(caseRecord, 'journey') === 'Negociação';
   const purpose = value(caseRecord, 'purpose') || form.purpose;
@@ -141,7 +144,7 @@ export default function ConversationRegistration({ leadId, customerName, demonst
   function selectAction(next: RegistrationAction) {
     if (!editable || !caseRecord || loading) return;
     pending.current = null; setReview(null); setChecked(false); setRefreshed(false); setError('');
-    setForm({ ...blankForm(), purpose: value(caseRecord, 'purpose'), propertyId: value(caseRecord, 'propertyId'), taskId: next === 'visit' && completedCandidates.length === 1 ? completedCandidates[0].id : '', proposalId: next === 'close' && closableProposals.length === 1 ? closableProposals[0].id : '' });
+    setForm({ ...blankForm(), purpose: value(caseRecord, 'purpose'), source: recordedSource, propertyId: value(caseRecord, 'propertyId'), taskId: next === 'visit' && completedCandidates.length === 1 ? completedCandidates[0].id : '', proposalId: next === 'close' && closableProposals.length === 1 ? closableProposals[0].id : '' });
     setOpen(false); setAction(next);
   }
   function update<K extends keyof FormValues>(key: K, newValue: FormValues[K]) { setForm(current => ({ ...current, [key]: newValue })); }
@@ -158,7 +161,7 @@ export default function ConversationRegistration({ leadId, customerName, demonst
   }
   function buildCommand(): RegistrationCommand | null {
     if (!caseRecord || !action) return null;
-    const common = { ...(value(caseRecord, 'purpose') ? {} : { purpose: form.purpose as 'Venda' | 'Aluguel' }), ...(form.notes.trim() ? { notes: form.notes.trim() } : {}) };
+    const common = { ...(value(caseRecord, 'purpose') ? {} : { purpose: form.purpose as 'Venda' | 'Aluguel' }), ...(form.sourceChanged && source.trim() && source.trim() !== recordedSource.trim() ? { source: source.trim() } : {}), ...(form.notes.trim() ? { notes: form.notes.trim() } : {}) };
     const base = { type: 'register' as const, caseId: caseRecord.id, requestId: crypto.randomUUID() };
     if (action === 'lead') return { ...base, action, data: { ...common, ...(form.reason.trim() ? { reason: form.reason.trim() } : {}) } };
     if (action === 'attendance') return { ...base, action, data: { ...common, channel: form.channel as typeof REGISTRATION_CHANNELS[number], outcome: form.outcome as typeof REGISTRATION_OUTCOMES[number] } };
@@ -241,9 +244,10 @@ export default function ConversationRegistration({ leadId, customerName, demonst
           <div className={s.context}><span className={s.customerIcon} aria-hidden="true">{customerName.trim().charAt(0).toLocaleUpperCase('pt-BR')}</span><div><strong>{customerName}</strong><span>{snapshot?.state.members.find(member => member.id === caseRecord?.data.assignedTo)?.name || 'Sem responsável definido'} · Etapa atual: <b>{value(caseRecord, 'stage')}</b></span></div></div>
           <p id={`${id}-description`} className={s.description}>{demo ? 'Teste o registro com dados fictícios. A etapa e as opções serão atualizadas apenas aqui, sem alterar a agenda real ou enviar mensagens.' : 'Confirme o que aconteceu. Agendamento, Visita, Proposta e Negociado são etapas registradas pelo corretor. O histórico será atualizado, sem enviar mensagens.'}</p>
           {error && <p className={s.error} role="alert">{error}</p>}
-          {review && <div className={s.review}><p>{review === 'uncertain' ? 'O formulário está preservado. Verifique se o registro já foi salvo; se necessário, confirme novamente a mesma solicitação, sem duplicá-la.' : 'Mantivemos o que você preencheu. A etapa acima foi atualizada; revise os campos antes de confirmar novamente.'}</p><button type="button" className={s.secondary} disabled={saving || loading} onClick={checkResult}>{loading ? 'Verificando…' : 'Verificar dados atualizados'}</button>{refreshed && <label className={s.check}><input type="checkbox" checked={checked} onChange={event => setChecked(event.target.checked)} />Conferi os dados atualizados e desejo confirmar este registro.</label>}</div>}
+          {review && <div className={s.review}><p>{review === 'uncertain' ? 'O formulário está preservado. Verifique se o registro já foi salvo; se necessário, confirme novamente a mesma solicitação, sem duplicá-la.' : 'Mantivemos o que você preencheu. A etapa acima foi atualizada; revise os campos antes de confirmar novamente.'}</p>{refreshed && form.sourceChanged && source.trim() !== recordedSource.trim() && <p>Origem atual: <strong>{recordedSource || 'Não informada'}</strong>. Sua seleção: <strong>{source}</strong>.</p>}<button type="button" className={s.secondary} disabled={saving || loading} onClick={checkResult}>{loading ? 'Verificando…' : 'Verificar dados atualizados'}</button>{refreshed && <label className={s.check}><input type="checkbox" checked={checked} onChange={event => setChecked(event.target.checked)} />Conferi os dados atualizados e desejo confirmar este registro.</label>}</div>}
           {emptyAction && <p className={s.notice} role="status">{emptyAction}</p>}
           <fieldset disabled={locked || loading} className={s.fields}>
+            <LeadSourcePicker id={`${id}-origin`} value={source} options={snapshot?.state.settings.sources} disabled={locked || loading} onChange={nextSource => setForm(current => ({ ...current, source: nextSource, sourceChanged: true }))} />
             {!value(caseRecord, 'purpose') && <label className={s.field}>Finalidade<select required value={form.purpose} onChange={event => { update('purpose', event.target.value); update('propertyId', ''); }}><option value="">Selecione</option><option>Venda</option><option>Aluguel</option></select><small>Será registrada no cadastro deste atendimento.</small></label>}
             {action === 'lead' && <><p className={s.notice}>{value(caseRecord, 'stage') === 'Lead' ? 'O contato continuará no catálogo, aguardando atendimento.' : 'O atendimento voltará à etapa Lead. Agendamentos e propostas anteriores não serão apagados.'}</p>{value(caseRecord, 'stage') !== 'Lead' && <label className={s.field}>Motivo do retorno ao catálogo<textarea required maxLength={500} rows={2} value={form.reason} onChange={event => update('reason', event.target.value)} /></label>}</>}
             {action === 'attendance' && <><div className={s.twoColumns}><label className={s.field}>Canal<select required value={form.channel} onChange={event => update('channel', event.target.value)}>{REGISTRATION_CHANNELS.map(channel => <option key={channel}>{channel}</option>)}</select></label><label className={s.field}>Resultado<select required value={form.outcome} onChange={event => update('outcome', event.target.value)}>{REGISTRATION_OUTCOMES.map(outcome => <option key={outcome}>{outcome}</option>)}</select></label></div><p className={s.notice}>{form.outcome === 'Tentativa sem resposta' ? 'A tentativa ficará no histórico, sem confirmar uma conversa com o cliente.' : 'O contato será registrado. Etapas mais avançadas da negociação serão preservadas.'}</p></>}

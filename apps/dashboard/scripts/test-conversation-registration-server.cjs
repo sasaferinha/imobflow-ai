@@ -118,20 +118,34 @@ async function run() {
     assert.equal(stage(state), 'Lead');
     assert.equal((await api.POST(request('POST', undefined, { command: register('lead'), expectedVersion: 0 }))).status, 401);
     assert.equal((await post('broker', register('lead'), state, 'https://evil.example.test')).status, 403);
-    assert.equal((await post('otherBroker', register('attendance', { channel: 'WhatsApp', outcome: 'Contato realizado' }), await snapshot('otherBroker'))).status, 403);
-    assert.equal((await post('otherCompany', register('lead'), await snapshot('otherCompany'))).status, 404);
+    assert.equal((await post('otherBroker', register('attendance', { channel: 'WhatsApp', outcome: 'Contato realizado', source: 'Instagram' }), await snapshot('otherBroker'))).status, 403);
+    assert.equal((await post('otherCompany', register('lead', { source: 'Instagram' }), await snapshot('otherCompany'))).status, 404);
     assert.equal(await workspace(), undefined, 'reads and rejected commands create no workspace');
 
-    const attendance = register('attendance', { channel: 'WhatsApp', outcome: 'Tentativa sem resposta', notes: 'Contato sintético sem envio de mensagem.' });
+    const attendance = register('attendance', { channel: 'WhatsApp', outcome: 'Tentativa sem resposta', notes: 'Contato sintético sem envio de mensagem.', source: 'Facebook' });
     const initial = state;
     state = await save('broker', attendance, state);
     assert.equal(stage(state), 'Atendimento');
     assert.equal((await row('leads', id(102))).lifecycle_status, 'Em atendimento');
+    assert.equal((await row('leads', id(102))).source, 'Facebook');
+    assert.equal(state.records.find(item => item.id === caseId).data.source, 'Facebook');
+    assert.equal(state.records.find(item => item.id === `lead:${id(102)}`).data.source, 'Facebook');
+    assert(state.events.some(event => event.recordId === caseId && event.changes?.source?.from === 'WhatsApp' && event.changes.source.to === 'Facebook'));
+    const reloadedSource = await snapshot('broker');
+    assert.equal(reloadedSource.records.find(item => item.id === caseId).data.source, 'Facebook', 'canonical source survives a fresh read and overlay merge');
     assert.match(JSON.stringify(state.events), /Tentativa sem resposta/);
     const version = state.version, eventCount = state.events.length;
     state = await save('broker', attendance, initial);
     assert.equal(state.version, version, 'retry after an uncertain response returns existing result');
     assert.equal(state.events.length, eventCount, 'idempotent replay never duplicates timeline');
+    assert.equal((await post('broker', { ...attendance, data: { ...attendance.data, source: 'Instagram' } }, state)).status, 409, 'source participates in the idempotency fingerprint');
+    assert.equal((await post('broker', { type: 'save', kind: 'cases', id: caseId, data: { source: 'Instagram' } }, state)).status, 400, 'generic case edit cannot bypass the registration flow');
+    assert.equal((await post('broker', { type: 'save', kind: 'leads', id: `lead:${id(102)}`, data: { source: 'Instagram' } }, state)).status, 409, 'generic lead edit cannot bypass canonical origin protection');
+    for (const source of ['Unlisted source', ' Facebook', 'Outros: ', 'Outros: Invalid\nsource', 'x'.repeat(201)]) {
+      assert.equal((await post('broker', register('attendance', { channel: 'Telefone', outcome: 'Contato realizado', source }), state)).status, 400);
+      assert.equal((await row('leads', id(102))).source, 'Facebook');
+      assert.equal((await workspace()).version, state.version);
+    }
     assert.equal((await post('broker', { ...attendance, data: { channel: 'Telefone', outcome: 'Contato realizado' } }, state)).status, 409, 'one id cannot represent a different event');
     assert.equal((await post('owner', attendance, await snapshot('owner'))).status, 409, 'one request id cannot be reused by another actor');
     beforeCommit = () => db.query("UPDATE conversations SET assigned_broker_id=$1,assigned_to='Broker 13' WHERE id=$2", [id(13), id(502)]);
@@ -145,9 +159,15 @@ async function run() {
     assert.equal((await post('broker', register('attendance', { channel: 'Telefone', outcome: 'Contato realizado' }), state)).status, 409, 'timeline-only registrations still guard canonical source changes at SQL commit');
     assert.equal((await workspace()).version, state.version);
     state = await snapshot('broker');
+    beforeCommit = () => db.query("UPDATE leads SET source='  Campanha histórica específica  ' WHERE id=$1", [id(102)]);
+    assert.equal((await post('broker', register('attendance', { channel: 'Telefone', outcome: 'Contato realizado', source: 'Instagram' }), state)).status, 409, 'concurrent canonical source correction is never overwritten');
+    assert.equal((await workspace()).version, state.version);
+    state = await snapshot('broker');
+    assert.equal(state.records.find(item => item.id === caseId).data.source, '  Campanha histórica específica  ');
     assert.equal((await post('broker', register('lead'), state)).status, 400, 'returning to Lead requires explanation');
     state = await save('broker', register('lead', { reason: 'Classificação inicial corrigida pelo responsável.' }), state);
     assert.equal(stage(state), 'Lead');
+    assert.equal((await row('leads', id(102))).source, '  Campanha histórica específica  ', 'old clients that omit source keep the exact legacy source, including whitespace');
 
     for (const [action, data] of [
       ['schedule', { propertyId: `property:${id(401)}`, dueAt: future }],
@@ -161,15 +181,17 @@ async function run() {
       assert.equal((await workspace()).version, state.version);
     }
     const unchangedLead = await row('leads', id(102));
-    const rollback = await post('broker', register('schedule', { propertyId, dueAt: future, notes: 'ROLLBACK_REGISTRATION' }), state);
+    const rollback = await post('broker', register('schedule', { propertyId, dueAt: future, notes: 'ROLLBACK_REGISTRATION', source: 'Instagram' }), state);
     assert.ok([400, 409, 503].includes(rollback.status), 'a real SQL constraint failure is reported');
     assert.equal((await workspace()).version, state.version, 'SQL failure rolls back the event and workspace');
-    assert.deepEqual(await row('leads', id(102)), unchangedLead, 'SQL failure rolls back the lead stage');
+    assert.deepEqual(await row('leads', id(102)), unchangedLead, 'SQL failure rolls back the lead stage and source together');
     assert.equal(await appointmentCount(), 0, 'SQL failure cannot leave an orphan appointment');
 
-    const schedule = register('schedule', { propertyId, dueAt: future, notes: 'Visita combinada no atendimento.' });
+    const schedule = register('schedule', { propertyId, dueAt: future, notes: 'Visita combinada no atendimento.', source: 'Outros: Evento no bairro' });
     state = await save('broker', schedule, state);
     assert.equal(stage(state), 'Agendamento');
+    assert.equal((await row('leads', id(102))).source, 'Outros: Evento no bairro');
+    assert.equal(state.records.find(item => item.id === caseId).data.source, 'Outros: Evento no bairro');
     assert.notEqual((await row('leads', id(102))).lifecycle_status, 'Visita', 'scheduled is not attended');
     assert.equal(await appointmentCount(), 1);
     let visit = state.records.find(item => item.kind === 'tasks' && item.data.caseId === caseId);

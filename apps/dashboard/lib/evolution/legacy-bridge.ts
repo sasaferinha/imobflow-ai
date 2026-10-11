@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { validLeadSource } from '../lead-sources';
 import { supabaseRequest } from '../supabase';
 import { analyzeLead, explainProfile, type LeadInput, type LeadLifecycleStatus } from '../leads';
 import type { AutomaticConversationStage } from '../conversation-stage';
@@ -204,7 +205,21 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
     return plans.get(key)!;
   };
   const existingEvents = new Set(before.events.map(event => event.id));
-  const registeredCases = new Set(after.events.filter(event => event.registration && !existingEvents.has(event.id)).map(event => event.recordId));
+  const newEvents = after.events.filter(event => !existingEvents.has(event.id));
+  const registeredCases = new Set(newEvents.filter(event => event.registration).map(event => event.recordId));
+  const registeredSources = new Map<string, string>();
+  for (const event of newEvents.filter(event => event.registration && event.actorId === actor.brokerId)) {
+    const previous = before.records.find(record => record.kind === 'cases' && record.id === event.recordId);
+    const current = after.records.find(record => record.kind === 'cases' && record.id === event.recordId);
+    if (!previous || current?.legacy?.table !== 'leads' || previous.data.source === current.data.source) continue;
+    const linked = after.records.find(record => record.kind === 'leads' && record.id === current.data.leadId);
+    const audited = newEvents.some(change => change.recordId === current.id && change.actorId === actor.brokerId && change.changes?.source?.from === previous.data.source && change.changes?.source?.to === current.data.source);
+    let payload: { caseId?: string; data?: { source?: unknown } } = {};
+    try { payload = JSON.parse(event.registration!.fingerprint); } catch { /* Invalid evidence never authorizes a source correction. */ }
+    if (audited && payload?.caseId === current.id && payload.data?.source === current.data.source
+      && linked?.legacy?.id === current.legacy.id && linked.data.personId === current.data.personId && linked.data.source === current.data.source
+      && validLeadSource(current.data.source, before.settings.sources, str(previous.data.source))) registeredSources.set(current.legacy.id, str(current.data.source));
+  }
   const modified = (after.records as MappedRecord[]).filter(r => { const previous = before.records.find(p => p.id === r.id); return !previous || stable(previous.data) !== stable(r.data) || (r.kind === 'cases' && registeredCases.has(r.id)); });
   // Allocate stable IDs before resolving the references of other records.
   for (const record of modified) {
@@ -247,6 +262,7 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
       }
       if (id) {
         const row = bridge.leads.find(r => r.id === id), target = write('leads',id,row);
+        if (previous && changed(previous,record,'source')) target.data.source = nullable(d.source);
         if (changed(previous,record,'assignedTo')) target.data.assigned_to = memberName(bridge,d.assignedTo);
         if (changed(previous,record,'purpose') && d.purpose) target.data.goal = d.purpose === 'Aluguel' ? 'Alugar' : 'Comprar';
         if (changed(previous,record,'stage') || changed(previous,record,'status') || registeredCases.has(record.id)) target.data.lifecycle_status = d.status === 'Perdido' ? 'Perdido' : d.status === 'Ganho' ? 'Convertido' : d.stage === 'Proposta' ? 'Proposta' : d.stage === 'Visita' ? 'Visita' : d.stage === 'Lead' ? 'Novo' : 'Em atendimento';
@@ -296,7 +312,7 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
     }
     if (target.table !== 'leads') continue;
     const row = bridge.leads.find(r => r.id === target.id), raw = { ...row, ...target.data };
-    if (row?.source && Object.hasOwn(target.data,'source') && target.data.source !== row.source) throw new CrmError('A origem original deste contato é preservada. Utilize a origem já registrada ao atualizar o interesse.',409);
+    if (row && Object.hasOwn(target.data,'source') && target.data.source !== row.source && registeredSources.get(target.id) !== target.data.source) throw new CrmError('A origem original deste contato é preservada. Corrija a origem pelo botão Registro na conversa.',409);
     if (row?.lifecycle_status === 'Convertido' && target.data.lifecycle_status && target.data.lifecycle_status !== 'Convertido') throw new CrmError('O resultado confirmado está preservado. Uma correção de fechamento exige um fluxo de estorno.',409);
     if (Object.hasOwn(target.data,'assigned_to') && str(target.data.assigned_to) !== str(row?.assigned_to) && bridge.conversations.some(c => c.lead_id === target.id)) throw new CrmError('Altere o responsável na área de Conversas. Isso preserva o atendimento automático e as mensagens em andamento.',409);
     if (['goal','property_type','region','budget_min','budget_max'].some(key => Object.hasOwn(target.data,key))) {
