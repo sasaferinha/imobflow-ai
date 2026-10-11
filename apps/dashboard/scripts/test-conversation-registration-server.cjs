@@ -31,6 +31,7 @@ async function run() {
         ALTER COLUMN price SET NOT NULL,ALTER COLUMN district SET NOT NULL,ALTER COLUMN city SET NOT NULL,
         ALTER COLUMN property_type SET NOT NULL,ALTER COLUMN bedrooms SET DEFAULT 0,ALTER COLUMN bedrooms SET NOT NULL,
         ALTER COLUMN parking_spaces SET DEFAULT 0,ALTER COLUMN parking_spaces SET NOT NULL;
+      ALTER TABLE properties ADD CONSTRAINT synthetic_reopen_failure CHECK(NOT(status='Disponível' AND code='ROLLBACK_REOPEN'));
       ALTER TABLE appointments ALTER COLUMN scheduled_at SET NOT NULL,ALTER COLUMN status SET DEFAULT 'Agendada',ALTER COLUMN status SET NOT NULL;
       ALTER TABLE appointments ADD CONSTRAINT registration_synthetic_failure
         CHECK(position('ROLLBACK_REGISTRATION' in coalesce(notes,''))=0);`);
@@ -255,12 +256,75 @@ async function run() {
     assert.equal((await row('properties', id(301))).status, 'Vendido');
     assert.equal((await post('owner', register('lead', { reason: 'Não deve apagar fechamento.' }), ownerState)).status, 409);
 
+    const acceptedDate = ownerState.records.find(item => item.id === proposal.id).data.acceptedAt;
+    const closedDate = ownerState.records.find(item => item.id === caseId).data.closedAt;
+    const sourceBeforeCorrection = (await row('leads', id(102))).source;
+    const correct = (mode, data = {}) => register('correct_close', { mode, proposalId: proposal.id, reason: 'Correção sintética solicitada pelo responsável.', confirmed: true, ...data });
+    assert.equal((await post('otherBroker', correct('edit', { amount: 555000, conditions: 'Condição revisada' }), await snapshot('otherBroker'))).status, 403);
+    assert.equal((await post('otherCompany', correct('reopen'), await snapshot('otherCompany'))).status, 404);
+    const editing = correct('edit', { amount: 555000, conditions: 'Condição revisada' });
+    state = await snapshot('broker');
+    state = await save('broker', editing, state);
+    assert.equal(state.records.find(item => item.id === proposal.id).data.amount, 555000);
+    assert.equal(state.records.find(item => item.id === proposal.id).data.acceptedAt, acceptedDate);
+    assert.equal(state.records.find(item => item.id === caseId).data.closedAt, closedDate);
+    assert.equal((await row('properties', id(301))).status, 'Vendido');
+    assert.equal((await row('leads', id(102))).source, sourceBeforeCorrection);
+    const editedVersion = state.version;
+    state = await save('broker', editing, state);
+    assert.equal(state.version, editedVersion);
+    assert.equal((await post('broker', correct('reopen'), state)).status, 403, 'catalog write permission is required to restore availability');
+    ownerState = await snapshot('owner');
+    assert.equal((await post('owner', { type: 'save', kind: 'proposals', id: proposal.id, data: { amount: 1 } }, ownerState)).status, 409);
+    assert.equal((await post('owner', { type: 'save', kind: 'leads', id: `lead:${id(102)}`, data: { status: 'Pendente' } }, ownerState)).status, 409);
+    const beforeUndoRace = ownerState.version;
+    beforeCommit = () => db.query('UPDATE properties SET price=price+1 WHERE id=$1', [id(301)]);
+    assert.equal((await post('owner', correct('reopen'), ownerState)).status, 409, 'read-to-commit property race rejects the whole reopening');
+    assert.equal((await workspace()).version, beforeUndoRace);
+    assert.equal((await row('leads', id(102))).lifecycle_status, 'Convertido');
+    await db.query("UPDATE properties SET status='Reservado' WHERE id=$1", [id(301)]);
+    ownerState = await snapshot('owner');
+    assert.equal((await post('owner', correct('reopen'), ownerState)).status, 409, 'an external current catalog status is never overwritten');
+    await db.query("UPDATE properties SET status='Vendido',code='ROLLBACK_REOPEN' WHERE id=$1", [id(301)]);
+    ownerState = await snapshot('owner');
+    const undoFailed = await post('owner', correct('reopen'), ownerState);
+    assert.ok([400, 409, 503].includes(undoFailed.status));
+    assert.equal((await workspace()).version, ownerState.version, 'SQL failure rolls back all correction events');
+    assert.equal((await row('leads', id(102))).lifecycle_status, 'Convertido', 'SQL failure rolls back canonical lead reopening');
+    assert.equal((await snapshot('owner')).records.find(item => item.id === proposal.id).data.status, 'Aceita');
+    await db.query("UPDATE properties SET code='REOPEN-TEST' WHERE id=$1", [id(301)]);
+    ownerState = await snapshot('owner');
+    const undo = correct('reopen'), beforeUndo = ownerState;
+    failAfterCommit = true;
+    const uncertainUndo = await post('owner', undo, ownerState);
+    assert.equal(uncertainUndo.status, 503);
+    assert.match((await uncertainUndo.json()).error, /salva/);
+    ownerState = await save('owner', undo, beforeUndo);
+    assert.equal(ownerState.version, beforeUndo.version + 1, 'uncertain committed reopening replays once');
+    assert.equal(stage(ownerState), 'Proposta');
+    assert.equal(ownerState.records.find(item => item.id === caseId).data.status, 'Aberto');
+    assert.equal(ownerState.records.find(item => item.id === caseId).data.closedAt, '');
+    assert.equal(ownerState.records.find(item => item.id === proposal.id).data.status, 'Enviada');
+    assert.equal(ownerState.records.find(item => item.id === proposal.id).data.acceptedAt, '');
+    assert.equal((await row('properties', id(301))).status, 'Disponível');
+    assert.equal((await row('leads', id(102))).lifecycle_status, 'Proposta');
+    assert.equal((await row('leads', id(102))).source, sourceBeforeCorrection);
+    assert(ownerState.events.some(event => event.recordId === caseId && event.changes?.status?.from === 'Ganho' && event.changes.status.to === 'Aberto'));
+    assert.equal((await post('owner', correct('reopen'), ownerState)).status, 409);
+    await db.query("UPDATE leads SET lifecycle_status='Convertido' WHERE id=$1", [id(101)]);
+    ownerState = await snapshot('owner');
+    const catalogBeforeLegacy = await row('properties', id(301));
+    ownerState = await save('owner', register('correct_close', { mode: 'reopen', reason: 'Fechamento importado incorreto.', confirmed: true }, `case:${id(101)}`), ownerState);
+    assert.equal((await row('leads', id(101))).lifecycle_status, 'Em atendimento');
+    assert.equal(ownerState.records.find(item => item.id === `case:${id(101)}`).data.stage, 'Atendimento');
+    assert.deepEqual(await row('properties', id(301)), catalogBeforeLegacy, 'imported result does not guess or alter a property');
+
     const messages = (await db.query('SELECT jsonb_agg(to_jsonb(m) ORDER BY id) data FROM messages m')).rows[0].data;
     assert.deepEqual(messages, untouched, 'registration never sends, edits or deletes WhatsApp/client messages');
     assert.ok(calls.filter(call => !call.resource.startsWith('rpc/')).every(call => call.query.get('company_id')?.startsWith('eq.')), 'reads are scoped to authenticated company');
     for (const callback of afterCallbacks) await callback();
-    assert.equal(matchingCalls.length, 1, 'property matching only runs once for the confirmed committed closing');
-    assert.deepEqual(matchingCalls[0], [id(1), id(301)]);
+    assert.equal(matchingCalls.length, 2, 'property matching runs once for closing and once for committed reopening, never retries or rollback');
+    assert(matchingCalls.every(args => args[0] === id(1) && args[1] === id(301)));
     console.log('PASS conversation registration API: authenticated tenant/portfolio isolation, explicit six-stage flow, real agenda writes, attendance vs scheduled/realized, immutable confirmed closure, SQL atomic rollback, stale/concurrent protection and idempotent recovery after committed 503. Synthetic PGlite only; no external network, messages or finance writes.');
   } finally { await db.close(); }
 }

@@ -180,7 +180,7 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
       if (blocked) throw new CrmError(blocked);
     }
     if (parent.data.journey !== 'Negociação') throw new CrmError('Propostas pertencem à jornada de negociação.');
-    if (previous?.data.status === 'Aceita') throw new CrmError('Resultado confirmado é preservado. Correções de fechamento exigem um fluxo de estorno, ainda não disponível.', 409);
+    if (previous?.data.status === 'Aceita') throw new CrmError('Resultado confirmado é preservado. Use Corrigir fechamento no atendimento para registrar uma correção.', 409);
     const prop = find(state, String(d.propertyId), 'properties');
     if (prop.data.purpose !== parent.data.purpose) throw new CrmError('A finalidade do imóvel deve corresponder à do atendimento.');
     if (['Vendido', 'Alugado', 'Arquivado'].includes(String(prop.data.status))) throw new CrmError('O imóvel não está disponível para proposta.');
@@ -239,6 +239,7 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
 const registrationFields: Record<RegistrationAction, readonly string[]> = {
   lead: ['reason'], attendance: ['channel', 'outcome'], schedule: ['taskId', 'propertyId', 'dueAt'],
   visit: ['taskId', 'propertyId', 'occurredAt'], proposal: ['propertyId', 'amount', 'conditions', 'expiresAt', 'status'], close: ['proposalId', 'confirmed', 'reason'],
+  correct_close: ['mode', 'proposalId', 'amount', 'conditions', 'reason', 'confirmed'],
 };
 function registrationFingerprint(command: RegistrationCommand): string {
   if (Object.keys(command).some(key => !['type', 'caseId', 'requestId', 'action', 'data'].includes(key))
@@ -246,14 +247,14 @@ function registrationFingerprint(command: RegistrationCommand): string {
     || typeof command.caseId !== 'string' || !command.caseId.trim() || command.caseId.length > 150
     || typeof command.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(command.requestId)
     || !command.data || typeof command.data !== 'object' || Array.isArray(command.data)) throw new CrmError('Registro inválido. Revise a opção selecionada.');
-  const allowed = ['purpose', 'notes', 'source', ...registrationFields[command.action]];
+  const allowed = command.action === 'correct_close' ? command.data.mode === 'reopen' ? ['mode', 'proposalId', 'reason', 'confirmed'] : registrationFields.correct_close : ['purpose', 'notes', 'source', ...registrationFields[command.action]];
   for (const [key, value] of Object.entries(command.data)) {
     if (!allowed.includes(key)) throw new CrmError('Campo não permitido no registro.');
     if (key === 'confirmed') { if (value !== true) throw new CrmError('Confirme expressamente o fechamento.'); }
     else if (key === 'amount') { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.01 || value > 1e12) throw new CrmError('Informe um valor de proposta válido.'); }
     else if (typeof value !== 'string' || value.length > (['notes', 'conditions'].includes(key) ? 2000 : key === 'source' ? 200 : 500)) throw new CrmError('Campo de registro inválido ou muito longo.');
   }
-  if (command.data.purpose !== undefined && !['Venda', 'Aluguel'].includes(command.data.purpose)) throw new CrmError('Selecione Venda ou Aluguel.');
+  if (command.action !== 'correct_close' && command.data.purpose !== undefined && !['Venda', 'Aluguel'].includes(command.data.purpose)) throw new CrmError('Selecione Venda ou Aluguel.');
   // An exact, canonical payload fingerprint avoids lossy hashes and collision-based replays.
   return JSON.stringify({ caseId: command.caseId, action: command.action, data: Object.fromEntries(Object.entries(command.data).sort(([a], [b]) => a.localeCompare(b))) });
 }
@@ -268,11 +269,58 @@ export function registrationReplay(state: CrmState, actor: Actor, command: CrmCo
   if (previous.actorId !== actor.brokerId || previous.recordId !== command.caseId || previous.registration?.fingerprint !== fingerprint) throw new CrmError('Este identificador já foi usado por outro registro. Atualize a conversa antes de continuar.', 409);
   return true;
 }
+function applyClosingCorrection(original: CrmState, actor: Actor, command: Extract<RegistrationCommand, { action: 'correct_close' }>, initial: CrmRecord, fingerprint: string, now: string): CrmState {
+  const d = command.data, reason = text(d.reason);
+  if (!['edit', 'reopen'].includes(d.mode) || !reason || d.confirmed !== true) throw new CrmError('Informe o motivo e confirme expressamente a correção do fechamento.');
+  if (initial.data.status !== 'Ganho' || initial.data.stage !== 'Negociado') throw new CrmError('Este atendimento não possui um fechamento confirmado para corrigir.', 409);
+  const accepted = original.records.filter(record => record.kind === 'proposals' && record.data.caseId === initial.id && record.data.status === 'Aceita');
+  if (accepted.length > 1) throw new CrmError('Há resultados conflitantes neste atendimento. O histórico foi preservado para revisão.', 409);
+  const proposal = accepted[0];
+  if (proposal && (d.proposalId !== proposal.id || initial.data.propertyId !== proposal.data.propertyId)) throw new CrmError('Selecione a proposta aceita deste fechamento.', 409);
+  if (!proposal && (d.mode !== 'reopen' || d.proposalId || initial.legacy?.lifecycleStatus !== 'Convertido')) throw new CrmError('A proposta aceita deste fechamento não está disponível para correção.', 409);
+  if (proposal) editable(original, actor, proposal.id, 'proposals');
+  const state = structuredClone(original);
+  const parent = find(state, initial.id, 'cases');
+  let summary: string;
+  if (d.mode === 'edit') {
+    if (typeof d.amount !== 'number' || !Number.isFinite(d.amount) || d.amount < 0.01 || d.amount > 1e12 || !text(d.conditions, 2000)) throw new CrmError('Informe um valor válido e as condições corrigidas.');
+    change(state, actor, find(state, proposal!.id, 'proposals'), { amount: d.amount, conditions: text(d.conditions, 2000) }, now, `Dados do fechamento corrigidos · Motivo: ${reason}`);
+    summary = `Dados do fechamento corrigidos. Data original, cliente e imóvel preservados · Motivo: ${reason}`;
+  } else {
+    const linked = initial.data.leadId ? editable(original, actor, String(initial.data.leadId), 'leads') : undefined;
+    if (linked && (linked.data.personId !== initial.data.personId || linked.data.source !== initial.data.source)) throw new CrmError('Os vínculos do cliente precisam ser revisados antes de reabrir.', 409);
+    if (proposal) {
+      const property = editable(original, actor, String(proposal.data.propertyId), 'properties');
+      const closedStatus = initial.data.purpose === 'Aluguel' ? 'Alugado' : 'Vendido';
+      const acceptedAt = proposal.data.acceptedAt;
+      const acceptance = original.events.filter(event => event.recordId === proposal.id && event.changes?.status?.to === 'Aceita').at(-1);
+      const previousProposalStatus = ['Rascunho', 'Enviada', 'Em negociação', 'Recusada', 'Expirada'].includes(String(acceptance?.changes?.status?.from)) ? acceptance!.changes!.status.from : acceptance?.type === 'created' && acceptance.changes?.status?.from === '' ? 'Rascunho' : '';
+      const propertyStatus = original.events.filter(event => event.recordId === property.id && event.changes?.status).at(-1);
+      const closing = original.events.filter(event => event.recordId === initial.id && event.changes?.status?.to === 'Ganho').at(-1);
+      if (!acceptedAt || initial.data.closedAt !== acceptedAt || !acceptance || acceptance.at !== acceptedAt || !previousProposalStatus
+        || !propertyStatus || propertyStatus.at !== acceptedAt || propertyStatus.actorId !== acceptance.actorId || propertyStatus.changes?.status?.to !== closedStatus || !['Disponível', 'Reservado'].includes(String(propertyStatus.changes?.status?.from))
+        || !closing || closing.at !== acceptedAt || closing.actorId !== acceptance.actorId || closing.changes?.closedAt?.to !== acceptedAt
+        || property.data.status !== closedStatus || property.data.purpose !== initial.data.purpose) throw new CrmError('Não foi possível confirmar o estado anterior deste imóvel e fechamento. O histórico foi preservado para revisão.', 409);
+      if (original.records.some(record => record.id !== proposal.id && record.kind === 'proposals' && record.data.propertyId === property.id && record.data.status === 'Aceita')
+        || original.records.some(record => record.id !== initial.id && record.kind === 'cases' && record.data.propertyId === property.id && (record.data.status === 'Ganho' || record.data.stage === 'Negociado'))) throw new CrmError('Este imóvel está vinculado a outro fechamento. Nenhuma disponibilidade foi alterada.', 409);
+      change(state, actor, find(state, proposal.id, 'proposals'), { status: previousProposalStatus, acceptedAt: '' }, now, `Aceite desfeito · Motivo: ${reason}`);
+      change(state, actor, find(state, property.id, 'properties'), { status: propertyStatus.changes!.status.from }, now, `Disponibilidade anterior restaurada após correção · Motivo: ${reason}`);
+    }
+    change(state, actor, parent, { status: 'Aberto', stage: proposal ? 'Proposta' : 'Atendimento', closedAt: '', stageEnteredAt: now, reason }, now, `Fechamento desfeito · Motivo: ${reason}`);
+    if (linked) change(state, actor, find(state, linked.id, 'leads'), { status: 'Em atendimento' }, now, `Atendimento reaberto após correção · Motivo: ${reason}`);
+    summary = proposal ? `Fechamento desfeito; atendimento reaberto em Proposta · Motivo: ${reason}` : `Fechamento importado desfeito; somente o atendimento foi reaberto. Nenhum imóvel foi alterado · Motivo: ${reason}`;
+  }
+  parent.updatedAt = now;
+  state.events.push({ id: crypto.randomUUID(), recordId: initial.id, caseId: initial.id, at: now, actorId: actor.brokerId, actorName: actor.name, type: 'registration', summary, registration: { requestId: command.requestId, fingerprint, action: command.action } });
+  state.version = original.version + 1;
+  return state;
+}
 function applyRegistration(original: CrmState, actor: Actor, command: RegistrationCommand, now: string): CrmState {
   const fingerprint = registrationFingerprint(command);
   if (registrationReplay(original, actor, command)) return original;
   const initial = editable(original, actor, command.caseId, 'cases');
   if (initial.data.journey !== 'Negociação') throw new CrmError('Este registro pertence à jornada de negociação.');
+  if (command.action === 'correct_close') return applyClosingCorrection(original, actor, command, initial, fingerprint, now);
   if (initial.data.status !== 'Aberto' || initial.data.stage === 'Negociado' || initial.legacy?.lifecycleStatus === 'Convertido'
     || original.records.some(record => record.kind === 'proposals' && record.data.caseId === initial.id && record.data.status === 'Aceita')) throw new CrmError('O atendimento não está aberto. O resultado e o histórico existentes foram preservados.', 409);
   if (!NEGOTIATION_STAGES.includes(String(initial.data.stage))) throw new CrmError('A etapa atual precisa ser revisada antes deste registro.', 409);

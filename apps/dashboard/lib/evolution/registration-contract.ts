@@ -1,5 +1,5 @@
 /** Conversation registration is an explicit human confirmation, never an AI inference. */
-export const REGISTRATION_ACTIONS = ['lead', 'attendance', 'schedule', 'visit', 'proposal', 'close'] as const;
+export const REGISTRATION_ACTIONS = ['lead', 'attendance', 'schedule', 'visit', 'proposal', 'close', 'correct_close'] as const;
 export type RegistrationAction = typeof REGISTRATION_ACTIONS[number];
 export const REGISTRATION_CHANNELS = ['WhatsApp', 'Telefone', 'Email', 'Presencial', 'Outro'] as const;
 export const REGISTRATION_OUTCOMES = ['Contato realizado', 'Tentativa sem resposta'] as const;
@@ -11,6 +11,7 @@ export type RegistrationData = {
   visit: RegistrationCommon & ({ taskId: string; propertyId?: never; occurredAt?: never } | { taskId?: never; propertyId: string; occurredAt: string });
   proposal: RegistrationCommon & { propertyId: string; amount: number; conditions: string; expiresAt: string; status: 'Enviada' | 'Em negociação' };
   close: RegistrationCommon & { proposalId: string; confirmed: true; reason?: string };
+  correct_close: { mode: 'edit'; proposalId: string; amount: number; conditions: string; reason: string; confirmed: true } | { mode: 'reopen'; proposalId?: string; reason: string; confirmed: true };
 };
 export type RegistrationCommand = {
   [A in RegistrationAction]: { type: 'register'; caseId: string; requestId: string; action: A; data: RegistrationData[A] }

@@ -22,7 +22,7 @@ function runtime(react = React, environment = {}) {
     if (modules.has(file)) return modules.get(file);
     const module = { exports: {} };
     let source = fs.readFileSync(file, 'utf8');
-    if (relative === clientPath) source += '\nexport { RecordEditor };';
+    if (relative === clientPath) source += '\nexport { RecordEditor, RecordDetail };';
     const script = ts.transpileModule(source, { compilerOptions: {
       jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022, esModuleInterop: true,
@@ -36,6 +36,10 @@ function runtime(react = React, environment = {}) {
         if (id.endsWith('.css')) return css;
         if (id === './account-menu') return load('app/evolution/account-menu.tsx');
         if (id === '../lead-source-picker') return load('app/lead-source-picker.tsx');
+        if (id === '../conversation-registration') return load('app/conversation-registration.tsx');
+        if (id === './lead-source-picker') return load('app/lead-source-picker.tsx');
+        if (id === '@/lib/evolution/registration-contract') return load('lib/evolution/registration-contract.ts');
+        if (id === '@/lib/dashboard-transport') return { isProductDemo: () => false, dashboardFetch: () => { throw new Error('Navigation tests must never fetch conversation data'); } };
         if (id === '@/lib/evolution/model') return load('lib/evolution/model.ts');
         if (id === '../lead-sources' || id === '@/lib/lead-sources') return load('lib/lead-sources.ts');
         if (id === '@/lib/evolution/schema' || id === './schema') return load('lib/evolution/schema.ts');
@@ -55,7 +59,7 @@ function runtime(react = React, environment = {}) {
 
 const server = runtime();
 const model = server.load('lib/evolution/model.ts');
-const { default: EvolutionClient, RecordEditor } = server.load(clientPath);
+const { default: EvolutionClient, RecordEditor, RecordDetail } = server.load(clientPath);
 const state = model.createDemoState(owner.companyId, owner.brokerId, '2026-10-07T16:00:00.000Z');
 const nativeHost = (page, refreshKey) => React.createElement('native-host', { page, refreshKey });
 
@@ -258,6 +262,21 @@ const editableSource = editorHarness({ kind: 'leads', defaults: { source: '  Fon
 editableSource.submit(); assert.equal(editableSource.saves[0].source, '  Fonte antiga  ', 'the original source is kept byte-for-byte when untouched');
 editableSource.changeSource('Outros: Feira local  '); editableSource.submit();
 assert.equal(editableSource.saves[1].source, 'Outros: Feira local', 'only an explicitly changed source is trimmed on submit');
+
+const closedState = structuredClone(state);
+const closedCase = closedState.records.find(record => record.kind === 'cases');
+closedCase.data.status = 'Ganho'; closedCase.data.stage = 'Negociado';
+const closedProposal = { id: 'closed-proposal-test', kind: 'proposals', createdBy: owner.brokerId, createdAt: '2026-10-01T12:00:00Z', updatedAt: '2026-10-01T12:00:00Z', data: { name: 'Proposta encerrada de teste', caseId: closedCase.id, propertyId: closedCase.data.propertyId, status: 'Aceita', amount: 400000 } };
+closedState.records.push(closedProposal);
+for (const record of [closedCase, closedProposal]) {
+  const detail = renderToStaticMarkup(React.createElement(RecordDetail, { record, state: closedState, actor: owner, demonstration: true, busy: false, error: '', onClose() {}, onEdit() {}, onCreate() {}, onSelect() {}, execute: async () => false }));
+  assert(detail.includes('Editar fechamento'), `${record.kind}: a closed result exposes the dedicated correction entry point`);
+  assert(detail.includes('aria-haspopup="dialog"'), 'correction button announces a dialog');
+  assert(!detail.includes('Editar</button>'), `${record.kind}: a closed result does not offer the generic editor for protected fields`);
+}
+const unrelatedActor = { ...owner, brokerId: 'other-test-broker', role: 'broker' };
+const protectedDetail = renderToStaticMarkup(React.createElement(RecordDetail, { record: closedProposal, state: closedState, actor: unrelatedActor, busy: false, error: '', onClose() {}, onEdit() {}, onCreate() {}, onSelect() {}, execute: async () => false }));
+assert(!protectedDetail.includes('Editar fechamento'), 'an unrelated broker cannot access closing correction from the detail');
 
 console.log('PASS evolution navigation: SSR preview isolation; integration capability; retained native host; refresh without remount; owner/broker menu boundaries; canonical editor preservation; inherited origin on new lead/case, locked historical source, exact untouched values and explicit source normalization.');
 

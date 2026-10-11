@@ -141,6 +141,29 @@ async function run() {
   const newPropertyPlan=bridge.planLegacyWrites(state,newProperty,s,owner);assert.equal(newPropertyPlan.writes[0].data.parking_spaces,0);assert.equal(newPropertyPlan.writes[0].data.bedrooms,0);assert.match(newPropertyPlan.state.records.at(-1).id,/^property:/);
   const completion=edit(state,owner,'proposals',undefined,{name:'Proposta sintética',caseId:mainCase.id,propertyId:listing.id,amount:510000,conditions:'Condição sintética',expiresAt:'2026-10-09',status:'Aceita'});
   const dealPlan=bridge.planLegacyWrites(state,completion,s,owner);assert.equal(dealPlan.writes.length,2);assert.equal(dealPlan.writes.find(w=>w.table==='leads').data.lifecycle_status,'Convertido');assert.equal(dealPlan.writes.find(w=>w.table==='properties').data.status,'Vendido');assert.ok(dealPlan.writes.every(w=>w.table!=='site_sales'),'no duplicate financial booking');
+  const completedRows = applyRows(s, dealPlan.writes), completedState = bridge.mergeLegacyBridge(bridge.serializeLegacyWorkspace(dealPlan.state, state), completedRows);
+  const accepted = completedState.records.find(record => record.kind === 'proposals' && record.data.status === 'Aceita');
+  const correction = { type: 'register', action: 'correct_close', caseId: mainCase.id, requestId: crypto.randomUUID(), data: { mode: 'reopen', proposalId: accepted.id, reason: 'Fechamento registrado por engano.', confirmed: true } };
+  const corrected = model.applyCommand(completedState, owner, correction, '2026-10-08T13:00:00.000Z');
+  const correctionPlan = bridge.planLegacyWrites(completedState, corrected, completedRows, owner);
+  assert.equal(correctionPlan.writes.find(write => write.table === 'leads').data.lifecycle_status, 'Proposta');
+  assert.equal(correctionPlan.writes.find(write => write.table === 'properties').data.status, 'Disponível');
+  assert.ok(correctionPlan.writes.every(write => write.table !== 'site_sales'));
+  const correctedRows = applyRows(completedRows, correctionPlan.writes);
+  const correctedReloaded = bridge.mergeLegacyBridge(bridge.serializeLegacyWorkspace(correctionPlan.state, completedState), correctedRows);
+  assert.equal(correctedReloaded.records.find(record => record.id === mainCase.id).data.stage, 'Proposta');
+  assert.equal(correctedReloaded.records.find(record => record.id === mainCase.id).data.status, 'Aberto');
+  assert.equal(correctedReloaded.records.find(record => record.id === mainCase.id).data.closedAt, '');
+  assert.equal(correctedReloaded.records.find(record => record.id === accepted.id).data.status, 'Rascunho', 'a directly-created acceptance reopens as draft');
+  assert.equal(correctedReloaded.records.find(record => record.id === mainCase.id).data.source, lead.source);
+  for (const tamper of [
+    value => { value.events = value.events.filter(event => event.registration?.action !== 'correct_close'); },
+    value => { value.events.find(event => event.registration?.action === 'correct_close').registration.fingerprint = 'null'; },
+    value => { value.events = value.events.filter(event => !(event.recordId === mainCase.id && event.changes?.status?.to === 'Aberto')); },
+  ]) {
+    const forged = structuredClone(corrected); tamper(forged);
+    assert.throws(() => bridge.planLegacyWrites(completedState, forged, completedRows, owner), /resultado confirmado/, 'a generic or unaudited change cannot reopen Convertido');
+  }
   const forged=structuredClone(state);forged.records.push({id:id(900),kind:'leads',data:{name:'Tentativa sintética',personId:person.id,assignedTo:other.brokerId,purpose:'Venda',status:'Pendente'},createdAt:stamp,updatedAt:stamp,createdBy:other.brokerId});assert.throws(()=>bridge.planLegacyWrites(state,forged,s,other),/carteira/);
   const nativeCase=model.applyCommand(state,owner,{type:'save',kind:'cases',data:{name:'Captação sintética',personId:person.id,source:'WhatsApp',assignedTo:other.brokerId,purpose:'Venda',journey:'Captação',stage:'Lead',status:'Aberto'}});
   const unrelated=nativeCase.records.at(-1), hiddenParentVisit=model.applyCommand(nativeCase,other,{type:'save',kind:'tasks',data:{name:'Tentativa via captação',caseId:unrelated.id,assignedTo:other.brokerId,type:'Visita',propertyId:listing.id,dueAt:'2026-10-09T10:00',priority:'Normal',status:'Pendente'}});
