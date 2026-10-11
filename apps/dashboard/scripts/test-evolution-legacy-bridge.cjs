@@ -102,6 +102,29 @@ async function run() {
   const patchedProperty=edit(state,owner,'properties',listing.id,{price:550000});const propertyPlan=bridge.planLegacyWrites(state,patchedProperty,s,owner);assert.equal(propertyPlan.writes[0].data.price,550000);assert.ok(!('images' in propertyPlan.writes[0].data));assert.ok(!('parking_spaces' in propertyPlan.writes[0].data));assert.ok(!('cataloged_on_site' in propertyPlan.writes[0].data));
   const propertyDocument=bridge.serializeLegacyWorkspace(propertyPlan.state,model.emptyState(company));assert.ok(!('photoUrl' in propertyDocument.records[0].data));assert.ok(!('address' in propertyDocument.records[0].data));assert.equal(bridge.mergeLegacyBridge({...propertyDocument,members},s).records.find(r=>r.id===listing.id).data.photoUrl,property.images[0]);
   const changedOrigin=edit(state,owner,'leads',interest.id,{source:'Site'});assert.throws(()=>bridge.planLegacyWrites(state,changedOrigin,s,owner),/origem original/);
+  const originCommand = { type: 'register', action: 'attendance', requestId: crypto.randomUUID(), caseId: mainCase.id, data: { channel: 'WhatsApp', outcome: 'Contato realizado', source: 'Tráfego pago' } };
+  const originState = model.applyCommand(state, broker, originCommand, stamp);
+  const originPlan = bridge.planLegacyWrites(state, originState, s, broker);
+  assert.equal(originPlan.writes.length, 1, 'origin updates the existing contact in the same write plan');
+  assert.equal(originPlan.writes[0].data.source, 'Tráfego pago');
+  assert.equal(originPlan.writes[0].expected.source, 'WhatsApp', 'source participates in canonical compare-and-swap');
+  assert.ok(!('last_contact_at' in originPlan.writes[0].data));
+  assert.ok(!('assigned_to' in originPlan.writes[0].data));
+  assert.ok(!('interest_profile' in originPlan.writes[0].data));
+  const originDocument = bridge.serializeLegacyWorkspace(originPlan.state, model.emptyState(company));
+  assert(originDocument.records.every(record => !('source' in record.data)), 'canonical source is not duplicated in overlays');
+  const originReloaded = bridge.mergeLegacyBridge({ ...originDocument, members }, applyRows(s, originPlan.writes));
+  assert.equal(originReloaded.records.find(record => record.id === mainCase.id).data.source, 'Tráfego pago');
+  assert.equal(originReloaded.records.find(record => record.id === interest.id).data.source, 'Tráfego pago');
+  for (const tamper of [
+    value => { value.events = value.events.filter(event => !event.registration); },
+    value => { value.events = value.events.filter(event => !event.changes?.source); },
+    value => { value.events.find(event => event.registration).registration.fingerprint = 'null'; },
+    value => { value.records.find(record => record.id === interest.id).data.source = 'Facebook'; },
+  ]) {
+    const forged = structuredClone(originState); tamper(forged);
+    assert.throws(() => bridge.planLegacyWrites(state, forged, s, broker), /origem original/, 'source writes need coherent explicit registration evidence');
+  }
   assert.throws(()=>edit(state,broker,'properties',listing.id,{price:1}),/permissão/);
   const photo=bridge.planLegacyWrites(state,edit(state,owner,'properties',listing.id,{photoUrl:'https://example.invalid/new.jpg'}),s,owner);assert.deepEqual(Array.from(photo.writes[0].data.images),['https://example.invalid/new.jpg','https://example.invalid/back.jpg']);
   const status=bridge.planLegacyWrites(state,edit(state,broker,'tasks',visit.id,{status:'Cancelada',reason:'Cliente indisponível'}),s,broker);assert.equal(status.writes[0].table,'appointments');assert.equal(status.writes[0].data.status,'Cancelada');assert.ok(!('scheduled_at' in status.writes[0].data));

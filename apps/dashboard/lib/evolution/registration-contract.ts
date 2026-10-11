@@ -3,7 +3,7 @@ export const REGISTRATION_ACTIONS = ['lead', 'attendance', 'schedule', 'visit', 
 export type RegistrationAction = typeof REGISTRATION_ACTIONS[number];
 export const REGISTRATION_CHANNELS = ['WhatsApp', 'Telefone', 'Email', 'Presencial', 'Outro'] as const;
 export const REGISTRATION_OUTCOMES = ['Contato realizado', 'Tentativa sem resposta'] as const;
-export type RegistrationCommon = { purpose?: 'Venda' | 'Aluguel'; notes?: string };
+export type RegistrationCommon = { purpose?: 'Venda' | 'Aluguel'; notes?: string; source?: string };
 export type RegistrationData = {
   lead: RegistrationCommon & { reason?: string };
   attendance: RegistrationCommon & { channel: typeof REGISTRATION_CHANNELS[number]; outcome: typeof REGISTRATION_OUTCOMES[number] };

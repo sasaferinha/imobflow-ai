@@ -10,10 +10,11 @@ function load(name) {
   const file = path.resolve(__dirname, '../lib/evolution', name + '.ts');
   const mod = { exports: {} }; modules.set(name, mod.exports);
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
-    { module: mod, exports: mod.exports, require: name => load(path.basename(name)), crypto, structuredClone, URL, Date, console }, { filename: file });
+    { module: mod, exports: mod.exports, require: dependency => load(path.resolve(path.dirname(file), dependency)), crypto, structuredClone, URL, Date, console }, { filename: file });
   modules.set(name, mod.exports); return mod.exports;
 }
 const model = load('model');
+const sources = load('../lead-sources');
 const now = '2026-10-08T16:00:00.000Z';
 const actor = { companyId: 'tenant-a', brokerId: 'owner', name: 'Responsável sintético', role: 'owner' };
 const caseId = 'demo-case-1', propertyId = 'demo-property-1';
@@ -39,6 +40,51 @@ for (const invalid of [
   command('attendance', { channel: 'WhatsApp', outcome: 'Contato realizado', purpose: 'Aluguel' }),
 ]) rejected(invalid);
 rejected(command('attendance', { channel: 'WhatsApp', outcome: 'Contato realizado' }), /permissão/, { ...actor, companyId: 'tenant-b' });
+
+assert.equal(sources.leadSourceOptions(['Facebook', 'Parceiro local'], 'Campanha antiga').at(-1), 'Outros');
+assert.equal(sources.leadSourceOptions(['Facebook']).filter(value => value === 'Facebook').length, 1);
+assert(sources.leadSourceOptions([], 'Campanha antiga').includes('Campanha antiga'));
+for (const source of sources.LEAD_SOURCE_OPTIONS) assert(sources.validLeadSource(source));
+for (const source of ['', ' Facebook', 'Facebook ', 'Outra fonte desconhecida', 'Outros: ', 'Outros:  Feira', 'Outros: Feira\nLocal', 'Outros: Feira\u200b', 'Outros: ' + 'x'.repeat(193), null, 42]) {
+  assert.equal(sources.validLeadSource(source), false);
+  rejected(command('attendance', { channel: 'WhatsApp', outcome: 'Contato realizado', source }));
+}
+state.settings.sources.push('Parceiro local');
+assert(sources.validLeadSource('Parceiro local', state.settings.sources));
+const sourceRegistration = command('attendance', { channel: 'WhatsApp', outcome: 'Contato realizado', source: 'Facebook' });
+apply(sourceRegistration);
+assert.equal(record(caseId).data.source, 'Facebook');
+assert.equal(record('demo-lead-1').data.source, 'Facebook');
+assert(state.events.some(event => event.recordId === caseId && event.changes?.source?.from === 'WhatsApp' && event.changes.source.to === 'Facebook'));
+assert.equal(model.applyCommand(state, actor, sourceRegistration, now), state);
+rejected({ ...sourceRegistration, data: { ...sourceRegistration.data, source: 'Instagram' } }, /identificador/);
+rejected({ type: 'save', kind: 'cases', id: caseId, data: { source: 'Instagram' } }, /preservados/);
+apply(command('attendance', { channel: 'WhatsApp', outcome: 'Contato realizado', source: 'Outros: Evento no bairro' }));
+assert.equal(record(caseId).data.source, 'Outros: Evento no bairro');
+assert.equal(record('demo-lead-1').data.source, 'Outros: Evento no bairro');
+const beforeLegacySource = 'Campanha antiga com rótulo específico';
+record(caseId).data.source = beforeLegacySource; record('demo-lead-1').data.source = beforeLegacySource;
+apply(command('attendance', { channel: 'Telefone', outcome: 'Contato realizado' }));
+assert.equal(record(caseId).data.source, beforeLegacySource, 'an old client omitting source preserves the exact legacy value');
+apply(command('attendance', { channel: 'WhatsApp', outcome: 'Contato realizado', source: beforeLegacySource }));
+apply(command('attendance', { channel: 'Telefone', outcome: 'Contato realizado', source: 'Parceiro local' }));
+assert.equal(record('demo-lead-1').data.source, 'Parceiro local');
+const limited = structuredClone(state), broker = { ...actor, brokerId: 'broker-source', role: 'broker' };
+limited.members.push({ id: broker.brokerId, name: broker.name, role: 'broker', specialization: 'Ambos' });
+limited.records.find(item => item.id === caseId).data.assignedTo = broker.brokerId;
+assert.throws(() => model.applyCommand(limited, broker, command('attendance', { channel: 'Telefone', outcome: 'Contato realizado', source: 'Instagram' }), now), /permissão/, 'case access alone cannot grant permission to edit its lead');
+const historicalSourceState = structuredClone(state);
+for (const id of [caseId, 'demo-lead-1']) {
+  const item = historicalSourceState.records.find(record => record.id === id);
+  item.legacy = { table: 'leads', id: 'legacy-contact', access: 'assigned', assignedTo: actor.brokerId };
+  item.data.source = '  Campanha histórica  ';
+}
+const historicalUnchanged = model.applyCommand(historicalSourceState, actor, command('attendance', { channel: 'Telefone', outcome: 'Contato realizado' }), now);
+assert.equal(historicalUnchanged.records.find(record => record.id === caseId).data.source, '  Campanha histórica  ', 'omitting source must not silently trim an unchanged canonical legacy source');
+assert.equal(historicalUnchanged.records.find(record => record.id === 'demo-lead-1').data.source, '  Campanha histórica  ');
+const historicalCorrected = model.applyCommand(historicalUnchanged, actor, command('attendance', { channel: 'Telefone', outcome: 'Contato realizado', source: 'Instagram' }), now);
+assert.equal(historicalCorrected.records.find(record => record.id === caseId).data.source, 'Instagram');
+assert.equal(historicalCorrected.records.find(record => record.id === 'demo-lead-1').data.source, 'Instagram');
 
 record(caseId).data.purpose = '';
 record('demo-lead-1').data.purpose = '';

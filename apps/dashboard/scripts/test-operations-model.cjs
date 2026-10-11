@@ -10,7 +10,7 @@ function load(name) {
   if (modules.has(file)) return modules.get(file);
   const mod={exports:{}}; modules.set(file,mod.exports);
   const js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  vm.runInNewContext(js,{module:mod,exports:mod.exports,require:p=>load(path.basename(p)),crypto,structuredClone,URL,Date,console,process},{filename:file});
+  vm.runInNewContext(js,{module:mod,exports:mod.exports,require:p=>load(path.resolve(path.dirname(file),p)),crypto,structuredClone,URL,Date,console,process},{filename:file});
   return mod.exports;
 }
 const m=load('model'), ops=load('operations');

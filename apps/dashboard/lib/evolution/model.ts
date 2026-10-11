@@ -1,6 +1,7 @@
 import { CAPTURE_STAGES, MODULES, NEGOTIATION_STAGES, type Kind } from './schema';
 import { REGISTRATION_ACTIONS, REGISTRATION_CHANNELS, REGISTRATION_OUTCOMES, type RegistrationAction, type RegistrationCommand } from './registration-contract';
 import { DEFAULT_OPERATIONS_SETTINGS, funnelBlockReason, type OperationsSettings } from './operations';
+import { validLeadSource } from '../lead-sources';
 
 export type Value = string | number | boolean;
 export type Actor = { companyId: string; brokerId: string; name: string; role: 'owner' | 'broker' };
@@ -104,6 +105,7 @@ function validateData(state: CrmState, actor: Actor, kind: Kind, raw: Record<str
   const merged = { ...existing?.data, ...raw }, data: Record<string, Value> = {};
   for (const field of definition.fields) {
     const unchangedLegacy = Boolean(existing?.legacy && (raw[field.key] === undefined || raw[field.key] === existing.data[field.key]));
+    if (unchangedLegacy && field.key === 'source') { data[field.key] = existing!.data[field.key] ?? ''; continue; }
     if (unchangedLegacy && field.type === 'url' && String(merged[field.key] || '').startsWith('data:')) { data[field.key] = String(merged[field.key]); continue; }
     const value = text(merged[field.key], field.type === 'textarea' ? 6000 : 500);
     if (!value) { if (field.required && !unchangedLegacy) throw new CrmError(`Preencha ${field.label}.`); data[field.key] = ''; continue; }
@@ -244,12 +246,12 @@ function registrationFingerprint(command: RegistrationCommand): string {
     || typeof command.caseId !== 'string' || !command.caseId.trim() || command.caseId.length > 150
     || typeof command.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(command.requestId)
     || !command.data || typeof command.data !== 'object' || Array.isArray(command.data)) throw new CrmError('Registro inválido. Revise a opção selecionada.');
-  const allowed = ['purpose', 'notes', ...registrationFields[command.action]];
+  const allowed = ['purpose', 'notes', 'source', ...registrationFields[command.action]];
   for (const [key, value] of Object.entries(command.data)) {
     if (!allowed.includes(key)) throw new CrmError('Campo não permitido no registro.');
     if (key === 'confirmed') { if (value !== true) throw new CrmError('Confirme expressamente o fechamento.'); }
     else if (key === 'amount') { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.01 || value > 1e12) throw new CrmError('Informe um valor de proposta válido.'); }
-    else if (typeof value !== 'string' || value.length > (['notes', 'conditions'].includes(key) ? 2000 : 500)) throw new CrmError('Campo de registro inválido ou muito longo.');
+    else if (typeof value !== 'string' || value.length > (['notes', 'conditions'].includes(key) ? 2000 : key === 'source' ? 200 : 500)) throw new CrmError('Campo de registro inválido ou muito longo.');
   }
   if (command.data.purpose !== undefined && !['Venda', 'Aluguel'].includes(command.data.purpose)) throw new CrmError('Selecione Venda ou Aluguel.');
   // An exact, canonical payload fingerprint avoids lossy hashes and collision-based replays.
@@ -278,6 +280,20 @@ function applyRegistration(original: CrmState, actor: Actor, command: Registrati
   if (purpose !== 'Venda' && purpose !== 'Aluguel') throw new CrmError('Informe se este atendimento é de Venda ou Aluguel.');
   if (initial.data.purpose && purpose !== initial.data.purpose) throw new CrmError('A finalidade do atendimento não pode ser trocada neste registro.');
   let state = original;
+  // Source correction is restricted to this explicit human action. Ordinary saves
+  // keep their immutable case/lead identity rules, including source consistency.
+  if (command.data.source !== undefined) {
+    const source = command.data.source;
+    if (!validLeadSource(source, original.settings.sources, String(initial.data.source || ''))) throw new CrmError('Selecione uma origem válida ou informe Outros. Use até 200 caracteres.');
+    if (source !== initial.data.source) {
+      const linked = initial.data.leadId ? editable(original, actor, String(initial.data.leadId), 'leads') : undefined;
+      if (linked && (linked.data.personId !== initial.data.personId || linked.data.source !== initial.data.source)) throw new CrmError('Cliente e origem devem corresponder ao lead vinculado.', 409);
+      if (linked && original.records.some(record => record.kind === 'cases' && record.id !== initial.id && record.data.leadId === linked.id && record.data.source !== source)) throw new CrmError('Este cliente possui outros atendimentos vinculados. A origem e o histórico foram preservados; revise os vínculos antes de corrigir.', 409);
+      state = structuredClone(original);
+      change(state, actor, find(state, initial.id, 'cases'), { source }, now, `Origem do cliente registrada: ${source}`);
+      if (linked) change(state, actor, find(state, linked.id, 'leads'), { source }, now, `Origem do cliente registrada: ${source}`);
+    }
+  }
   const save = (kind: Kind, data: Record<string, Value>, id?: string) => { state = applyCommand(state, actor, { type: 'save', kind, ...(id ? { id } : {}), data }, now); };
   const parent = () => find(state, command.caseId, 'cases');
   const caseUpdate = (data: Record<string, Value>) => save('cases', data, command.caseId);
