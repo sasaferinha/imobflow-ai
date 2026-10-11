@@ -41,6 +41,7 @@ function runtime(react = React, environment = {}) {
         if (id === '@/lib/evolution/registration-contract') return load('lib/evolution/registration-contract.ts');
         if (id === '@/lib/dashboard-transport') return { isProductDemo: () => false, dashboardFetch: () => { throw new Error('Navigation tests must never fetch conversation data'); } };
         if (id === '@/lib/evolution/model') return load('lib/evolution/model.ts');
+        if (id === '@/lib/evolution/historical-funnel') return load('lib/evolution/historical-funnel.ts');
         if (id === '../lead-sources' || id === '@/lib/lead-sources') return load('lib/lead-sources.ts');
         if (id === '@/lib/evolution/schema' || id === './schema') return load('lib/evolution/schema.ts');
         if (id === './registration-contract') return load('lib/evolution/registration-contract.ts');

@@ -400,7 +400,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
           <div className="conversation-contact-heading"><strong>{selected.name}</strong><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}${isCurrentBroker ? ' (você)' : ''}` : 'Sem corretor responsável'}</span></div>
           <div className="conversation-head-actions">
             {canClaim && <button type="button" className="conversation-claim-button" disabled={!ready || saving} onClick={() => void claimConversation()}>Assumir atendimento</button>}
-            <ConversationRegistration key={leadId} leadId={leadId} customerName={selected.name} demonstration={demonstration} disabled={!ready || saving} notify={notify} onSaved={() => {
+            <ConversationRegistration key={leadId} leadId={leadId} customerName={selected.name} allowNewNegotiation demonstration={demonstration} disabled={!ready || saving} notify={notify} onSaved={() => {
               for (const entity of ['leads', 'appointments', 'properties', 'opportunities', 'performance']) announceDashboardChange(entity);
             }} />
             <ConversationAssistant key={`assistant-${leadId}`} leadId={leadId} customerName={selected.name} demonstration={demonstration} disabled={!ready || saving} notify={notify}

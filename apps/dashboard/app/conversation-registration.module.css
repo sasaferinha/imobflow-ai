@@ -1,4 +1,4 @@
-.root { position: relative; flex: 0 0 auto; color: var(--ev-ink, var(--ink, #202735)); font-family: var(--crm-font, Inter, Arial, sans-serif); }
+.root { position: relative; display: inline-flex; flex-wrap: wrap; gap: 8px; flex: 0 1 auto; min-width: 0; color: var(--ev-ink, var(--ink, #202735)); font-family: var(--crm-font, Inter, Arial, sans-serif); }
 .root *, .root *::before, .root *::after { box-sizing: border-box; }
 .root .trigger { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 8px 12px; border: 1px solid var(--ev-line, var(--line, #e4e7ec)); border-radius: 8px; background: var(--ev-paper, var(--paper, #fff)); color: var(--ev-brand-ink, var(--accent-text, #0054cf)); font: 600 13px/1.3 var(--crm-font, Inter, Arial, sans-serif); cursor: pointer; white-space: nowrap; }
 .root .trigger:hover, .root .trigger[aria-expanded="true"] { background: var(--ev-brand-wash, var(--selection, #edf4ff)); border-color: var(--accent, #0066f5); }
@@ -9,6 +9,9 @@
 .menuHeader { padding: 16px 16px 12px; border-bottom: 1px solid var(--ev-line, var(--line, #e4e7ec)); }
 .root .menuHeader strong { display: block; font-size: 14px; line-height: 1.4; font-weight: 750; color: var(--ev-ink, var(--ink, #202735)); }
 .menuHeader span { display: block; margin-top: 3px; color: var(--ev-muted, var(--muted, #657084)); font-size: 12px; overflow-wrap: anywhere; }
+.root .negotiationSelector { display: block; padding: 13px 16px; border-bottom: 1px solid var(--ev-line, var(--line, #e4e7ec)); color: var(--ev-ink, var(--ink, #202735)); background: var(--ev-canvas, var(--canvas, #f7f8fa)); font-size: 12px; font-weight: 700; line-height: 1.4; white-space: normal; }
+.root .negotiationSelector select { display: block; width: 100%; min-width: 0; min-height: 42px; margin-top: 6px; padding: 9px; border: 1px solid var(--ev-line, var(--line, #e4e7ec)); border-radius: 8px; background: var(--ev-paper, var(--paper, #fff)); color: var(--ev-ink, var(--ink, #202735)); font: 400 12px/1.4 var(--crm-font, Inter, Arial, sans-serif); }
+.root .negotiationSelector small { display: block; margin-top: 5px; color: var(--ev-muted, var(--muted, #657084)); font-size: 11px; font-weight: 400; }
 .root .menu .menuItem.menuItem { display: flex; width: 100%; align-items: center; gap: 11px; margin: 0; padding: 10px 16px; min-height: 55px; border: 0; border-radius: 0; background: transparent; color: var(--ev-ink, var(--ink, #202735)); text-align: left; cursor: pointer; }
 .root .menu .menuItem:hover:not(:disabled), .root .menu .menuItem:focus-visible { background: var(--ev-brand-wash, var(--selection, #edf4ff)); }
 .root .menuItem > span:last-child { min-width: 0; color: var(--ev-ink, var(--ink, #202735)); }

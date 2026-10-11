@@ -7,8 +7,8 @@ export type Value = string | number | boolean;
 export type Actor = { companyId: string; brokerId: string; name: string; role: 'owner' | 'broker' };
 export type CrmMember = { id: string; name: string; role: 'owner' | 'broker'; specialization: 'Venda' | 'Aluguel' | 'Ambos'; teamId?: string; permissions?: Partial<Record<Kind, { readOthers: boolean; editOthers: boolean }>> };
 export type LegacyRecordSource = { table: 'leads' | 'properties' | 'appointments'; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; missingPurpose?: boolean };
-export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; createdAt: string; updatedAt: string; createdBy: string; legacy?: LegacyRecordSource };
-export type CrmEvent = { id: string; recordId: string; caseId?: string; at: string; actorId: string; actorName: string; type: string; summary: string; changes?: Record<string, { from: Value; to: Value }>; registration?: { requestId: string; fingerprint: string; action: RegistrationAction } };
+export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; createdAt: string; updatedAt: string; createdBy: string; legacy?: LegacyRecordSource; manualNegotiation?: true; negotiationCaseId?: string };
+export type CrmEvent = { id: string; recordId: string; caseId?: string; at: string; actorId: string; actorName: string; type: string; summary: string; changes?: Record<string, { from: Value; to: Value }>; registration?: { requestId: string; fingerprint: string; action: RegistrationAction; resultCaseId?: string } };
 export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings };
 export type CrmState = { companyId: string; version: number; records: CrmRecord[]; events: CrmEvent[]; members: CrmMember[]; settings: CrmSettings; sourceRevision?: string };
 export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<CrmSettings> } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | RegistrationCommand;
@@ -29,6 +29,14 @@ export function canAccess(state: CrmState, actor: Actor, record: CrmRecord, acti
   if (state.companyId !== actor.companyId) return false;
   if (record.kind === 'notes') return record.createdBy === actor.brokerId;
   if (record.kind === 'messages') return record.createdBy === actor.brokerId || (action === 'read' && record.data.recipientId === actor.brokerId);
+  if (record.kind === 'cases' && record.manualNegotiation) {
+    const contact = state.records.find(item => item.kind === 'people' && item.id === record.data.personId);
+    const lead = state.records.find(item => item.kind === 'leads' && item.id === record.data.leadId && item.data.personId === contact?.id);
+    // Contact WRITE access is the portfolio boundary, including reads of its
+    // extra negotiations. Never grant access from stale saved assignee fields.
+    return Boolean(contact && lead && canAccess(state, actor, contact, 'write') && canAccess(state, actor, lead, 'write'));
+  }
+  if (['proposals', 'tasks'].includes(record.kind) && parentCase(state, record)?.manualNegotiation) return canAccess(state, actor, parentCase(state, record)!, action);
   if (actor.role === 'owner') return true;
   if (['followups','captureGoals','shifts'].includes(record.kind)) return record.data.assignedTo === actor.brokerId && (action === 'read' || record.kind === 'followups');
   // Canonical portfolio ownership cannot be expanded by workspace preferences.
@@ -104,7 +112,7 @@ function validateData(state: CrmState, actor: Actor, kind: Kind, raw: Record<str
   if (Object.keys(raw).some(key => !fields.has(key))) throw new CrmError('Campo não permitido.');
   const merged = { ...existing?.data, ...raw }, data: Record<string, Value> = {};
   for (const field of definition.fields) {
-    const unchangedLegacy = Boolean(existing?.legacy && (raw[field.key] === undefined || raw[field.key] === existing.data[field.key]));
+    const unchangedLegacy = Boolean((existing?.legacy || existing?.manualNegotiation) && (raw[field.key] === undefined || raw[field.key] === existing.data[field.key]));
     if (unchangedLegacy && field.key === 'source') { data[field.key] = existing!.data[field.key] ?? ''; continue; }
     if (unchangedLegacy && field.type === 'url' && String(merged[field.key] || '').startsWith('data:')) { data[field.key] = String(merged[field.key]); continue; }
     const value = text(merged[field.key], field.type === 'textarea' ? 6000 : 500);
@@ -138,6 +146,7 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
   }
   if (record.kind === 'leads' && Number(d.budgetMax) && Number(d.budgetMin) > Number(d.budgetMax)) throw new CrmError('Orçamento máximo deve ser maior ou igual ao mínimo.');
   if (record.kind === 'cases') {
+    if (record.manualNegotiation && previous && previous.data.assignedTo !== d.assignedTo) throw new CrmError('Altere o responsável na área de Conversas. As negociações acompanham a carteira do cliente.', 409);
     const blocked = funnelBlockReason(state,record,previous); if (blocked) throw new CrmError(blocked);
     const stages = d.journey === 'Captação' ? CAPTURE_STAGES : NEGOTIATION_STAGES;
     if (!stages.includes(String(d.stage))) throw new CrmError('Etapa incompatível com a jornada.');
@@ -145,7 +154,7 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
     if (previous && (previous.data.source !== d.source || previous.data.leadId !== d.leadId || previous.data.personId !== d.personId || previous.data.journey !== d.journey)) throw new CrmError('Origem, cliente, lead e jornada são preservados. Abra outro atendimento para uma nova negociação.');
     if (d.leadId) {
       const lead = find(state, String(d.leadId), 'leads');
-      if (lead.data.personId !== d.personId || lead.data.source !== d.source) throw new CrmError('Cliente e origem devem corresponder ao lead vinculado.');
+      if (lead.data.personId !== d.personId || !record.manualNegotiation && lead.data.source !== d.source) throw new CrmError('Cliente e origem devem corresponder ao lead vinculado.');
     }
     const accepted = state.records.find(r => r.kind === 'proposals' && r.data.caseId === record.id && r.data.status === 'Aceita');
     const legacyClosed = previous?.legacy?.lifecycleStatus === 'Convertido';
@@ -240,6 +249,7 @@ const registrationFields: Record<RegistrationAction, readonly string[]> = {
   lead: ['reason'], attendance: ['channel', 'outcome'], schedule: ['taskId', 'propertyId', 'dueAt'],
   visit: ['taskId', 'propertyId', 'occurredAt'], proposal: ['propertyId', 'amount', 'conditions', 'expiresAt', 'status'], close: ['proposalId', 'confirmed', 'reason'],
   correct_close: ['mode', 'proposalId', 'amount', 'conditions', 'reason', 'confirmed'],
+  new_negotiation: ['name', 'purpose', 'propertyId', 'notes'],
 };
 function registrationFingerprint(command: RegistrationCommand): string {
   if (Object.keys(command).some(key => !['type', 'caseId', 'requestId', 'action', 'data'].includes(key))
@@ -247,7 +257,7 @@ function registrationFingerprint(command: RegistrationCommand): string {
     || typeof command.caseId !== 'string' || !command.caseId.trim() || command.caseId.length > 150
     || typeof command.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(command.requestId)
     || !command.data || typeof command.data !== 'object' || Array.isArray(command.data)) throw new CrmError('Registro inválido. Revise a opção selecionada.');
-  const allowed = command.action === 'correct_close' ? command.data.mode === 'reopen' ? ['mode', 'proposalId', 'reason', 'confirmed'] : registrationFields.correct_close : ['purpose', 'notes', 'source', ...registrationFields[command.action]];
+  const allowed = command.action === 'new_negotiation' ? registrationFields.new_negotiation : command.action === 'correct_close' ? command.data.mode === 'reopen' ? ['mode', 'proposalId', 'reason', 'confirmed'] : registrationFields.correct_close : ['purpose', 'notes', 'source', ...registrationFields[command.action]];
   for (const [key, value] of Object.entries(command.data)) {
     if (!allowed.includes(key)) throw new CrmError('Campo não permitido no registro.');
     if (key === 'confirmed') { if (value !== true) throw new CrmError('Confirme expressamente o fechamento.'); }
@@ -266,7 +276,9 @@ export function registrationReplay(state: CrmState, actor: Actor, command: CrmCo
   editable(state, actor, command.caseId, 'cases');
   const previous = state.events.find(event => event.registration?.requestId === command.requestId);
   if (!previous) return false;
-  if (previous.actorId !== actor.brokerId || previous.recordId !== command.caseId || previous.registration?.fingerprint !== fingerprint) throw new CrmError('Este identificador já foi usado por outro registro. Atualize a conversa antes de continuar.', 409);
+  const expectedId = command.action === 'new_negotiation' ? command.requestId : command.caseId;
+  if (previous.actorId !== actor.brokerId || previous.recordId !== expectedId || previous.registration?.fingerprint !== fingerprint) throw new CrmError('Este identificador já foi usado por outro registro. Atualize a conversa antes de continuar.', 409);
+  if (command.action === 'new_negotiation') editable(state, actor, expectedId, 'cases');
   return true;
 }
 function applyClosingCorrection(original: CrmState, actor: Actor, command: Extract<RegistrationCommand, { action: 'correct_close' }>, initial: CrmRecord, fingerprint: string, now: string): CrmState {
@@ -288,7 +300,7 @@ function applyClosingCorrection(original: CrmState, actor: Actor, command: Extra
     summary = `Dados do fechamento corrigidos. Data original, cliente e imóvel preservados · Motivo: ${reason}`;
   } else {
     const linked = initial.data.leadId ? editable(original, actor, String(initial.data.leadId), 'leads') : undefined;
-    if (linked && (linked.data.personId !== initial.data.personId || linked.data.source !== initial.data.source)) throw new CrmError('Os vínculos do cliente precisam ser revisados antes de reabrir.', 409);
+    if (linked && (linked.data.personId !== initial.data.personId || !initial.manualNegotiation && linked.data.source !== initial.data.source)) throw new CrmError('Os vínculos do cliente precisam ser revisados antes de reabrir.', 409);
     if (proposal) {
       const property = editable(original, actor, String(proposal.data.propertyId), 'properties');
       const closedStatus = initial.data.purpose === 'Aluguel' ? 'Alugado' : 'Vendido';
@@ -307,7 +319,7 @@ function applyClosingCorrection(original: CrmState, actor: Actor, command: Extra
       change(state, actor, find(state, property.id, 'properties'), { status: propertyStatus.changes!.status.from }, now, `Disponibilidade anterior restaurada após correção · Motivo: ${reason}`);
     }
     change(state, actor, parent, { status: 'Aberto', stage: proposal ? 'Proposta' : 'Atendimento', closedAt: '', stageEnteredAt: now, reason }, now, `Fechamento desfeito · Motivo: ${reason}`);
-    if (linked) change(state, actor, find(state, linked.id, 'leads'), { status: 'Em atendimento' }, now, `Atendimento reaberto após correção · Motivo: ${reason}`);
+    if (linked && !initial.manualNegotiation) change(state, actor, find(state, linked.id, 'leads'), { status: 'Em atendimento' }, now, `Atendimento reaberto após correção · Motivo: ${reason}`);
     summary = proposal ? `Fechamento desfeito; atendimento reaberto em Proposta · Motivo: ${reason}` : `Fechamento importado desfeito; somente o atendimento foi reaberto. Nenhum imóvel foi alterado · Motivo: ${reason}`;
   }
   parent.updatedAt = now;
@@ -320,6 +332,26 @@ function applyRegistration(original: CrmState, actor: Actor, command: Registrati
   if (registrationReplay(original, actor, command)) return original;
   const initial = editable(original, actor, command.caseId, 'cases');
   if (initial.data.journey !== 'Negociação') throw new CrmError('Este registro pertence à jornada de negociação.');
+  if (command.action === 'new_negotiation') {
+    const name = text(command.data.name, 200), purpose = command.data.purpose;
+    if (!name || !['Venda', 'Aluguel'].includes(purpose)) throw new CrmError('Informe o objetivo da nova negociação e selecione Venda ou Aluguel.');
+    if (original.records.some(record => record.id === command.requestId)) throw new CrmError('Este identificador já pertence a um cadastro. Atualize a conversa.', 409);
+    const contact = editable(original, actor, String(initial.data.personId), 'people');
+    const linked = editable(original, actor, String(initial.data.leadId), 'leads');
+    if (linked.data.personId !== contact.id) throw new CrmError('O vínculo deste cliente precisa ser revisado.', 409);
+    if (command.data.propertyId) {
+      const property = find(original, command.data.propertyId, 'properties');
+      if (!canAccess(original, actor, property)) deny();
+      if (property.data.purpose !== purpose || !['Disponível', 'Reservado'].includes(String(property.data.status))) throw new CrmError('Selecione um imóvel disponível da finalidade escolhida.');
+    }
+    const state = structuredClone(original);
+    const record: CrmRecord = { id: command.requestId, kind: 'cases', manualNegotiation: true, createdBy: actor.brokerId, createdAt: now, updatedAt: now, data: { name, personId: contact.id, leadId: linked.id, source: linked.data.source || '', assignedTo: contact.data.assignedTo || '', purpose, journey: 'Negociação', stage: 'Lead', status: 'Aberto', propertyId: command.data.propertyId || '', notes: text(command.data.notes, 2000), reason: '', nextActivityAt: '', stageEnteredAt: now } };
+    state.records.push(record);
+    addEvent(state, actor, record, now, 'created', 'Nova negociação criada manualmente', Object.fromEntries(Object.entries(record.data).map(([key, value]) => [key, { from: '', to: value }])));
+    state.events.push({ id: crypto.randomUUID(), recordId: record.id, caseId: record.id, at: now, actorId: actor.brokerId, actorName: actor.name, type: 'registration', summary: `Nova negociação · ${name} · ${purpose}. Cadastro e conversa do cliente preservados.`, registration: { requestId: command.requestId, fingerprint, action: command.action, resultCaseId: record.id } });
+    state.version = original.version + 1;
+    return state;
+  }
   if (command.action === 'correct_close') return applyClosingCorrection(original, actor, command, initial, fingerprint, now);
   if (initial.data.status !== 'Aberto' || initial.data.stage === 'Negociado' || initial.legacy?.lifecycleStatus === 'Convertido'
     || original.records.some(record => record.kind === 'proposals' && record.data.caseId === initial.id && record.data.status === 'Aceita')) throw new CrmError('O atendimento não está aberto. O resultado e o histórico existentes foram preservados.', 409);
@@ -335,11 +367,11 @@ function applyRegistration(original: CrmState, actor: Actor, command: Registrati
     if (!validLeadSource(source, original.settings.sources, String(initial.data.source || ''))) throw new CrmError('Selecione uma origem válida ou informe Outros. Use até 200 caracteres.');
     if (source !== initial.data.source) {
       const linked = initial.data.leadId ? editable(original, actor, String(initial.data.leadId), 'leads') : undefined;
-      if (linked && (linked.data.personId !== initial.data.personId || linked.data.source !== initial.data.source)) throw new CrmError('Cliente e origem devem corresponder ao lead vinculado.', 409);
-      if (linked && original.records.some(record => record.kind === 'cases' && record.id !== initial.id && record.data.leadId === linked.id && record.data.source !== source)) throw new CrmError('Este cliente possui outros atendimentos vinculados. A origem e o histórico foram preservados; revise os vínculos antes de corrigir.', 409);
+      if (linked && (linked.data.personId !== initial.data.personId || !initial.manualNegotiation && linked.data.source !== initial.data.source)) throw new CrmError('Cliente e origem devem corresponder ao lead vinculado.', 409);
+      if (linked && !initial.manualNegotiation && original.records.some(record => record.kind === 'cases' && !record.manualNegotiation && record.id !== initial.id && record.data.leadId === linked.id && record.data.source !== source)) throw new CrmError('Este cliente possui outros atendimentos vinculados. A origem e o histórico foram preservados; revise os vínculos antes de corrigir.', 409);
       state = structuredClone(original);
       change(state, actor, find(state, initial.id, 'cases'), { source }, now, `Origem do cliente registrada: ${source}`);
-      if (linked) change(state, actor, find(state, linked.id, 'leads'), { source }, now, `Origem do cliente registrada: ${source}`);
+      if (linked && !initial.manualNegotiation) change(state, actor, find(state, linked.id, 'leads'), { source }, now, `Origem do cliente registrada: ${source}`);
     }
   }
   const save = (kind: Kind, data: Record<string, Value>, id?: string) => { state = applyCommand(state, actor, { type: 'save', kind, ...(id ? { id } : {}), data }, now); };
@@ -417,7 +449,7 @@ function applyRegistration(original: CrmState, actor: Actor, command: Registrati
   }
   const linkedLead = parent().data.leadId && state.records.find(record => record.kind === 'leads' && record.id === parent().data.leadId);
   // Canonical legacy lead status is derived from the case by the atomic SQL bridge.
-  if (linkedLead && !linkedLead.legacy) save('leads', { status: command.action === 'lead' ? 'Pendente' : 'Em atendimento', ...(!linkedLead.data.purpose ? { purpose } : {}) }, linkedLead.id);
+  if (linkedLead && !linkedLead.legacy && !initial.manualNegotiation) save('leads', { status: command.action === 'lead' ? 'Pendente' : 'Em atendimento', ...(!linkedLead.data.purpose ? { purpose } : {}) }, linkedLead.id);
   // Even an already-current stage is a new, dated human event. No bot takeover or last_contact_at update.
   state = structuredClone(state);
   const registeredCase = find(state, command.caseId, 'cases'); registeredCase.updatedAt = now;
@@ -435,7 +467,7 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
   if (command.type === 'save') {
     const previous = command.id ? editable(state, actor, text(command.id), command.kind) : undefined;
     const data = validateData(state, actor, command.kind, command.data, previous);
-    const record: CrmRecord = { id: previous?.id || crypto.randomUUID(), kind: command.kind, data: { ...previous?.data, ...data }, createdBy: previous?.createdBy || actor.brokerId, createdAt: previous?.createdAt || now, updatedAt: now, ...(previous?.legacy ? { legacy: previous.legacy } : {}) };
+    const record: CrmRecord = { id: previous?.id || crypto.randomUUID(), kind: command.kind, data: { ...previous?.data, ...data }, createdBy: previous?.createdBy || actor.brokerId, createdAt: previous?.createdAt || now, updatedAt: now, ...(previous?.legacy ? { legacy: previous.legacy } : {}), ...(previous?.manualNegotiation ? { manualNegotiation: true } : {}), ...(previous?.negotiationCaseId ? { negotiationCaseId: previous.negotiationCaseId } : {}) };
     if (!canAccess(state, actor, record, 'write')) deny();
     validateBusiness(state, actor, record, previous);
     if (record.kind === 'keys') { record.data.checkedOutAt = previous?.data.checkedOutAt || now; if (record.data.status === 'Devolvida') record.data.returnedAt = now; }
