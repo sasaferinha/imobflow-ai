@@ -220,6 +220,29 @@ const importedOpened = model.applyCommand(imported, actor, command('correct_clos
 assert.equal(importedOpened.records.find(item => item.id === caseId).data.stage, 'Atendimento');
 assert.equal(JSON.stringify(importedOpened.records.find(item => item.id === propertyId)), importedPropertyBefore);
 assert.match(importedOpened.events.at(-1).summary, /Nenhum imóvel foi alterado/);
+const newInterest = command('new_negotiation', { name: 'Apartamento para investimento', purpose: 'Venda', notes: 'Objetivo informado manualmente.' });
+const closedContext = structuredClone(directAccepted), baseContact = JSON.stringify(closedContext.records.find(item => item.id === 'demo-lead-1')), baseCase = JSON.stringify(closedContext.records.find(item => item.id === caseId));
+const newInterestState = model.applyCommand(closedContext, actor, newInterest, now);
+const newCase = newInterestState.records.find(item => item.id === newInterest.requestId);
+assert.equal(newCase.manualNegotiation, true); assert.equal(newCase.data.stage, 'Lead'); assert.equal(newCase.data.status, 'Aberto');
+assert.equal(newCase.data.personId, record(caseId).data.personId); assert.equal(newCase.data.leadId, 'demo-lead-1');
+assert.equal(newCase.data.purpose, 'Venda');
+assert.equal(JSON.stringify(newInterestState.records.find(item => item.id === 'demo-lead-1')), baseContact);
+assert.equal(JSON.stringify(newInterestState.records.find(item => item.id === caseId)), baseCase);
+assert.equal(newInterestState.records.filter(item => item.kind === 'people').length, closedContext.records.filter(item => item.kind === 'people').length);
+assert.equal(newInterestState.records.filter(item => item.kind === 'leads').length, closedContext.records.filter(item => item.kind === 'leads').length);
+assert.equal(model.applyCommand(newInterestState, actor, newInterest, now), newInterestState);
+assert.equal(newInterestState.events.at(-1).registration.resultCaseId, newCase.id);
+assert.equal(newInterestState.events.at(-1).recordId, newCase.id, 'creation must not add manual stage evidence to the primary case');
+const extraAttendance = model.applyCommand(newInterestState, actor, command('attendance', { channel: 'Telefone', outcome: 'Contato realizado', source: 'Instagram' }, newCase.id), now);
+assert.equal(extraAttendance.records.find(item => item.id === newCase.id).data.source, 'Instagram');
+assert.equal(JSON.stringify(extraAttendance.records.find(item => item.id === 'demo-lead-1')), baseContact);
+assert.equal(JSON.stringify(extraAttendance.records.find(item => item.id === caseId)), baseCase);
+const extraEdited = model.applyCommand(extraAttendance, actor, { type: 'save', kind: 'cases', id: newCase.id, data: { notes: 'Revisão manual do objetivo' } }, now);
+assert.equal(extraEdited.records.find(item => item.id === newCase.id).manualNegotiation, true);
+for (const data of [{ name: '', purpose: 'Venda' }, { name: 'Objetivo', purpose: 'Outro' }, { name: 'Objetivo', purpose: 'Venda', personId: 'other-person' }, { name: 'Objetivo', purpose: 'Venda', source: 'Site' }, { name: 'Objetivo', purpose: 'Venda', assignedTo: 'other-broker' }, { name: 'Objetivo', purpose: 'Venda', propertyId }]) {
+  assert.throws(() => model.applyCommand(closedContext, actor, command('new_negotiation', data), now));
+}
 assert.equal(state.records.filter(item => item.kind === 'messages').length, 0);
 assert.ok(!state.events.some(item => item.type === 'automatic'), 'all registrations record explicit human actions');
 console.log('PASS registration model: strict command/data validation, immutable failures, no account reassignment, explicit missing purpose, São Paulo scheduling, no duplicate visits, valid completion only, no accidental stage regression, preserved prior history, proposal/closure separation, expiry/property/case guards and exact replay.');

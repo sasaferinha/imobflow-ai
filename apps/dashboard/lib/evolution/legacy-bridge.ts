@@ -127,11 +127,23 @@ export function mergeLegacyBridge(state: CrmState, bridge: LegacyBridge): CrmSta
   if (state.companyId !== bridge.companyId) throw new CrmError('Empresa inválida.', 403);
   const mapped = mapLegacyRecords(bridge), mappedIds = new Set(mapped.map(r => r.id));
   const manual = manualCaseIds(state);
-  const native = (state.records as MappedRecord[]).filter(r => !r.legacy && !/^(person|lead|case|property|appointment):/.test(r.id));
+  const native = (state.records as MappedRecord[]).filter(r => !r.legacy && !/^(person|lead|case|property|appointment):/.test(r.id)).map(record => {
+    if (record.kind !== 'cases' || !record.manualNegotiation) return record;
+    const contact = mapped.find(item => item.kind === 'people' && item.id === record.data.personId);
+    // Only ownership follows the canonical contact. The objective, origin,
+    // purpose, stage and outcome remain the independent manual negotiation.
+    return { ...record, data: { ...record.data, assignedTo: contact?.data.assignedTo || '' } };
+  });
   const merged = mapped.map(record => {
     const saved = (state.records as MappedRecord[]).find(r => r.id === record.id && r.kind === record.kind);
     const data = { ...record.data, ...saved?.data };
     for (const key of canonicalFields[record.kind] || []) data[key] = record.data[key];
+    if (record.kind === 'tasks' && saved?.negotiationCaseId) {
+      const parent = native.find(item => item.kind === 'cases' && item.manualNegotiation && item.id === saved.negotiationCaseId);
+      const row = bridge.appointments.find(item => item.id === record.legacy?.id);
+      if (!parent || !row || parent.data.personId !== canonicalId('person', str(row.lead_id)) || parent.data.leadId !== canonicalId('lead', str(row.lead_id))) throw new CrmError('O vínculo da visita com a negociação precisa ser revisado. Nenhuma atividade foi transferida.', 409);
+      data.caseId = parent.id;
+    }
     const manualStage = record.kind === 'cases' && manual.has(record.id);
     if (record.kind === 'cases' && saved && (!manualStage || !['Novo', 'Em atendimento'].includes(record.legacy?.lifecycleStatus || '')) && saved.legacy?.lifecycleStatus !== record.legacy?.lifecycleStatus) {
       for (const key of ['stage','status']) data[key] = record.data[key];
@@ -233,6 +245,17 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
       && validLeadSource(current.data.source, before.settings.sources, str(previous.data.source))) registeredSources.set(current.legacy.id, str(current.data.source));
   }
   const modified = (after.records as MappedRecord[]).filter(r => { const previous = before.records.find(p => p.id === r.id); return !previous || stable(previous.data) !== stable(r.data) || (r.kind === 'cases' && registeredCases.has(r.id)); });
+  const guardedContacts = new Map<string, LegacyRow>();
+  for (const record of [...modified, ...newEvents.map(event => after.records.find(item => item.id === event.recordId)).filter((item): item is CrmRecord => Boolean(item))]) {
+    const parent = record.kind === 'cases' ? record : after.records.find(item => item.kind === 'cases' && item.id === record.data.caseId);
+    if (!parent?.manualNegotiation) continue;
+    const raw = rawId(parent.data.personId, 'person');
+    const row = raw && bridge.leads.find(item => item.id === raw);
+    const contact = before.records.find(item => item.kind === 'people' && item.id === parent.data.personId);
+    if (!row || !contact || parent.legacy || parent.data.leadId !== canonicalId('lead', row.id)) throw new CrmError('O cliente desta negociação não está vinculado à base real.', 409);
+    assertScope(actor, contact);
+    guardedContacts.set(row.id, row);
+  }
   // Allocate stable IDs before resolving the references of other records.
   for (const record of modified) {
     if (before.records.some(r => r.id === record.id) || record.legacy) continue;
@@ -264,7 +287,7 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
       if (changed(previous,record,'status')) target.data.lifecycle_status = d.status === 'Descartado' ? 'Perdido' : d.status === 'Pendente' ? 'Novo' : row?.lifecycle_status && !['Novo','Perdido'].includes(str(row.lifecycle_status)) ? row.lifecycle_status : 'Em atendimento';
       if (changed(previous,record,'features')) target.data.interest_profile = { ...object(row?.interest_profile), features: str(d.features).split(',').map(s => s.trim()).filter(Boolean) };
     }
-    if (record.kind === 'cases') {
+    if (record.kind === 'cases' && !record.manualNegotiation) {
       let id = record.legacy?.table === 'leads' ? record.legacy.id : undefined;
       if (!id && !previous && d.journey === 'Negociação') {
         id = rawId(renames.get(str(d.personId)) || d.personId,'person');
@@ -308,6 +331,7 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
       if (canonicalContact) assertScope(actor,canonicalContact);
       else if (!plans.has(`leads:${leadId}`)) throw new CrmError('Cliente indisponível. Atualize a página.',409);
       if (!row) { if (!uuid.test(id)) throw new CrmError('Identificador de agenda inválido.',400); renames.set(record.id,canonicalId('appointment',id)); Object.assign(target.data,{lead_id:leadId,property_id:propertyId}); }
+      if (parent?.manualNegotiation) record.negotiationCaseId = parent.id;
       if (d.type !== 'Visita') throw new CrmError('Uma visita vinculada à agenda não pode mudar de tipo.',409);
       for (const [key,column] of Object.entries({ dueAt:'scheduled_at',notes:'notes' })) if (changed(previous,record,key)) target.data[column] = nullable(d[key]);
       if (changed(previous,record,'propertyId')) target.data.property_id = propertyId;
@@ -344,6 +368,9 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
     }
   }
   const writes = [...plans.values()].filter(w => w.operation === 'insert' || Object.entries(w.data).some(([key,value]) => stable(w.expected?.[key]) !== stable(value))).sort((a,b) => ['leads','properties','appointments'].indexOf(a.table)-['leads','properties','appointments'].indexOf(b.table));
+  // Even a workspace-only comment or generic edit must lock/recheck the real
+  // contact and live conversation portfolio in the existing atomic SQL RPC.
+  for (const [id, row] of guardedContacts) if (!writes.some(write => write.table === 'leads' && write.id === id)) writes.unshift({ table: 'leads', id, operation: 'update', expected: { ...row }, data: {} });
   // Annotate newly canonical records now, so they never become orphan native copies between reads.
   const next = renameState(after,renames);
   for (const record of next.records as MappedRecord[]) {

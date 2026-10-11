@@ -71,6 +71,19 @@ function closedFixture({ role = 'owner', legacyOnly = false, withHistory = true 
   ];
   return result;
 }
+function negotiationFixture({ closed = false } = {}) {
+  const result = fixture({ closed });
+  const primary = result.state.records.find(item => item.id === caseId);
+  const person = result.state.records.find(item => item.kind === 'people');
+  person.data.assignedTo = result.actor.brokerId;
+  primary.data.leadId = `lead:${uuid(102)}`;
+  result.state.records.push({ ...structuredClone(primary), id: primary.data.leadId, kind: 'leads', data: { name: 'Interesse principal', personId: person.id, assignedTo: result.actor.brokerId, source: 'WhatsApp', purpose: 'Venda', status: 'Pendente' } });
+  result.state.records.push({ ...structuredClone(primary), id: uuid(701), legacy: undefined, manualNegotiation: true, data: { ...primary.data, name: 'Alugar apartamento', purpose: 'Aluguel', stage: 'Lead', status: 'Aberto', propertyId: '' } });
+  result.state.records.push({ ...structuredClone(primary), id: uuid(702), data: { ...primary.data, name: 'Outro cliente', personId: uuid(999) } });
+  result.state.records.push({ ...structuredClone(primary), id: uuid(703), data: { ...primary.data, name: 'Captação separada', journey: 'Captação', stage: 'Avaliação' } });
+  result.state.records.push({ ...structuredClone(result.state.records.find(item => item.id === propertyId)), id: uuid(704), legacy: undefined, data: { name: 'Apartamento para alugar', purpose: 'Aluguel', status: 'Disponível' } });
+  return result;
+}
 
 function harness({ props = {}, response, snapshot = fixture(), demoPath = false } = {}) {
   const slots = [], effects = [], calls = [], notifications = [], listeners = new Map(), timers = new Map(), cache = new Map();
@@ -134,6 +147,7 @@ function harness({ props = {}, response, snapshot = fixture(), demoPath = false 
   render();
   return {
     calls, snapshot, timers, notifications, render,
+    applyCommand: (state, actor, command) => load('lib/evolution/model.ts').applyCommand(state, actor, command),
     get tree() { return tree; }, get saved() { return saved; }, get focusCount() { return focusCount; },
     async settle() { for (let i = 0; i < 16; i++) await Promise.resolve(); render(); },
     async open() { trigger(tree).props.onClick(); render(); await this.settle(); },
@@ -188,6 +202,104 @@ async function run() {
   const disabled = harness({ props: { disabled: true } });
   assert.equal(trigger(disabled.tree).props.disabled, true); await disabled.open();
   assert.equal(disabled.calls.length, 0); disabled.unmount();
+
+  let manualState = negotiationFixture();
+  const manual = harness({ props: { allowNewNegotiation: true }, response: call => {
+    if (call.options.method === 'POST') manualState = { ...manualState, state: manual.applyCommand(manualState.state, manualState.actor, JSON.parse(call.options.body).command) };
+    return Response.json(manualState);
+  } });
+  assert.equal(nodes(manual.tree).filter(node => node.type === 'button').length, 2, 'conversation exposes an explicit manual creation button');
+  assert.equal(manual.calls.length, 0, 'the extra button does not trigger background work');
+  await manual.open();
+  const negotiationSelect = control(manual.tree, 'Negociação deste registro');
+  assert.deepEqual(nodes(negotiationSelect).filter(node => node.type === 'option').map(node => node.props.value), [caseId, uuid(701)], 'selector includes only visible negotiations of this person');
+  find(manual.tree, node => node.props.role === 'menu').props.onKeyDown({ key: 'Tab' }); manual.render();
+  assert(control(manual.tree, 'Negociação deste registro'), 'Tab keeps the modal available so the native selector is keyboard reachable');
+  manual.change('Negociação deste registro', uuid(701)); manual.select('Agendar visita');
+  assert.match(text(manual.tree), /Alugar apartamento · Aluguel/);
+  assert.equal(control(manual.tree, 'Agendamento'), undefined, 'another negotiation does not inherit the primary visit');
+  assert(!text(control(manual.tree, 'Imóvel')).includes('Imóvel teste'), 'properties follow the selected negotiation purpose');
+  button(manual.tree, 'Cancelar').props.onClick(); manual.render();
+  await manual.open(); assert.equal(control(manual.tree, 'Negociação deste registro').props.value, uuid(701), 'active negotiation persists between registrations');
+  assert.match(text(manual.tree), /Esta negociação é manual. As mudanças de etapa dependem do seu registro/);
+  assert(!text(manual.tree).includes('A IA identifica'), 'extra negotiations never promise automatic stage classification');
+  manual.select('Negociado'); assert.match(text(manual.tree), /Registre uma proposta enviada/, 'primary proposal is not offered to close a different negotiation');
+  button(manual.tree, 'Cancelar').props.onClick(); manual.render();
+  button(manual.tree, '+ Nova negociação').props.onClick(); manual.render(); await manual.settle();
+  assert.match(text(manual.tree), /mantendo a mesma pessoa e conversa/);
+  assert.equal(control(manual.tree, 'Objetivo da negociação').props.maxLength, 200);
+  assert.equal(control(manual.tree, 'Finalidade').props.value, '', 'manual purpose is explicit instead of copied from the primary');
+  assert.equal(control(manual.tree, 'Imóvel').props.required, false);
+  assert.equal(control(manual.tree, 'WhatsApp'), undefined, 'creation inherits source on the server, without silently rewriting it');
+  assert.equal(submitButton(manual.tree).props.disabled, true);
+  manual.change('Objetivo da negociação', '  Casa para investimento  '); manual.change('Finalidade', 'Venda');
+  manual.change('Imóvel', propertyId); manual.change('Finalidade', 'Aluguel');
+  assert.equal(control(manual.tree, 'Imóvel').props.value, '', 'changing purpose clears an incompatible property');
+  manual.change('Observação', 'Objetivo adicional'); await manual.submit();
+  const creation = JSON.parse(manual.calls.filter(call => call.options.method === 'POST')[0].options.body).command;
+  assert.equal(creation.action, 'new_negotiation'); assert.equal(creation.caseId, uuid(701));
+  assert.deepEqual(creation.data, { name: 'Casa para investimento', purpose: 'Aluguel', notes: 'Objetivo adicional' });
+  assert.equal(manualState.state.records.filter(item => item.kind === 'people').length, 1, 'manual creation preserves the same person');
+  assert.equal(manualState.state.records.find(item => item.id === caseId).data.purpose, 'Venda');
+  assert.match(manual.notifications.at(-1), /está selecionada/);
+  await manual.open(); assert.equal(control(manual.tree, 'Negociação deste registro').props.value, creation.requestId, 'new negotiation becomes active only after the successful save');
+  manual.select('Iniciar atendimento'); await manual.submit();
+  assert.equal(JSON.parse(manual.calls.filter(call => call.options.method === 'POST')[1].options.body).command.caseId, creation.requestId);
+  assert.equal(manualState.state.records.find(item => item.id === creation.requestId).data.stage, 'Atendimento');
+  assert.equal(manualState.state.records.find(item => item.id === uuid(701)).data.stage, 'Lead', 'subsequent registration leaves the other negotiation unchanged'); manual.unmount();
+
+  const fixedDetail = harness({ props: { caseId: uuid(701) }, snapshot: negotiationFixture() }); await fixedDetail.open();
+  assert.equal(control(fixedDetail.tree, 'Negociação deste registro'), undefined, 'a record detail remains pinned to its own case');
+  fixedDetail.select('Iniciar atendimento'); await fixedDetail.submit();
+  assert.equal(JSON.parse(fixedDetail.calls.at(-1).options.body).command.caseId, uuid(701)); fixedDetail.unmount();
+
+  const closedManual = harness({ props: { allowNewNegotiation: true }, snapshot: negotiationFixture({ closed: true }) });
+  button(closedManual.tree, '+ Nova negociação').props.onClick(); closedManual.render(); await closedManual.settle();
+  closedManual.change('Objetivo da negociação', 'Novo interesse após fechamento'); closedManual.change('Finalidade', 'Venda');
+  assert.equal(submitButton(closedManual.tree).props.disabled, false, 'manual creation is independent of the previous closing and qualification'); closedManual.unmount();
+
+  const manualDemo = harness({ props: { allowNewNegotiation: true, demonstration: true } });
+  button(manualDemo.tree, '+ Nova negociação').props.onClick(); manualDemo.render(); await manualDemo.settle();
+  manualDemo.change('Objetivo da negociação', 'Segundo objetivo sintético'); manualDemo.change('Finalidade', 'Aluguel'); await manualDemo.submit();
+  assert.equal(formNode(manualDemo.tree), undefined); assert.equal(manualDemo.calls.length, 0);
+  await manualDemo.open(); assert.match(text(control(manualDemo.tree, 'Negociação deste registro')), /Segundo objetivo sintético/); manualDemo.unmount();
+
+  for (const status of [503, 409]) {
+    let reconciledState = negotiationFixture(), creationCommand;
+    const creationRace = harness({ props: { allowNewNegotiation: true }, response: call => {
+      if (call.options.method === 'POST') {
+        creationCommand = JSON.parse(call.options.body).command;
+        reconciledState = { ...reconciledState, state: creationRace.applyCommand(reconciledState.state, reconciledState.actor, creationCommand) };
+        return Response.json({ error: 'Synthetic uncertain response' }, { status });
+      }
+      return Response.json(reconciledState);
+    } });
+    button(creationRace.tree, '+ Nova negociação').props.onClick(); creationRace.render(); await creationRace.settle();
+    creationRace.change('Objetivo da negociação', 'Comprar terreno'); creationRace.change('Finalidade', 'Venda'); await creationRace.submit();
+    if (status === 503) { await button(creationRace.tree, 'Verificar dados atualizados').props.onClick(); await creationRace.settle(); }
+    assert.equal(formNode(creationRace.tree), undefined, `new case audit reconciles a ${status} response`);
+    assert.equal(creationRace.calls.filter(call => call.options.method === 'POST').length, 1, 'reconciliation does not create a duplicate negotiation');
+    await creationRace.open(); assert.equal(control(creationRace.tree, 'Negociação deste registro').props.value, creationCommand.requestId); creationRace.unmount();
+  }
+  let retryState = negotiationFixture(), failCreation = true;
+  const creationRetry = harness({ props: { allowNewNegotiation: true }, response: call => {
+    if (call.options.method === 'POST') {
+      if (failCreation) return Response.json({ error: 'Synthetic timeout' }, { status: 503 });
+      retryState = { ...retryState, state: creationRetry.applyCommand(retryState.state, retryState.actor, JSON.parse(call.options.body).command) };
+    }
+    return Response.json(retryState);
+  } });
+  button(creationRetry.tree, '+ Nova negociação').props.onClick(); creationRetry.render(); await creationRetry.settle();
+  creationRetry.change('Objetivo da negociação', 'Casa de férias'); creationRetry.change('Finalidade', 'Venda'); await creationRetry.submit();
+  assert.equal(find(creationRetry.tree, node => node.type === 'fieldset').props.disabled, true, 'unknown creation keeps the objective and purpose immutable');
+  button(creationRetry.tree, 'Cancelar').props.onClick(); creationRetry.render();
+  button(creationRetry.tree, '+ Nova negociação').props.onClick(); creationRetry.render();
+  assert.equal(control(creationRetry.tree, 'Objetivo da negociação').props.value, 'Casa de férias', 'reopening restores an unresolved creation instead of starting a second negotiation');
+  await button(creationRetry.tree, 'Verificar dados atualizados').props.onClick(); await creationRetry.settle();
+  creationRetry.change('Conferi os dados atualizados', true); failCreation = false; await creationRetry.submit();
+  const creationAttempts = creationRetry.calls.filter(call => call.options.method === 'POST').map(call => JSON.parse(call.options.body).command);
+  assert.deepEqual(creationAttempts[0], creationAttempts[1], 'reviewed creation retries reuse the exact UUID and data');
+  assert.equal(retryState.state.records.filter(item => item.id === creationAttempts[0].requestId).length, 1); creationRetry.unmount();
 
   const drafts = [
     ['Lead', 'lead', [['Motivo do retorno', 'Contato classificado por engano.']]],
@@ -431,6 +543,6 @@ async function run() {
   trigger(unmounted.tree).props.onClick(); unmounted.render(); unmounted.unmount(); await unmounted.settle();
   assert.equal(unmounted.calls[0].options.signal.aborted, true, 'leaving the conversation aborts its old request');
   assert.equal(unmounted.saved, 0);
-  console.log('PASS registration UI: six explicit forms, one accessible origin choice, legacy origins preserved, optional Others detail, channel independent from origin, no demo network, closed/role guards, timeout and duplicate-click protection, preserved origin on idempotent retries and conflict reconciliation. Synthetic hooks and network only.');
+  console.log('PASS registration UI: six stage forms, source preservation, closing correction, manual negotiation creation independent of qualification/closing, same-person selector and case isolation, automatic selection after save/replay, local demo, permissions, nested Escape, timeout and idempotent conflict recovery. Synthetic hooks and network only.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

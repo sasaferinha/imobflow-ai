@@ -7,9 +7,9 @@ import { REGISTRATION_CHANNELS, REGISTRATION_OUTCOMES, type RegistrationAction, 
 import LeadSourcePicker from './lead-source-picker';
 import s from './conversation-registration.module.css';
 
-type Props = { leadId?: string; caseId?: string; customerName: string; triggerAction?: 'correct_close'; demonstration?: boolean; demoSnapshot?: Snapshot; onDemoSaved?: (state: CrmState) => void; disabled?: boolean; onSaved?: () => void; notify?: (message: string) => void };
+type Props = { leadId?: string; caseId?: string; customerName: string; triggerAction?: 'correct_close'; allowNewNegotiation?: boolean; demonstration?: boolean; demoSnapshot?: Snapshot; onDemoSaved?: (state: CrmState) => void; disabled?: boolean; onSaved?: () => void; notify?: (message: string) => void };
 type Snapshot = { state: CrmState; actor: Actor };
-type FormValues = { purpose: string; source: string; sourceChanged: boolean; notes: string; reason: string; channel: string; outcome: string; propertyId: string; date: string; time: string; taskId: string; proposalId: string; amount: string; conditions: string; expiresAt: string; status: string; correctionMode: 'edit' | 'reopen'; confirmed: boolean };
+type FormValues = { name: string; purpose: string; source: string; sourceChanged: boolean; notes: string; reason: string; channel: string; outcome: string; propertyId: string; date: string; time: string; taskId: string; proposalId: string; amount: string; conditions: string; expiresAt: string; status: string; correctionMode: 'edit' | 'reopen'; confirmed: boolean };
 const options: { action: RegistrationAction; label: string; description: string; number: string }[] = [
   { action: 'lead', label: 'Lead', description: 'Manter no catálogo, aguardando atendimento', number: '01' },
   { action: 'attendance', label: 'Iniciar atendimento', description: 'Registrar o contato e seu resultado', number: '02' },
@@ -19,7 +19,8 @@ const options: { action: RegistrationAction; label: string; description: string;
   { action: 'close', label: 'Negociado', description: 'Confirmar o fechamento de uma proposta', number: '06' },
 ];
 const correctionOption = { action: 'correct_close' as const, label: 'Editar fechamento', description: 'Corrigir os dados ou desfazer um fechamento', number: '07' };
-const blankForm = (): FormValues => ({ purpose: '', source: '', sourceChanged: false, notes: '', reason: '', channel: 'WhatsApp', outcome: 'Contato realizado', propertyId: '', date: '', time: '', taskId: '', proposalId: '', amount: '', conditions: '', expiresAt: '', status: 'Enviada', correctionMode: 'edit', confirmed: false });
+const newNegotiationOption = { action: 'new_negotiation' as const, label: 'Nova negociação', description: 'Outro objetivo do mesmo cliente', number: '+' };
+const blankForm = (): FormValues => ({ name: '', purpose: '', source: '', sourceChanged: false, notes: '', reason: '', channel: 'WhatsApp', outcome: 'Contato realizado', propertyId: '', date: '', time: '', taskId: '', proposalId: '', amount: '', conditions: '', expiresAt: '', status: 'Enviada', correctionMode: 'edit', confirmed: false });
 const value = (record: CrmRecord | undefined, key: string) => String(record?.data[key] || '');
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateTime = (date: string) => Number.isFinite(Date.parse(date)) ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }).format(new Date(date)) : 'Horário não informado';
@@ -59,7 +60,7 @@ function previousClosingStatuses(state: CrmState | undefined, record: CrmRecord 
   return { proposal: previousProposal, property: previousProperty };
 }
 
-export default function ConversationRegistration({ leadId, caseId, customerName, triggerAction, demonstration = false, demoSnapshot, onDemoSaved, disabled = false, onSaved, notify }: Props) {
+export default function ConversationRegistration({ leadId, caseId, customerName, triggerAction, allowNewNegotiation = false, demonstration = false, demoSnapshot, onDemoSaved, disabled = false, onSaved, notify }: Props) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDialogElement>(null), dialog = useRef<HTMLDialogElement>(null);
   const mounted = useRef(false), busyRef = useRef(false), readSequence = useRef(0), requests = useRef(new Set<AbortController>());
@@ -69,9 +70,12 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
   const [loading, setLoading] = useState(false), [saving, setSaving] = useState(false), [error, setError] = useState(''), [review, setReview] = useState<'conflict' | 'uncertain' | null>(null), [checked, setChecked] = useState(false), [refreshed, setRefreshed] = useState(false);
   const [form, setForm] = useState<FormValues>(blankForm);
   const [contextAt, setContextAt] = useState(() => Date.now());
+  const [selectedCaseId, setSelectedCaseId] = useState(caseId || `case:${leadId}`);
   const demo = demonstration || isProductDemo();
-  const resolvedCaseId = caseId || `case:${leadId}`;
+  const resolvedCaseId = caseId || selectedCaseId;
   const caseRecord = snapshot?.state.records.find(record => record.kind === 'cases' && record.id === resolvedCaseId);
+  const conversationCase = snapshot?.state.records.find(record => record.kind === 'cases' && record.id === (caseId || `case:${leadId}`));
+  const negotiations = snapshot?.state.records.filter(record => record.kind === 'cases' && value(record, 'journey') === 'Negociação' && Boolean(conversationCase?.data.personId) && record.data.personId === conversationCase?.data.personId && canAccess(snapshot.state, snapshot.actor, record)) || [];
   const recordedSource = value(caseRecord, 'source');
   const source = form.sourceChanged ? form.source : recordedSource;
   const canEdit = Boolean(snapshot && caseRecord && canAccess(snapshot.state, snapshot.actor, caseRecord, 'write'));
@@ -85,8 +89,10 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
   const correctable = Boolean(closed && canEdit && snapshot && (legacyClassification || acceptedProposal && canAccess(snapshot.state, snapshot.actor, acceptedProposal, 'write')));
   const canReopen = Boolean(correctable && (legacyClassification || snapshot && closedProperty && canAccess(snapshot.state, snapshot.actor, closedProperty, 'write')));
   const correcting = action === 'correct_close';
-  const actionEditable = correcting ? correctable && (form.correctionMode === 'edit' || canReopen) : editable;
-  const purpose = value(caseRecord, 'purpose') || form.purpose;
+  const creating = action === 'new_negotiation';
+  const canCreateNegotiation = allowNewNegotiation && canEdit && value(caseRecord, 'journey') === 'Negociação';
+  const actionEditable = creating ? canCreateNegotiation : correcting ? correctable && (form.correctionMode === 'edit' || canReopen) : editable;
+  const purpose = creating ? form.purpose : value(caseRecord, 'purpose') || form.purpose;
   const properties = snapshot?.state.records.filter(record => record.kind === 'properties' && value(record, 'purpose') === purpose && (action === 'visit' || ['Disponível', 'Reservado'].includes(value(record, 'status')))) || [];
   const visits = snapshot?.state.records.filter(record => record.kind === 'tasks' && record.data.caseId === caseRecord?.id && record.data.type === 'Visita' && ['Pendente', 'Confirmada'].includes(value(record, 'status'))) || [];
   const completedCandidates = visits.filter(record => Date.parse(value(record, 'dueAt')) <= contextAt);
@@ -98,7 +104,7 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
   const selectedProposal = proposals.find(record => record.id === form.proposalId);
   const selectedProperty = snapshot?.state.records.find(record => record.id === selectedProposal?.data.propertyId);
   const menuOptions = closed || triggerAction ? [...options, correctionOption] : options;
-  const activeOption = menuOptions.find(option => option.action === action);
+  const activeOption = creating ? newNegotiationOption : menuOptions.find(option => option.action === action);
   const locked = saving || review === 'uncertain';
 
   useEffect(() => {
@@ -118,7 +124,7 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
       element.style.top = `${Math.max(16, Math.min(anchor.bottom + 7, window.innerHeight - element.offsetHeight - 16))}px`;
     };
     position(); window.addEventListener('resize', position);
-    menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    menu.current?.querySelector<HTMLElement>('select:not(:disabled), button:not(:disabled)')?.focus();
     return () => window.removeEventListener('resize', position);
   }, [open, loading]);
   useEffect(() => {
@@ -151,13 +157,13 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
       return null;
     } finally { if (mounted.current && sequence === readSequence.current) setLoading(false); }
   }
-  function openMenu() {
+  function openMenu(directAction?: 'new_negotiation') {
     if (disabled || saving) return;
     setContextAt(new Date().getTime());
     if (open) { dismissMenu(); return; }
     if (pending.current && review === 'uncertain') { setAction(pending.current.action); return; }
     setOpen(true); setError(''); setSnapshot(null);
-    void loadContext().then(fresh => { if (fresh && mounted.current && triggerAction) selectAction(triggerAction, fresh); });
+    void loadContext().then(fresh => { if (fresh && mounted.current && (directAction || triggerAction)) selectAction(directAction || triggerAction!, fresh); });
   }
   function dismissMenu(restoreFocus = true) {
     ++readSequence.current; setLoading(false); setOpen(false);
@@ -175,11 +181,13 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
     if (!record || !context) return;
     const accepted = context.state.records.filter(item => item.kind === 'proposals' && item.data.caseId === record.id && item.data.status === 'Aceita');
     const proposal = accepted.length === 1 ? accepted[0] : undefined;
-    if (next === 'correct_close') {
+    if (next === 'new_negotiation') {
+      if (!allowNewNegotiation || !canAccess(context.state, context.actor, record, 'write') || value(record, 'journey') !== 'Negociação') return;
+    } else if (next === 'correct_close') {
       if (!canAccess(context.state, context.actor, record, 'write') || value(record, 'journey') !== 'Negociação' || !(value(record, 'status') === 'Ganho' || value(record, 'stage') === 'Negociado' || record.legacy?.lifecycleStatus === 'Convertido') || !(proposal && canAccess(context.state, context.actor, proposal, 'write') || !accepted.length && record.legacy?.lifecycleStatus === 'Convertido')) return;
     } else if (!editable || loading) return;
     pending.current = null; setReview(null); setChecked(false); setRefreshed(false); setError('');
-    setForm({ ...blankForm(), purpose: value(record, 'purpose'), source: value(record, 'source'), propertyId: value(record, 'propertyId'), taskId: next === 'visit' && completedCandidates.length === 1 ? completedCandidates[0].id : '', proposalId: next === 'correct_close' ? proposal?.id || '' : next === 'close' && closableProposals.length === 1 ? closableProposals[0].id : '', ...(next === 'correct_close' ? { correctionMode: proposal ? 'edit' : 'reopen', amount: value(proposal, 'amount'), conditions: value(proposal, 'conditions') } : {}) });
+    setForm({ ...blankForm(), purpose: next === 'new_negotiation' ? '' : value(record, 'purpose'), source: value(record, 'source'), propertyId: next === 'new_negotiation' ? '' : value(record, 'propertyId'), taskId: next === 'visit' && completedCandidates.length === 1 ? completedCandidates[0].id : '', proposalId: next === 'correct_close' ? proposal?.id || '' : next === 'close' && closableProposals.length === 1 ? closableProposals[0].id : '', ...(next === 'correct_close' ? { correctionMode: proposal ? 'edit' : 'reopen', amount: value(proposal, 'amount'), conditions: value(proposal, 'conditions') } : {}) });
     setOpen(false); setAction(next);
   }
   function update<K extends keyof FormValues>(key: K, newValue: FormValues[K]) { setForm(current => ({ ...current, [key]: newValue })); }
@@ -187,7 +195,7 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
     const buttons = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') || []);
     const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (event.key === 'Escape') { event.preventDefault(); dismissMenu(); }
-    if (event.key === 'Tab') dismissMenu(false);
+    if (event.key === 'Tab' && (caseId || negotiations.length < 2)) dismissMenu(false);
     if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) && buttons.length) {
       event.preventDefault();
       const index = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (current + (event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
@@ -198,6 +206,10 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
     if (!caseRecord || !action) return null;
     const common = { ...(value(caseRecord, 'purpose') ? {} : { purpose: form.purpose as 'Venda' | 'Aluguel' }), ...(form.sourceChanged && source.trim() && source.trim() !== recordedSource.trim() ? { source: source.trim() } : {}), ...(form.notes.trim() ? { notes: form.notes.trim() } : {}) };
     const base = { type: 'register' as const, caseId: caseRecord.id, requestId: crypto.randomUUID() };
+    if (action === 'new_negotiation') {
+      if (!form.name.trim() || !['Venda', 'Aluguel'].includes(form.purpose)) return null;
+      return { ...base, action, data: { name: form.name.trim(), purpose: form.purpose as 'Venda' | 'Aluguel', ...(form.propertyId ? { propertyId: form.propertyId } : {}), ...(form.notes.trim() ? { notes: form.notes.trim() } : {}) } };
+    }
     if (action === 'correct_close') {
       if (!form.confirmed || !form.reason.trim()) return null;
       return form.correctionMode === 'edit' ? { ...base, action, data: { mode: 'edit', proposalId: form.proposalId, amount: Number(form.amount), conditions: form.conditions.trim(), reason: form.reason.trim(), confirmed: true } } : { ...base, action, data: { mode: 'reopen', ...(form.proposalId ? { proposalId: form.proposalId } : {}), reason: form.reason.trim(), confirmed: true } };
@@ -211,20 +223,22 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
     return { ...base, action, data: { ...common, proposalId: form.proposalId, confirmed: true, ...(form.reason.trim() ? { reason: form.reason.trim() } : {}) } };
   }
   function hasSaved(result: Snapshot, command: RegistrationCommand) {
-    return result.state.events.some(event => event.actorId === result.actor.brokerId && event.recordId === command.caseId && (event as typeof event & { registration?: { requestId: string } }).registration?.requestId === command.requestId);
+    return result.state.events.some(event => event.actorId === result.actor.brokerId && event.recordId === (command.action === 'new_negotiation' ? command.requestId : command.caseId) && (event as typeof event & { registration?: { requestId: string } }).registration?.requestId === command.requestId);
   }
-  function success() {
+  function success(result: Snapshot, command = pending.current) {
+    const created = command?.action === 'new_negotiation' && result.state.records.find(record => record.kind === 'cases' && record.id === command.requestId);
+    if (created && !caseId) setSelectedCaseId(created.id);
     pending.current = null; setReview(null); setChecked(false); setRefreshed(false); setAction(null); setOpen(false); setError(''); dialog.current?.close();
     trigger.current?.focus();
     if (!demo) onSaved?.();
-    notify?.(demo ? 'Registro de demonstração atualizado apenas nesta conversa de exemplo. Nenhum dado real foi alterado.' : 'Registro salvo. O atendimento e os dados vinculados foram atualizados.');
+    notify?.(demo ? 'Registro de demonstração atualizado apenas nesta conversa de exemplo. Nenhum dado real foi alterado.' : created ? `Nova negociação criada: ${value(created, 'name')}. Ela está selecionada para os próximos registros.` : 'Registro salvo. O atendimento e os dados vinculados foram atualizados.');
   }
   async function checkResult() {
     if (loading || saving) return;
     setError(''); setChecked(false); setRefreshed(false);
     const fresh = await loadContext();
     if (!fresh || !mounted.current) return;
-    if (review === 'uncertain' && pending.current && hasSaved(fresh, pending.current)) { success(); return; }
+    if (review === 'uncertain' && pending.current && hasSaved(fresh, pending.current)) { success(fresh); return; }
     setRefreshed(true);
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -237,18 +251,18 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
       if (demo) {
         try {
           const updated = { ...snapshot, state: applyCommand(snapshot.state, snapshot.actor, command) };
-          localDemo.current = updated; setSnapshot(updated); onDemoSaved?.(updated.state); success();
+          localDemo.current = updated; setSnapshot(updated); onDemoSaved?.(updated.state); success(updated, command);
         } catch (cause) { pending.current = null; setError(cause instanceof Error ? cause.message : 'Confira os dados da demonstração.'); }
         return;
       }
       const { response, result } = await boundedFetch({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command, expectedVersion: snapshot.state.version, expectedSourceRevision: snapshot.state.sourceRevision }) });
       if (!mounted.current) return;
-      if (response.ok && isSnapshot(result)) { setSnapshot(result); success(); return; }
+      if (response.ok && isSnapshot(result)) { setSnapshot(result); success(result, command); return; }
       if (response.status === 409) {
         setChecked(false); setRefreshed(false); setError((result as { error?: string })?.error || 'O atendimento foi atualizado por outra pessoa. Confira os dados antes de salvar.');
         const fresh = await loadContext();
         if (!mounted.current) return;
-        if (fresh && hasSaved(fresh, command)) { success(); return; }
+        if (fresh && hasSaved(fresh, command)) { success(fresh, command); return; }
         if (fresh) { pending.current = null; setReview('conflict'); setRefreshed(true); }
         else { setReview('uncertain'); setError('Não foi possível conferir o atendimento atualizado. Verifique o resultado antes de confirmar o mesmo registro.'); }
       }
@@ -260,12 +274,15 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
   }
   const unavailable = snapshot && (!caseRecord ? 'O atendimento ainda não está disponível na sua carteira. Assuma o atendimento pelo controle da conversa ou peça ao administrador para conferir o vínculo.' : !canEdit ? 'Este atendimento está disponível apenas para consulta na sua conta.' : !editable && !correctable ? 'Este atendimento não está aberto para negociação. Revise a situação na aba Atendimentos.' : closed ? 'Fechamento registrado. Use Editar fechamento para corrigir os dados ou desfazer o registro com motivo.' : '');
   const emptyAction = correcting && (!correctable || acceptedProposal && acceptedProposal.id !== form.proposalId) ? 'O fechamento mudou ou não está disponível para correção. Confira os dados atualizados antes de continuar.' : action === 'close' && !closableProposals.length ? proposals.length ? 'Nenhuma proposta pode ser fechada agora. Confira a validade, a disponibilidade do imóvel e sua permissão para alterá-lo; se necessário, peça ajuda ao administrador.' : 'Registre uma proposta enviada ou em negociação antes de confirmar o fechamento.' : '';
-  const propertySelect = <label className={s.field}>Imóvel<select required value={form.propertyId} onChange={event => update('propertyId', event.target.value)}><option value="">Selecione o imóvel</option>{properties.map(record => <option key={record.id} value={record.id}>{value(record, 'code') ? `${value(record, 'code')} · ` : ''}{value(record, 'name')}{record.data.status === 'Reservado' ? ' · Reservado' : ''}</option>)}</select>{!properties.length && <small>Não há imóveis disponíveis para esta finalidade.</small>}</label>;
+  const propertySelect = <label className={s.field}>Imóvel{creating && <span className={s.optional}> (opcional)</span>}<select required={!creating} value={form.propertyId} onChange={event => update('propertyId', event.target.value)}><option value="">{creating ? 'Definir depois' : 'Selecione o imóvel'}</option>{properties.map(record => <option key={record.id} value={record.id}>{value(record, 'code') ? `${value(record, 'code')} · ` : ''}{value(record, 'name')}{record.data.status === 'Reservado' ? ' · Reservado' : ''}</option>)}</select>{!properties.length && purpose && <small>{creating ? 'Você pode criar a negociação e vincular um imóvel depois.' : 'Não há imóveis disponíveis para esta finalidade.'}</small>}</label>;
 
   return <div className={s.root} ref={root}>
-    <button ref={trigger} className={s.trigger} type="button" aria-haspopup={triggerAction ? 'dialog' : 'menu'} aria-expanded={triggerAction ? Boolean(action || open) : open} aria-controls={triggerAction ? `${id}-dialog` : `${id}-menu`} onClick={openMenu} disabled={disabled || saving}><Icon />{triggerAction ? 'Editar fechamento' : 'Registro'}{!triggerAction && <Icon chevron />}</button>
-    {open && <dialog className={s.menu} ref={menu} aria-label="Opções de registro" onCancel={event => { event.preventDefault(); event.stopPropagation(); dismissMenu(); }} onClick={event => { if (event.target === menu.current) { const bounds = menu.current.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dismissMenu(); } }}><div id={`${id}-menu`} role="menu" aria-label="Registrar acontecimento" onKeyDown={menuKey}>
+    <button ref={trigger} className={s.trigger} type="button" aria-haspopup={triggerAction ? 'dialog' : 'menu'} aria-expanded={triggerAction ? Boolean(action || open) : open} aria-controls={triggerAction ? `${id}-dialog` : `${id}-menu`} onClick={() => openMenu()} disabled={disabled || saving}><Icon />{triggerAction ? 'Editar fechamento' : 'Registro'}{!triggerAction && <Icon chevron />}</button>
+    {allowNewNegotiation && <button className={s.trigger} type="button" aria-haspopup="dialog" aria-expanded={creating} aria-controls={`${id}-dialog`} onClick={() => openMenu('new_negotiation')} disabled={disabled || saving}>+ Nova negociação</button>}
+    {open && <dialog className={s.menu} ref={menu} aria-label="Opções de registro" onCancel={event => { event.preventDefault(); event.stopPropagation(); dismissMenu(); }} onClick={event => { if (event.target === menu.current) { const bounds = menu.current.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dismissMenu(); } }}>
       <div className={s.menuHeader}><strong>Registrar acontecimento</strong><span>{customerName}</span></div>
+      {!caseId && negotiations.length > 1 && <label className={s.negotiationSelector}>Negociação deste registro<select value={resolvedCaseId} disabled={loading} onChange={event => setSelectedCaseId(event.target.value)}>{!caseRecord && <option value={resolvedCaseId}>Selecione uma negociação disponível</option>}{negotiations.map(record => <option key={record.id} value={record.id}>{value(record, 'name') || 'Negociação'} · {value(record, 'purpose') || 'Finalidade a definir'} · {value(record, 'stage')}{value(record, 'status') !== 'Aberto' ? ` · ${value(record, 'status')}` : ''}</option>)}</select><small>O registro será salvo apenas na negociação selecionada.</small></label>}
+      <div id={`${id}-menu`} role="menu" aria-label="Registrar acontecimento" onKeyDown={menuKey}>
       <>
         {demo && <p className={s.demoNotice} role="status">Exemplo interativo. Os registros ficam apenas nesta conversa de demonstração, até você sair dela.</p>}
         {loading && <p className={s.menuMessage} role="status">Carregando atendimento…</p>}
@@ -274,20 +291,22 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
         {menuOptions.map(option => <button key={option.action} type="button" role="menuitem" className={s.menuItem} disabled={loading || (option.action === 'correct_close' ? !correctable : !editable)} onClick={() => selectAction(option.action)}><span className={s.step}>{option.number}</span><span><strong>{option.label}</strong><small>{option.description}</small></span></button>)}
         {!loading && !snapshot && <button type="button" role="menuitem" className={s.reload} onClick={() => { setError(''); void loadContext(); }}>Tentar carregar novamente</button>}
       </>
-      <p className={s.menuFoot}>A IA identifica somente Lead ou Atendimento. Agendamento, Visita, Proposta e Negociado dependem do seu registro. Nenhuma mensagem é enviada ao cliente.</p>
-    </div></dialog>}
+      </div><p className={s.menuFoot}>{caseRecord?.manualNegotiation ? 'Esta negociação é manual. As mudanças de etapa dependem do seu registro.' : 'A IA identifica somente Lead ou Atendimento. Agendamento, Visita, Proposta e Negociado dependem do seu registro.'} Nenhuma mensagem é enviada ao cliente.</p>
+    </dialog>}
     {action && <dialog id={`${id}-dialog`} ref={dialog} className={s.dialog} aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} onCancel={event => { event.preventDefault(); event.stopPropagation(); closeDialog(); }} onClick={event => { if (event.target === dialog.current) { const bounds = dialog.current.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDialog(); } }}>
       <form onSubmit={submit}>
         <div className={s.dialogHeader}><div><span className={s.eyebrow}>{demo ? 'Registro de demonstração' : 'Registro da conversa'}</span><h2 id={`${id}-title`}>{activeOption?.label}</h2></div><button type="button" className={s.close} aria-label="Fechar registro" onClick={closeDialog} disabled={saving}>×</button></div>
         <div className={s.body}>
-          <div className={s.context}><span className={s.customerIcon} aria-hidden="true">{customerName.trim().charAt(0).toLocaleUpperCase('pt-BR')}</span><div><strong>{customerName}</strong><span>{snapshot?.state.members.find(member => member.id === caseRecord?.data.assignedTo)?.name || 'Sem responsável definido'} · Etapa atual: <b>{value(caseRecord, 'stage')}</b></span></div></div>
-          <p id={`${id}-description`} className={s.description}>{correcting ? `${demo ? 'Demonstração com dados fictícios. ' : ''}Corrija o registro do fechamento no CRM. O motivo e os valores anteriores ficam no histórico. Esta ação não altera lançamentos financeiros nem envia mensagens.` : demo ? 'Teste o registro com dados fictícios. A etapa e as opções serão atualizadas apenas aqui, sem alterar a agenda real ou enviar mensagens.' : 'Confirme o que aconteceu. Agendamento, Visita, Proposta e Negociado são etapas registradas pelo corretor. O histórico será atualizado, sem enviar mensagens.'}</p>
+          <div className={s.context}><span className={s.customerIcon} aria-hidden="true">{customerName.trim().charAt(0).toLocaleUpperCase('pt-BR')}</span><div><strong>{customerName}</strong>{!creating && <span><b>{value(caseRecord, 'name') || 'Negociação'}</b>{value(caseRecord, 'purpose') ? ` · ${value(caseRecord, 'purpose')}` : ''}</span>}<span>{snapshot?.state.members.find(member => member.id === caseRecord?.data.assignedTo)?.name || 'Sem responsável definido'}{!creating && <> · Etapa atual: <b>{value(caseRecord, 'stage')}</b></>}</span></div></div>
+          <p id={`${id}-description`} className={s.description}>{creating ? `${demo ? 'Demonstração com dados fictícios. ' : ''}Crie outro objetivo para este cliente, mantendo a mesma pessoa e conversa. A nova negociação começa em Lead e terá seus próprios registros, visitas e propostas. Nenhuma mensagem será enviada.` : correcting ? `${demo ? 'Demonstração com dados fictícios. ' : ''}Corrija o registro do fechamento no CRM. O motivo e os valores anteriores ficam no histórico. Esta ação não altera lançamentos financeiros nem envia mensagens.` : demo ? 'Teste o registro com dados fictícios. A etapa e as opções serão atualizadas apenas aqui, sem alterar a agenda real ou enviar mensagens.' : 'Confirme o que aconteceu. Agendamento, Visita, Proposta e Negociado são etapas registradas pelo corretor. O histórico será atualizado, sem enviar mensagens.'}</p>
           {error && <p className={s.error} role="alert">{error}</p>}
           {review && <div className={s.review}><p>{review === 'uncertain' ? 'O formulário está preservado. Verifique se o registro já foi salvo; se necessário, confirme novamente a mesma solicitação, sem duplicá-la.' : 'Mantivemos o que você preencheu. A etapa acima foi atualizada; revise os campos antes de confirmar novamente.'}</p>{refreshed && form.sourceChanged && source.trim() !== recordedSource.trim() && <p>Origem atual: <strong>{recordedSource || 'Não informada'}</strong>. Sua seleção: <strong>{source}</strong>.</p>}<button type="button" className={s.secondary} disabled={saving || loading} onClick={checkResult}>{loading ? 'Verificando…' : 'Verificar dados atualizados'}</button>{refreshed && <label className={s.check}><input type="checkbox" checked={checked} onChange={event => setChecked(event.target.checked)} />Conferi os dados atualizados e desejo confirmar este registro.</label>}</div>}
           {emptyAction && <p className={s.notice} role="status">{emptyAction}</p>}
           <fieldset disabled={locked || loading} className={s.fields}>
-            {!correcting && <LeadSourcePicker id={`${id}-origin`} value={source} options={snapshot?.state.settings.sources} disabled={locked || loading} onChange={nextSource => setForm(current => ({ ...current, source: nextSource, sourceChanged: true }))} />}
-            {!correcting && !value(caseRecord, 'purpose') && <label className={s.field}>Finalidade<select required value={form.purpose} onChange={event => { update('purpose', event.target.value); update('propertyId', ''); }}><option value="">Selecione</option><option>Venda</option><option>Aluguel</option></select><small>Será registrada no cadastro deste atendimento.</small></label>}
+            {!correcting && !creating && <LeadSourcePicker id={`${id}-origin`} value={source} options={snapshot?.state.settings.sources} disabled={locked || loading} onChange={nextSource => setForm(current => ({ ...current, source: nextSource, sourceChanged: true }))} />}
+            {creating && <label className={s.field}>Objetivo da negociação<input required maxLength={200} value={form.name} onChange={event => update('name', event.target.value)} placeholder="Ex.: Comprar casa para morar" /><small>Use um nome que diferencie este objetivo dos outros interesses do cliente.</small></label>}
+            {!correcting && (creating || !value(caseRecord, 'purpose')) && <label className={s.field}>Finalidade<select required value={form.purpose} onChange={event => { update('purpose', event.target.value); update('propertyId', ''); }}><option value="">Selecione</option><option>Venda</option><option>Aluguel</option></select><small>{creating ? 'Finalidade exclusiva da nova negociação.' : 'Será registrada no cadastro deste atendimento.'}</small></label>}
+            {creating && propertySelect}
             {correcting && !emptyAction && <>
               {acceptedProposal ? <><label className={s.field}>O que deseja corrigir?<select value={form.correctionMode} onChange={event => { update('correctionMode', event.target.value as 'edit' | 'reopen'); update('confirmed', false); }}><option value="edit">Corrigir valor e condições</option><option value="reopen" disabled={!canReopen}>Desfazer fechamento e reabrir negociação</option></select></label>{!canReopen && <p className={s.notice}>Você pode corrigir os dados da proposta. Para desfazer o fechamento e atualizar o imóvel do catálogo, peça ao administrador.</p>}<div className={s.proposalSummary}><span>Proposta aceita · {value(closedProperty, 'name') || value(acceptedProposal, 'name')}</span><strong>{money.format(Number(acceptedProposal.data.amount))}{purpose === 'Aluguel' ? '/mês' : ''}</strong><p>{value(acceptedProposal, 'conditions') || 'Sem condições informadas'}</p></div></> : <div className={s.notice}><strong>Desfazer classificação de fechamento</strong><p>Este atendimento foi marcado como Negociado sem uma proposta aceita vinculada. Ele voltará a Atendimento, com situação Aberto. Nenhum imóvel será alterado.</p></div>}
               {form.correctionMode === 'edit' && acceptedProposal && <><label className={s.field}>Valor correto (R$)<input type="number" min="0.01" max="1000000000000" step="0.01" required value={form.amount} onChange={event => { update('amount', event.target.value); update('confirmed', false); }} /></label><label className={s.field}>Condições corretas<textarea required maxLength={2000} rows={3} value={form.conditions} onChange={event => { update('conditions', event.target.value); update('confirmed', false); }} /></label><div className={s.notice}><strong>Confira a alteração</strong><p>Valor registrado: {money.format(Number(acceptedProposal.data.amount))}. Novo valor: {form.amount && Number.isFinite(Number(form.amount)) ? money.format(Number(form.amount)) : 'Informe o valor'}{purpose === 'Aluguel' ? '/mês' : ''}.</p><p>As condições preenchidas substituirão as anteriores. O atendimento continuará Negociado e o imóvel permanecerá {value(closedProperty, 'status') || 'com a situação atual'}.</p></div></>}
@@ -304,7 +323,7 @@ export default function ConversationRegistration({ leadId, caseId, customerName,
             {!correcting && !emptyAction && <label className={s.field}>Observação <span className={s.optional}>(opcional)</span><textarea maxLength={2000} rows={2} value={form.notes} onChange={event => update('notes', event.target.value)} placeholder="Acrescente um detalhe para o histórico" /></label>}
           </fieldset>
         </div>
-        <div className={s.formActions}><button type="button" className={s.secondary} onClick={closeDialog} disabled={saving}>Cancelar</button><button type="submit" className={s.primary} disabled={saving || loading || !actionEditable || Boolean(emptyAction) || Boolean(review && !checked) || Boolean(correcting && (!form.confirmed || !form.reason.trim()))}>{saving ? 'Salvando…' : review === 'uncertain' ? 'Confirmar o mesmo registro' : correcting ? form.correctionMode === 'edit' ? 'Salvar correção' : 'Confirmar reabertura' : action === 'close' ? 'Confirmar fechamento' : 'Salvar registro'}</button></div>
+        <div className={s.formActions}><button type="button" className={s.secondary} onClick={closeDialog} disabled={saving}>Cancelar</button><button type="submit" className={s.primary} disabled={saving || loading || !actionEditable || Boolean(emptyAction) || Boolean(review && !checked) || Boolean(creating && (!form.name.trim() || !form.purpose)) || Boolean(correcting && (!form.confirmed || !form.reason.trim()))}>{saving ? 'Salvando…' : review === 'uncertain' ? 'Confirmar o mesmo registro' : creating ? 'Criar negociação' : correcting ? form.correctionMode === 'edit' ? 'Salvar correção' : 'Confirmar reabertura' : action === 'close' ? 'Confirmar fechamento' : 'Salvar registro'}</button></div>
       </form>
     </dialog>}
   </div>;
