@@ -122,8 +122,13 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const [whatsappHandoff, setWhatsAppHandoff] = useState<{ leadId: string; incomingId?: string; text: string } | null>(null);
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(true);
+  const [profileOpen, setProfileOpen] = useState(false);
   const profileToggleRef = useRef<HTMLButtonElement>(null);
+  const profileWasOpen = useRef(false);
+  useEffect(() => {
+    if (profileOpen) { profileWasOpen.current = true; return; }
+    if (profileWasOpen.current) { profileWasOpen.current = false; profileToggleRef.current?.focus(); }
+  }, [profileOpen]);
   const [propertyPickerOpen, setPropertyPickerOpen] = useState(false);
   const [loadingProperties, setLoadingProperties] = useState(false);
   const summaries = useMemo(() => inboxByLead(inbox), [inbox]);
@@ -222,6 +227,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
       if (positions.every(item => item.position <= (acknowledged.current.get(item.conversationId) ?? -1))) return;
       // Do not mark a new arrival read while the user is browsing older history.
       const body = bodyRef.current;
+      if (body && body.getClientRects().length === 0) return;
       if (body && body.scrollHeight - body.scrollTop - body.clientHeight > 80) return;
       sending = true;
       try {
@@ -236,10 +242,11 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     const body = bodyRef.current;
     onVisible();
     window.addEventListener('focus',onVisible);
+    window.addEventListener('resize',onVisible);
     document.addEventListener('visibilitychange',onVisible);
     body?.addEventListener('scroll',onVisible);
-    return () => { active=false;controller.abort();window.removeEventListener('focus',onVisible);document.removeEventListener('visibilitychange',onVisible);body?.removeEventListener('scroll',onVisible); };
-  }, [demonstration,ready,lead?.id,historyPage]);
+    return () => { active=false;controller.abort();window.removeEventListener('focus',onVisible);window.removeEventListener('resize',onVisible);document.removeEventListener('visibilitychange',onVisible);body?.removeEventListener('scroll',onVisible); };
+  }, [demonstration,ready,lead?.id,historyPage,profileOpen]);
   if(!ready&&!selected)return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state" role="status"><span className="conversation-empty-icon"><ConversationIcon name="inbox"/></span><h2>Sincronizando conversas</h2><p>Aguarde a confirmação do carregamento. Em caso de falha, os controles permanecerão desabilitados.</p></section></div>;
   if (!selected || !lead) return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state"><span className="conversation-empty-icon"><ConversationIcon name="message"/></span><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
   const leadId = lead.id;
@@ -419,7 +426,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
         <form className="full-composer" onSubmit={send}><button type="button" className="conversation-property-button" disabled={loadingProperties || !ready || saving || !canSend} onClick={() => void openPropertyPicker()}><ConversationIcon name="property"/>{loadingProperties ? 'Atualizando…' : 'Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => { setSendNotice(''); dispatch({ type: 'draft', id: selected.id, text: event.target.value }); }} aria-label={`Mensagem para ${selected.name}`} placeholder={canSend ? 'Escreva uma resposta…' : attendance.mode === 'closed' ? 'Conversa encerrada' : canClaim ? 'Assuma o atendimento para enviar' : 'Envio disponível ao corretor responsável'} maxLength={4000}/><button className="send-button" type="button" onClick={() => void submitDraft()} disabled={!thread.draft.trim() || !ready || saving || !canSend} aria-label="Adicionar mensagem"><ConversationIcon name="send"/></button></form>
       </section>
       <aside id="conversation-client-profile" hidden={!profileOpen} className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
-        <div className="conversation-profile-title"><h2>Ficha do cliente</h2><button type="button" aria-label="Fechar ficha do cliente" onClick={() => { setProfileOpen(false); profileToggleRef.current?.focus(); }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+        <div className="conversation-profile-title"><h2>Ficha do cliente</h2><button type="button" aria-label="Fechar ficha do cliente" onClick={() => setProfileOpen(false)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
         <div className="conversation-profile-identity"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><strong>{selected.name}</strong><span>Perfil comercial</span></div></div>
         <div className="conversation-priority-line"><span>Score do lead</span><strong data-defined={Boolean(lead.scoreDefined)} aria-label={lead.scoreDefined ? `${lead.score}/100` : 'Indefinido'}>{lead.scoreDefined ? <>{lead.score}<small>/100</small></> : 'Indefinido'}</strong></div>
         <h3 className="conversation-profile-section">Interesses do cliente</h3>

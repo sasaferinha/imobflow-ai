@@ -14,6 +14,7 @@ import './crm-shell.css';
 import './crm-operational.css';
 import './conversation-workspace.css';
 import './crm-access.css';
+import './conversation-viewport.css';
 
 const siteOrigin = process.env.SITE_URL ?? 'http://localhost:3000';
 

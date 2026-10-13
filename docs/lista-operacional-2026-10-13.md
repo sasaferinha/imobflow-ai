@@ -95,6 +95,15 @@ Referências primárias consultadas:
 
 ## Validação desta revisão
 
+### Encaixe da área de Conversas
+
+- Layout restrito a Conversas: ocupa a altura disponível do painel em desktop/notebook, com lista, histórico e ficha rolando internamente. Não oculta a barra do navegador globalmente.
+- Ficha inicialmente fechada, disponível em “Ficha do cliente”. Entre 761 e 1100 px, a ficha aberta ocupa o lugar da leitura; fechar restaura o foco ao botão e mantém o rascunho. Histórico oculto não é reconhecido como lido.
+- Em celular, janela baixa, configurações expandidas ou aviso de falha, preserva rolagem necessária. Conteúdo adicional no chat pode rolar internamente para não cortar controles.
+- Verificação no navegador com componentes/estilos reais e dados fictícios: 1366×768, 1280×720, 1024×768 e 820×640 sem rolagem externa; 390×844 sem transbordamento horizontal, com rolagem vertical necessária. Ficha aberta testada em desktop/tablet e painel clássico em 1366×768. Em 820×640 e com a ficha aberta em 1280×720, o chat usa rolagem interna adicional para manter controles acessíveis.
+- `npm run test:conversation-layout`, `npm run test:crm-design`, testes de handoff WhatsApp, assistente UI, atendimento e cadastro UI passaram; `npx next build` passou (inclui TypeScript). Dados reais, entrega externa e produção não foram testados nesta alteração de layout.
+- Esta atualização permanece na branch de trabalho/PR; não houve deploy, merge ou migration remota.
+
 - Novos testes de domínio/lembretes, UI com relógio/timers isolados e SQL com todas as migrations em PGlite, sem serviços externos.
 - Plantão: escala registrada na chegada, finalidade, ausência de plantonista, primeiro aceite, limite exato de cinco minutos, conta de outra empresa, regra desligada e escala legada inválida. UI cobre aviso imediato ao plantonista e diferido aos demais.
 - Teste integrado usa sessão, rota real, ponte canônica e SQL CAS para gerar cobrança, bloquear outro corretor, responder e evitar duplicata.

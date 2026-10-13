@@ -463,7 +463,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     { title: 'Configurações', icon: 'settings', target: isAdmin ? 'settings' : hasLiveOperation ? 'account' : 'links', items: [...(isAdmin ? ['settings', 'content', 'channels'] as Page[] : []), ...(hasLiveOperation ? ['account', 'integrations'] as Page[] : []), 'links'] },
   ];
 
-  return <div className={s.app} data-design="linha">
+  return <div className={s.app} data-design="linha" data-operational-page={operationalPage || undefined}>
     {mobileNavOpen && <button className={s.sidebarBackdrop} aria-label="Fechar navegação" onClick={() => { setMobileNavOpen(false); }} />}
     <aside ref={navigationRef} className={`${s.sidebar} ${mobileNavOpen ? s.sidebarOpen : ''}`} role={mobileNavOpen ? 'dialog' : undefined} aria-modal={mobileNavOpen || undefined} aria-label="Navegação ImobFlow">
       <div className={s.sidebarBrand}><button className={s.brand} onClick={() => navigate('dashboard')} aria-label="ImobFlow: ir para o dashboard"><svg width="29" height="36" viewBox="0 0 29 36" fill="none" aria-hidden="true"><path d="M2 34V19l8-4m0 19V8L22 2v32m0-20h5v20" stroke="currentColor" strokeWidth="2" /></svg><span>Imob<b>Flow</b></span></button><button ref={mobileCloseRef} className={s.sidebarClose} aria-label="Fechar navegação lateral" onClick={() => { setMobileNavOpen(false); }}><Icon name="close" /></button></div>
