@@ -95,6 +95,8 @@ Correções adicionais reproduzidas em testes isolados:
 
 ### Cada item da imagem e a solução efetivamente entregue
 
+Este quadro é o retrato de 09/10. As regras confirmadas e as alterações posteriores de lembretes, captação, carteira inativa e preferência de plantão estão em [Lista operacional de 13/10](lista-operacional-2026-10-13.md), ainda sem ativação/deploy nesta etapa.
+
 | Item | Solução / acesso | Limite que permanece |
 | --- | --- | --- |
 | 1. Robust.io | Referência do visual do novo CRM, com cores ImobFlow. | Não significa cópia integral de todas as funções do Robust. |

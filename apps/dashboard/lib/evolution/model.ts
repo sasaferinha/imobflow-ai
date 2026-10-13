@@ -1,6 +1,6 @@
 import { CAPTURE_STAGES, MODULES, NEGOTIATION_STAGES, type Kind } from './schema';
 import { REGISTRATION_ACTIONS, REGISTRATION_CHANNELS, REGISTRATION_OUTCOMES, type RegistrationAction, type RegistrationCommand } from './registration-contract';
-import { DEFAULT_OPERATIONS_SETTINGS, funnelBlockReason, type OperationsSettings } from './operations';
+import { DEFAULT_OPERATIONS_SETTINGS, captureReminderCandidates, captureGoalProgress, catalogCompleteness, operationsSettings, funnelBlockReason, type OperationsSettings } from './operations';
 import { validLeadSource } from '../lead-sources';
 
 export type Value = string | number | boolean;
@@ -11,7 +11,7 @@ export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; c
 export type CrmEvent = { id: string; recordId: string; caseId?: string; at: string; actorId: string; actorName: string; type: string; summary: string; changes?: Record<string, { from: Value; to: Value }>; registration?: { requestId: string; fingerprint: string; action: RegistrationAction; resultCaseId?: string } };
 export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings };
 export type CrmState = { companyId: string; version: number; records: CrmRecord[]; events: CrmEvent[]; members: CrmMember[]; settings: CrmSettings; sourceRevision?: string };
-export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<CrmSettings> } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | RegistrationCommand;
+export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<CrmSettings> } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | { type: 'capture-reminders' } | RegistrationCommand;
 export type CaseFilter = { purpose?: string; assignedTo?: string; from?: string; to?: string; stage?: string; freshness?: string; journey?: string; status?: string; query?: string };
 export class CrmError extends Error { constructor(message: string, public status = 400) { super(message); this.name = 'CrmError'; } }
 const deny = () => { throw new CrmError('Você não tem permissão para acessar ou alterar este registro.', 403); };
@@ -132,6 +132,7 @@ function validateData(state: CrmState, actor: Actor, kind: Kind, raw: Record<str
       if (!state.members.some(m => m.id === value)) throw new CrmError('Responsável não pertence à equipe ativa.');
       if (field.key === 'assignedTo' && actor.role !== 'owner' && value !== actor.brokerId && existing?.data.assignedTo !== value) deny();
     } else if (field.ref) {
+      if (kind === 'followups' && field.key === 'captureGoalId' && existing && raw[field.key] === undefined) continue;
       const related = find(state, value, field.ref);
       if (!canAccess(state, actor, related)) deny();
     }
@@ -145,6 +146,11 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
     if (duplicate) throw new CrmError('Já existe uma pessoa com este email ou telefone. Revise o cadastro existente; nenhuma fusão foi realizada.', 409);
   }
   if (record.kind === 'leads' && Number(d.budgetMax) && Number(d.budgetMin) > Number(d.budgetMax)) throw new CrmError('Orçamento máximo deve ser maior ou igual ao mínimo.');
+  if (record.kind === 'leads' && operationsSettings(state).requireCompleteClassification
+    && (!previous || ['purpose', 'propertyType', 'temperature', 'status'].some(key => d[key] !== previous.data[key]))) {
+    const completeness = catalogCompleteness(state, record);
+    if (!completeness.complete) throw new CrmError(`Complete a ficha antes de classificar o lead: ${completeness.missing.join(', ')}.`);
+  }
   if (record.kind === 'cases') {
     if (record.manualNegotiation && previous && previous.data.assignedTo !== d.assignedTo) throw new CrmError('Altere o responsável na área de Conversas. As negociações acompanham a carteira do cliente.', 409);
     const blocked = funnelBlockReason(state,record,previous); if (blocked) throw new CrmError(blocked);
@@ -216,6 +222,8 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
     if (state.records.some(r => r.id !== record.id && r.kind === 'goals' && r.data.month === d.month && r.data.assignedTo === d.assignedTo && r.data.purpose === d.purpose)) throw new CrmError('Já existe uma meta desta finalidade para o responsável neste mês.', 409);
   }
   if (record.kind === 'followups') {
+    if (d.captureGoalId && (!previous || d.captureGoalId !== previous.data.captureGoalId || d.assignedTo !== previous.data.assignedTo)
+      && find(state, String(d.captureGoalId), 'captureGoals').data.assignedTo !== d.assignedTo) throw new CrmError('O responsável da cobrança deve ser o mesmo da meta de captação.');
     if (!previous && d.status !== 'Pendente') throw new CrmError('Uma cobrança começa como Pendente.');
     if (previous && ['Concluída','Cancelada'].includes(String(previous.data.status))) throw new CrmError('A cobrança encerrada é preservada. Crie uma nova cobrança.',409);
     if (actor.role !== 'owner') {
@@ -332,6 +340,11 @@ function applyRegistration(original: CrmState, actor: Actor, command: Registrati
   if (registrationReplay(original, actor, command)) return original;
   const initial = editable(original, actor, command.caseId, 'cases');
   if (initial.data.journey !== 'Negociação') throw new CrmError('Este registro pertence à jornada de negociação.');
+  if (operationsSettings(original).requireCompleteClassification && command.action !== 'correct_close') {
+    const lead = original.records.find(record => record.kind === 'leads' && record.id === initial.data.leadId);
+    const completion = lead && catalogCompleteness(original, lead);
+    if (!completion?.complete) throw new CrmError(`Complete a ficha antes de registrar o atendimento: ${completion?.missing.join(', ') || 'lead vinculado'}.`);
+  }
   if (command.action === 'new_negotiation') {
     const name = text(command.data.name, 200), purpose = command.data.purpose;
     if (!name || !['Venda', 'Aluguel'].includes(purpose)) throw new CrmError('Informe o objetivo da nova negociação e selecione Venda ou Aluguel.');
@@ -463,6 +476,22 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
   if (!command || typeof command !== 'object') throw new CrmError('Comando inválido.');
   if (original.events.length > 30000 || original.records.length > 5000) throw new CrmError('Limite de armazenamento desta versão atingido. Seus dados foram preservados; entre em contato com o suporte antes de continuar.', 413);
   if (command.type === 'register') return applyRegistration(original, actor, command, now);
+  if (command.type === 'capture-reminders') {
+    if (actor.role !== 'owner') deny();
+    if (Object.keys(command).some(key => key !== 'type')) throw new CrmError('Comando de lembretes inválido.');
+    let next = original;
+    for (const goal of captureReminderCandidates(original, now)) {
+      const progress = captureGoalProgress(original, goal);
+      next = applyCommand(next, actor, { type: 'save', kind: 'followups', data: {
+        name: `Acompanhar meta · ${String(goal.data.name).slice(0, 160)}`,
+        assignedTo: goal.data.assignedTo, captureGoalId: goal.id,
+        dueAt: new Date(Date.parse(now) + 86400000).toISOString(), priority: 'Normal', status: 'Pendente',
+        request: `Meta de ${goal.data.purpose} em ${goal.data.month}: ${progress.actual} de ${progress.target} imóveis cadastrados. Faltam ${progress.remaining}. Informe seu próximo passo para a captação.`,
+      } }, now);
+    }
+    // The whole batch uses one workspace transaction/version; conflict rolls everything back.
+    return { ...structuredClone(next), version: original.version + 1 };
+  }
   const state: CrmState = structuredClone(original);
   if (command.type === 'save') {
     const previous = command.id ? editable(state, actor, text(command.id), command.kind) : undefined;
@@ -498,6 +527,7 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
       if (!operations || typeof operations!=='object' || Array.isArray(operations) || Object.keys(operations).some(key=>!Object.hasOwn(DEFAULT_OPERATIONS_SETTINGS,key))) throw new CrmError('Regra operacional inválida.');
       for (const [key,value] of Object.entries(operations)) {
         if (key==='reassignmentDays') { if (!Number.isInteger(value) || Number(value)<1 || Number(value)>365) throw new CrmError('O prazo de redistribuição deve ser de 1 a 365 dias.'); }
+        else if (key==='captureReminderDays') { if (!Number.isInteger(value) || Number(value)<1 || Number(value)>30) throw new CrmError('O intervalo de lembretes de captação deve ser de 1 a 30 dias.'); }
         else if (typeof value!=='boolean') throw new CrmError('As regras operacionais devem ser ativadas ou desativadas.');
       }
       state.settings.operations={...DEFAULT_OPERATIONS_SETTINGS,...state.settings.operations,...operations};

@@ -47,6 +47,7 @@ function runtime(react = React, environment = {}) {
         if (id === './registration-contract') return load('lib/evolution/registration-contract.ts');
         if (id === './operations' || id === '@/lib/evolution/operations') return load('lib/evolution/operations.ts');
         if (id === './operations-center') return load('app/evolution/operations-center.tsx');
+        if (id === '@/lib/panel-reminders') return load('lib/panel-reminders.ts');
         if (id === '@/lib/evolution/weekly-report') return load('lib/evolution/weekly-report.ts');
         throw new Error(`Unexpected client dependency: ${id}`);
       },

@@ -12,6 +12,10 @@ function text(tree) { return typeof tree === 'string' || typeof tree === 'number
 function find(tree, predicate) { return nodes(tree).find(predicate); }
 function button(tree, label) { return find(tree, node => node.type === 'button' && text(node).trim() === label); }
 const result = () => ({ assistance: { reply: 'Sugestão que deve ser revisada.', explanation: 'Só texto explícito.', changes: [{ field: 'region', value: 'Centro', messageId: uuid(40), evidence: 'Procuro no Centro.' }], missing: ['budgetMax'] }, review: { record: { id: `lead:${uuid(30)}`, kind: 'leads', data: { region: 'Outro bairro', purpose: 'Venda', notes: 'Preserve existing field' } }, expectedVersion: 8, expectedSourceRevision: 'source-eight' }, messageCount: 3 });
+const reminderModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root, 'lib/panel-reminders.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: reminderModule, exports: reminderModule.exports });
+const inboxModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root, 'lib/conversation-inbox.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: inboxModule, exports: inboxModule.exports });
 function harness(file, input, { demo = false, response, globals = {} } = {}) {
   const slots = [], effects = [], calls = []; let index = 0, tree;
   const React = {
@@ -23,6 +27,8 @@ function harness(file, input, { demo = false, response, globals = {} } = {}) {
   const module = { exports: {} };
   const dependencies = {
     react: React, 'react/jsx-runtime': { jsx, jsxs: jsx }, './conversation-assistant.module.css': css,
+    '@/lib/panel-reminders': reminderModule.exports,
+    '@/lib/conversation-inbox': inboxModule.exports,
     '@/lib/dashboard-transport': { isProductDemo: () => demo, dashboardFetch: async (url, options) => { calls.push({ url, options }); return response ? response(url, options) : Response.json(result()); } },
   };
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText,
@@ -91,16 +97,42 @@ function harness(file, input, { demo = false, response, globals = {} } = {}) {
     close() {}
   }
   const original = { conversationId: 'one', leadId: 'lead', incomingCount: 3, unread: 3, lastMessageAt: new Date().toISOString(), lastMessageText: 'Private text not disclosed', lastMessageId: 'old' };
-  const alerts = harness('app/conversation-alerts.tsx', { inbox: [original], ready: true }, { globals: { Notification, window: { isSecureContext: true, focus() {} } } });
+  let clock = Date.now(), intervalId = 0;
+  const timers = new Map();
+  class TestClock extends Date { static now() { return clock; } }
+  const testWindow = { isSecureContext: true, focus() {}, setInterval(callback) { timers.set(++intervalId, callback); return intervalId; }, clearInterval(id) { timers.delete(id); } };
+  const tick = minutes => { clock += minutes * 60000; for (const callback of [...timers.values()]) callback(); };
+  const alerts = harness('app/conversation-alerts.tsx', { inbox: [original], ready: true }, { globals: { Notification, Date: TestClock, window: testWindow } });
   assert.equal(permissions, 0); assert.equal(notifications.length, 0);
   find(alerts.tree, node => node.type === 'button').props.onClick(); await alerts.settle();
   assert.equal(permissions, 1); assert.equal(notifications.length, 0, 'Never alert old unread on activation');
   alerts.input.inbox = [{ ...original, incomingCount: 4, unread: 4 }]; alerts.render();
   assert.equal(notifications.length, 1); assert.doesNotMatch(JSON.stringify(notifications), /Private text|lead/);
   alerts.input.inbox = [{ ...original, incomingCount: 4, unread: 4 }]; alerts.render(); assert.equal(notifications.length, 1, 'No duplicate on repeated snapshot');
-  alerts.input.inbox = [{ ...original, incomingCount: 4, unread: 0 }]; alerts.render(); assert.equal(notifications.length, 1, 'Reading cannot generate notification');
+  for (let minute = 0; minute < 14; minute++) { alerts.input.inbox = [{ ...original, incomingCount: 4, unread: 4 }]; alerts.render(); tick(1); }
+  assert.equal(notifications.length, 1);
+  tick(1); assert.equal(notifications.length, 2, 'Polling inbox does not restart the reminder timer');
+  tick(1); assert.equal(notifications.length, 2, 'No repeat before next cooldown');
+  alerts.change(find(alerts.tree, node => node.type === 'select'), 5);
+  tick(4); assert.equal(notifications.length, 2);
+  tick(1); assert.equal(notifications.length, 3, 'Changing cadence restarts cooldown');
+  alerts.input.inbox = [{ ...original, incomingCount: 4, unread: 0 }]; alerts.render(); tick(20); assert.equal(notifications.length, 3, 'Reading cancels unread reminders');
   find(alerts.tree, node => node.type === 'button').props.onClick(); await alerts.settle();
-  alerts.input.inbox = [{ ...original, incomingCount: 5 }]; alerts.render(); assert.equal(notifications.length, 1); alerts.unmount();
+  alerts.input.inbox = [{ ...original, incomingCount: 5 }]; alerts.render(); tick(20); assert.equal(notifications.length, 3); assert.equal(timers.size, 0, 'Disable cancels timer'); alerts.unmount();
+  assert.equal(timers.size, 0);
+  const countBeforeDuty=notifications.length;
+  const dutyAlerts=harness('app/conversation-alerts.tsx',{inbox:[],ready:true},{globals:{Notification,Date:TestClock,window:testWindow}});
+  await dutyAlerts.click('Ativar alertas Com a aba de conversas aberta');
+  const dutyItem={...original,conversationId:'duty-new',leadId:'new-lead',incomingCount:1,unread:1,lastMessageAt:new Date(clock).toISOString(),dutyPriorityUntil:new Date(clock+5*60000).toISOString(),dutyPreferred:false};
+  dutyAlerts.input.inbox=[dutyItem];dutyAlerts.render();assert.equal(notifications.length,countBeforeDuty,'non-duty broker receives no early alert');
+  tick(4);dutyAlerts.input.inbox=[{...dutyItem}];dutyAlerts.render();assert.equal(notifications.length,countBeforeDuty);
+  tick(1);dutyAlerts.input.inbox=[{...dutyItem}];dutyAlerts.render();assert.equal(notifications.length,countBeforeDuty+1,'deferred new lead is announced after five minutes');
+  dutyAlerts.input.inbox=[{...dutyItem}];dutyAlerts.render();assert.equal(notifications.length,countBeforeDuty+1);
+  dutyAlerts.unmount();assert.equal(timers.size,0);
+  const preferredAlerts=harness('app/conversation-alerts.tsx',{inbox:[],ready:true},{globals:{Notification,Date:TestClock,window:testWindow}});
+  await preferredAlerts.click('Ativar alertas Com a aba de conversas aberta');
+  preferredAlerts.input.inbox=[{...dutyItem,lastMessageAt:new Date(clock).toISOString(),dutyPriorityUntil:new Date(clock+5*60000).toISOString(),dutyPreferred:true}];preferredAlerts.render();
+  assert.equal(notifications.length,countBeforeDuty+2,'on-duty broker receives new lead immediately');preferredAlerts.unmount();
   const unsupported = harness('app/conversation-alerts.tsx', { inbox: [], ready: true }, { globals: { window: { isSecureContext: true } } });
   find(unsupported.tree, node => node.type === 'button').props.onClick(); await unsupported.settle(); assert.match(text(unsupported.tree), /não oferece alertas/); unsupported.unmount();
   const demo = harness('app/conversation-alerts.tsx', { inbox: [original], ready: true, demonstration: true }); assert.equal(demo.tree, null); demo.unmount();

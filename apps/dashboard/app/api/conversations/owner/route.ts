@@ -38,7 +38,8 @@ export const POST = protectedRoute(async (request: NextRequest) => {
           },
       { status: changed ? 200 : 409 },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('duty_priority_wait')) return NextResponse.json({ error: 'Os plantonistas têm preferência por cinco minutos após a chegada deste lead. Aguarde o prazo para assumir.' }, { status: 409 });
     return NextResponse.json(
       { error: "Não foi possível alterar o atendimento." },
       { status: 503 },

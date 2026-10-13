@@ -79,6 +79,7 @@
   padding: 16px 20px;
 }
 .conversation-clean .full-chat-head .conversation-contact-heading { flex: 1; min-width: 120px; }
+.conversation-clean .conversation-duty-wait { max-width:260px; margin:0; color:var(--muted, #526b8c); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .app-shell.app-shell .conversation-clean .full-chat-head .conversation-head-actions {
   display: flex;
   flex-direction: row;

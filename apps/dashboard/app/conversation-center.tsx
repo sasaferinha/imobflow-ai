@@ -17,7 +17,7 @@ import ConversationAssistant from './conversation-assistant';
 import ConversationAlerts from './conversation-alerts';
 import { isWhatsAppWindowError } from '@/lib/whatsapp-handoff';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
-import { inboxByLead, compareInboxActivity, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
+import { inboxByLead, compareInboxActivity, dutyPriorityBlocked, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
 
 const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
   id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
@@ -268,7 +268,8 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   });
   const assignedBroker = (demonstration ? thread.assignedTo : attendance.owner)?.trim() || null;
   const isCurrentBroker = demonstration ? Boolean(assignedBroker && normalize(assignedBroker) === normalize(currentBrokerName)) : attendance.isCurrentBroker;
-  const canClaim = demonstration ? !isCurrentBroker : attendance.canClaim;
+  const dutyWaiting = !demonstration && dutyPriorityBlocked(summaries.get(lead.id));
+  const canClaim = demonstration ? !isCurrentBroker : attendance.canClaim && !dutyWaiting;
   const canSend = demonstration || attendance.canSend;
   const latestIncomingId = thread.messages.filter(message => message.side === 'incoming').at(-1)?.id;
   const lastMessage = thread.messages.at(-1);
@@ -400,6 +401,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
           <div className="conversation-contact-heading"><strong>{selected.name}</strong><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}${isCurrentBroker ? ' (você)' : ''}` : 'Sem corretor responsável'}</span></div>
           <div className="conversation-head-actions">
             {canClaim && <button type="button" className="conversation-claim-button" disabled={!ready || saving} onClick={() => void claimConversation()}>Assumir atendimento</button>}
+            {dutyWaiting && <p className="conversation-duty-wait" role="status">Preferência do plantão: outros corretores poderão assumir após cinco minutos da chegada do lead.</p>}
             <ConversationRegistration key={leadId} leadId={leadId} customerName={selected.name} allowNewNegotiation demonstration={demonstration} disabled={!ready || saving} notify={notify} onSaved={() => {
               for (const entity of ['leads', 'appointments', 'properties', 'opportunities', 'performance']) announceDashboardChange(entity);
             }} />

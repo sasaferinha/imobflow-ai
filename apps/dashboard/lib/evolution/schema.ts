@@ -38,5 +38,7 @@ export const MODULES: Record<Kind, ModuleDefinition> = {
 // Optional qualification fields never discard an incomplete intake. Completeness
 // and configurable progression gates are derived separately by the domain engine.
 MODULES.people.fields.push(field('preferredChannel','Canal preferido',{type:'select',options:['WhatsApp','Telefone','Email']}),field('contactPeriod','Melhor horário para contato'));
+MODULES.followups.fields.push(field('captureGoalId', 'Meta de captação relacionada', { ref: 'captureGoals' }));
+MODULES.followups.fields.push(field('protectedLeadId', 'Cliente protegido por compromisso', { ref: 'leads' }), field('poolContactAt', 'Contato usado na revisão', { type: 'datetime-local' }));
 MODULES.leads.fields.push(field('city','Cidade de interesse'),field('bedrooms','Quartos desejados',{type:'number',min:0}),field('parkingSpaces','Vagas desejadas',{type:'number',min:0}),field('purchaseTimeline','Prazo para decidir'),field('financing','Forma de pagamento',{type:'select',options:['À vista','Financiamento','A definir']}),field('qualificationNotes','Detalhes da qualificação',{type:'textarea'}));
 MODULES.properties.fields.push(field('bathrooms','Banheiros',{type:'number',min:0}),field('condoFee','Condomínio (R$)',{type:'number',min:0}),field('iptu','IPTU anual (R$)',{type:'number',min:0}),field('features','Comodidades',{type:'textarea'}),field('documentation','Situação documental',{type:'select',options:['A conferir','Regular','Com pendências']}));
