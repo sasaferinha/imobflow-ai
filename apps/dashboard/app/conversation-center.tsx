@@ -2,13 +2,12 @@
 import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 /* eslint-disable @next/next/no-img-element -- property previews use uploaded data URLs */
 
-import { useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type FormEvent, type ComponentProps } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ComponentProps } from 'react';
 import type { LeadProfile } from '@/lib/leads';
 import type { ConversationMessage, ConversationAttendanceSummary } from '@/lib/conversations';
 import type { PropertyRecord } from '@/lib/operations';
-import { demoContacts, demoConversationReducer, demoTemperature, type DemoContact, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
+import type { DemoContact, DemoConversationAction, DemoConversationState } from '@/lib/demo-conversations';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
-import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
 import { ConversationMessageBubble } from './conversation-message';
 import { ConversationSettings } from './conversation-settings';
 import { ConversationWhatsAppHandoff } from './conversation-whatsapp-handoff';
@@ -19,62 +18,13 @@ import { isWhatsAppWindowError } from '@/lib/whatsapp-handoff';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
 import { inboxByLead, compareInboxActivity, dutyPriorityBlocked, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
 
-const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
-  id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
-  goal: contact.goal, propertyType: contact.propertyType, region: contact.region, budget: contact.budget,
-  details: `${contact.rooms} quartos · ${contact.payment}`, summary: contact.suggestion, score: contact.score, scoreDefined: true,
-  temperature: demoTemperature(contact.score), source: 'Demonstração', assignedTo: null,
-  lifecycleStatus: 'Em atendimento', lastContactAt: null, inactivityDays: null,
-  recoveryPotential: 'Baixo', scoreReasons: [], recoverySelected: false, createdAt: '2026-09-08T12:00:00Z',
-}));
-
 export default function ConversationCenter(props: ComponentProps<typeof ConversationWorkspace>) {
-  const [preview, setPreview] = useState(false);
-  const [demoReady, setDemoReady] = useState(false);
-  const [demoSyncFailed, setDemoSyncFailed] = useState(false);
-  const [previewState, previewDispatch] = useReducer(demoConversationReducer, undefined, () => ({
-    selectedId: `lead-example-${demoContacts[0].id}`,
-    threads: Object.fromEntries(demoContacts.map(contact => [`lead-example-${contact.id}`, {
-      messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false,
-    }])),
-  }));
-  useEffect(() => subscribeDashboardSync({
-    entities: ['demo-conversations'],
-    load: async signal => {
-      const response = await fetch('/api/conversations/demo', { cache: 'no-store', signal });
-      if (!response.ok) throw new Error('Falha ao sincronizar a demonstração.');
-      return (await response.json() as { data: SharedDemoThread[] }).data;
-    },
-    apply: contacts => { previewDispatch({ type: 'hydrate', contacts }); setDemoReady(true); setDemoSyncFailed(false); },
-    onError: () => setDemoSyncFailed(true),
-  }), []);
-  async function saveDemoAction(input: { contactId: string; action: 'claim' | 'message'; content?: string; messageId?: string; propertyId?: string }) {
-    const response = await fetch('/api/conversations/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-    const result = await response.json() as { data?: SharedDemoThread; error?: string };
-    if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar o atendimento.');
-    previewDispatch({ type: 'hydrate', contacts: [result.data] });
-    announceDashboardChange('demo-conversations');
-    return result.data;
-  }
   return <>
     <div className="conversation-tools">
-    <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
-      <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}><ConversationIcon name="inbox"/>Clientes cadastrados</button>
-      <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}><ConversationIcon name="play"/>Ver demonstração</button>
-      {preview && <span role="status">{demoSyncFailed ? 'Não foi possível atualizar a demonstração. Tentando reconectar…' : !demoReady ? 'Carregando atendimentos da empresa…' : 'Demonstração compartilhada com sua equipe. Nenhuma mensagem é enviada a clientes reais.'}</span>}
+      <ConversationAlerts inbox={props.inbox} ready={props.ready} demonstration={props.demonstration} />
+      <ConversationSettings/>
     </div>
-    {!preview&&<><ConversationAlerts inbox={props.inbox} ready={props.ready} demonstration={props.demonstration} /><ConversationSettings/></>}
-    </div>
-    {preview ? <ConversationWorkspace {...props} demonstration ready={demoReady} state={previewState} dispatch={previewDispatch} leads={previewLeads}
-      claimLead={async lead => { await saveDemoAction({ contactId: lead.id, action: 'claim' }); }}
-      persistMessage={async input => {
-        const messageId = crypto.randomUUID();
-        const thread = await saveDemoAction({ contactId: input.leadId, action: 'message', content: input.content, messageId, propertyId: input.propertyId });
-        const message = thread.messages.find(item => item.id === messageId)!;
-        return { id: message.id, time: message.time };
-      }}
-      openAgenda={() => props.notify('Exemplo de agendamento: selecione um cliente cadastrado para marcar uma visita real.')}
-    /> : <ConversationWorkspace {...props} />}
+    <ConversationWorkspace {...props} />
   </>;
 }
 
@@ -89,11 +39,10 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-function ConversationIcon({ name }: { name: 'inbox' | 'search' | 'play' | 'person' | 'property' | 'send' | 'message' }) {
+function ConversationIcon({ name }: { name: 'inbox' | 'search' | 'person' | 'property' | 'send' | 'message' }) {
   const paths = {
     inbox: <><path d="M4 4h16v16H4zM4 13h5l2 3h2l2-3h5"/><path d="M8 8h8"/></>,
     search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>,
-    play: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 5 4-5 4z"/></>,
     person: <><circle cx="12" cy="8" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/></>,
     property: <><path d="m3 10 9-7 9 7M5 9v12h14V9M10 21v-7h4v7"/></>,
     send: <><path d="m3 3 18 9-18 9 4-9-4-9ZM7 12h14"/></>,
