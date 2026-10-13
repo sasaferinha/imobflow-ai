@@ -84,7 +84,8 @@ function load(file,deps={},globals={},suffix='') {
   console.log('PASS API: session-bound identity, same-origin, validated positions; recency and grouped unread helpers');
 
   const events=new EventTarget();const doc=new EventTarget();const scroller=new EventTarget();
-  Object.assign(scroller,{scrollHeight:500,scrollTop:400,clientHeight:100});
+  let exposed=true;
+  Object.assign(scroller,{scrollHeight:500,scrollTop:400,clientHeight:100,getClientRects:()=>exposed?[{}]:[]});
   let focused=true;Object.assign(doc,{visibilityState:'hidden',hasFocus:()=>focused});
   let effects=[],requests=[],fail=false,refreshes=0;
   const readState={leadId:id(30),cursor:null,ready:true,positions:[{conversationId:id(20),position:3}]};
@@ -110,7 +111,9 @@ function load(file,deps={},globals={},suffix='') {
   assert.equal(requests.length,0,'Unfocused window must not mark read');
   focused=true;scroller.scrollTop=0;events.dispatchEvent(new Event('focus'));await flush();
   assert.equal(requests.length,0,'Reading older history must not mark unseen arrivals');
-  scroller.scrollTop=400;fail=true;scroller.dispatchEvent(new Event('scroll'));await flush();
+  scroller.scrollTop=400;exposed=false;events.dispatchEvent(new Event('focus'));await flush();
+  assert.equal(requests.length,0,'Hidden conversation while viewing client profile must not mark read');
+  exposed=true;fail=true;scroller.dispatchEvent(new Event('scroll'));await flush();
   assert.equal(refreshes,0,'Failed acknowledgement cannot clear a count');
   fail=false;events.dispatchEvent(new Event('focus'));await flush();
   assert.equal(refreshes,1);assert.equal(JSON.parse(requests.at(-1).options.body).positions[0].position,3);

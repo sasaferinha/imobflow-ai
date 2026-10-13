@@ -10,11 +10,19 @@ export type OperationsSettings = {
   includeIncomplete: boolean;
   preferOnDuty: boolean;
   weeklyReportsEnabled: boolean;
+  captureRemindersEnabled: boolean;
+  captureReminderDays: number;
+  inactivePoolEnabled: boolean;
+  requireCompleteClassification: boolean;
+  dutyPriorityEnabled: boolean;
 };
 export const DEFAULT_OPERATIONS_SETTINGS: Readonly<OperationsSettings> = Object.freeze({
   funnelEnabled: false, requireCompleteCatalog: false, requireAttendanceBeforeSchedule: false,
   requireVisitBeforeProposal: false, reassignmentEnabled: false, reassignmentDays: 30,
   includeIncomplete: true, preferOnDuty: true, weeklyReportsEnabled: false,
+  captureRemindersEnabled: false, captureReminderDays: 1,
+  inactivePoolEnabled: false, requireCompleteClassification: false,
+  dutyPriorityEnabled: false,
 });
 export function operationsSettings(state: Pick<CrmState, 'settings'>): OperationsSettings {
   return { ...DEFAULT_OPERATIONS_SETTINGS, ...state.settings.operations };
@@ -40,6 +48,22 @@ export function captureGoalProgress(state: CrmState, goal: CrmRecord) {
   const actual = state.records.filter(r => r.kind === 'properties' && r.data.assignedTo === goal.data.assignedTo && r.data.purpose === goal.data.purpose && Number.isFinite(Date.parse(r.createdAt)) && new Date(Date.parse(r.createdAt)-3*3600000).toISOString().slice(0,7) === month).length;
   const target = Number(goal.data.target) || 0;
   return { actual, target, percent: target > 0 ? Math.round(actual / target * 100) : 0, remaining: Math.max(0,target-actual) };
+}
+/** Only current-month goals with an active responsible member. Existing requests await review. */
+export function captureReminderCandidates(state: CrmState, now = new Date().toISOString()) {
+  const config = operationsSettings(state), time = Date.parse(now);
+  if (!config.captureRemindersEnabled || !Number.isFinite(time)) return [];
+  const month = new Date(time - 3 * 3600000).toISOString().slice(0, 7);
+  return state.records.filter(goal => {
+    if (goal.kind !== 'captureGoals' || goal.data.month !== month
+      || !state.members.some(member => member.id === goal.data.assignedTo)
+      || captureGoalProgress(state, goal).remaining === 0) return false;
+    const requests = state.records.filter(record => record.kind === 'followups' && record.data.captureGoalId === goal.id);
+    if (requests.some(record => ['Pendente', 'Em andamento', 'Respondida'].includes(String(record.data.status)))) return false;
+    const created = state.events.filter(event => event.type === 'created' && event.changes?.captureGoalId?.to === goal.id).map(event => Date.parse(event.at));
+    const latest = Math.max(0, ...requests.map(record => Date.parse(record.createdAt)), ...created);
+    return Number.isFinite(latest) && time - latest >= config.captureReminderDays * 86400000;
+  }).sort((a, b) => a.id.localeCompare(b.id)).slice(0, 20);
 }
 export function activeShifts(state: CrmState, now = new Date().toISOString()): CrmRecord[] {
   const time = Date.parse(now);

@@ -64,6 +64,10 @@
 .goalNumber strong { font-size: 32px; color: var(--ink, #10294b); }
 .goalNumber span { font-size: 12px; color: var(--muted, #526b8c); }
 .note { font-size: 12px; color: var(--muted, #526b8c); line-height: 1.7; margin: 0; }
+.reminderInterval { display:flex; align-items:center; flex-wrap:wrap; gap:8px; color:var(--muted, #526b8c); font-size:12px; }
+.reminderInterval select { min-height:36px; border:1px solid var(--line, #dce8f7); border-radius:8px; padding:7px 10px; background:var(--paper, #fff); color:var(--ink, #10294b); font:inherit; }
+.settings fieldset.captureSettings { margin:22px 26px 0; }
+.reminderInterval select:focus-visible { outline:3px solid #80b8fa; outline-offset:3px; }
 .successText { font-size: 12px; color: var(--ops-success, #21734f); }
 .onDuty { border-color: #84baf1; box-shadow: 0 0 0 1px #d8eaff; }
 .schedule { display: grid; width: 100%; gap: 8px; margin: 0; }

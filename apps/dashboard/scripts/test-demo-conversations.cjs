@@ -73,17 +73,21 @@ const Component = load('app/conversation-center.tsx').default;
 const emptyHtml = renderToStaticMarkup(createElement(Component, { state: createLiveConversationState(), dispatch() {}, notify() {}, openAgenda() {}, persistMessage: async () => ({}), refreshProperties: async () => {} }));
 assert.ok(!emptyHtml.includes('Mariana Costa'));
 assert.ok(emptyHtml.includes('Nenhuma conversa disponível'));
-assert.ok(emptyHtml.includes('Clientes cadastrados'));
+assert.ok(!emptyHtml.includes('Ver demonstração'));
 const liveLead = { id:'00000000-0000-4000-8000-000000000100', name:'Cliente Real', phone:'35999999999', email:null, goal:'Comprar', propertyType:'Casa', region:'Centro', budget:'Até R$ 500.000', details:null, summary:'Busca cadastrada', score:72, temperature:'Quente', source:'Formulário', assignedTo:null, lifecycleStatus:'Novo', lastContactAt:null, inactivityDays:0, recoveryPotential:'Baixo', scoreReasons:[], recoverySelected:false, createdAt:'2026-09-08T12:00:00.000Z' };
 let liveState = reduce(createLiveConversationState(), { type:'sync', contacts:[{ id:`lead-${liveLead.id}`, unread:0 }] });
 const liveHtml = renderToStaticMarkup(createElement(Component, { state: liveState, dispatch() {}, notify() {}, openAgenda() {}, persistMessage: async () => ({}), refreshProperties: async () => {}, leads:[liveLead], properties:[] }));
 assert.ok(liveHtml.includes('Cliente Real'));
 assert.ok(liveHtml.includes('Dados do banco de leads'));
 for (const html of [emptyHtml, liveHtml]) {
+  assert.ok(!html.includes('Ver demonstração'), 'operational conversations cannot switch to fictional contacts');
+  assert.ok(!html.includes('Modo das conversas'), 'no redundant mode selector remains');
   assert.ok(!html.includes('conversation-temperature-guide'), 'the removed temperature explainer never returns');
 }
-assert.match(liveHtml, /aria-expanded="true" aria-controls="conversation-client-profile"/, 'essential profile starts visible with an accessible toggle');
-assert.doesNotMatch(liveHtml, /id="conversation-client-profile" hidden/, 'score and preferences must not require opening the profile');
+assert.match(liveHtml, /aria-expanded="false" aria-controls="conversation-client-profile"/, 'profile remains available through its accessible toggle');
+assert.match(liveHtml, /id="conversation-client-profile" hidden/, 'profile starts closed to preserve reading space');
+const centerSource = fs.readFileSync(path.join(__dirname, '../app/conversation-center.tsx'), 'utf8');
+assert.doesNotMatch(centerSource, /\/api\/conversations\/demo|saveDemoAction|previewLeads/, 'no demo polling or demo actions in operational conversations');
 assert.match(liveHtml, /<details class="conversation-lead-details conversation-extra-details"/, 'secondary details stay collapsed');
 const essentialProfile = liveHtml.split('id="conversation-client-profile"')[1].split('<details')[0];
 for (const value of ['Score do lead', 'Indefinido', 'Objetivo', 'Comprar', 'Tipo de imóvel', 'Casa', 'Região / bairro', 'Centro', 'Investimento', 'Até R$ 500.000']) assert.ok(essentialProfile.includes(value), `${value} visible in essential profile`);

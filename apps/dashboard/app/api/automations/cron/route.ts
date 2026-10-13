@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
         const legacy = process.env.DATABASE_URL
           ? await withAccount({ companyId: company.company_id, company: company.name, brokerId: 'system', name: 'Agendador', role: 'owner' }, () => runAutomations('cron'))
           : { failed: 0 };
-        const crm = Date.now() + 12000 < deadline ? await runEvolutionScheduler(company.company_id, company.name) : { report: 'deferred' };
+        const crm = Date.now() + 12000 < deadline ? await runEvolutionScheduler(company.company_id, company.name, deadline) : { report: 'deferred' };
         executions.push({ companyId: company.company_id, complete, generated, processed, busy, crm, failed: legacy.failed > 0 });
         await supabaseRequest('conversation_settings?on_conflict=company_id',{method:'POST',prefer:'resolution=merge-duplicates',body:{company_id:company.company_id,last_scheduler_at:new Date().toISOString()}});
       } catch { executions.push({ companyId: company.company_id, complete: false, generated: 0, failed: true }); }

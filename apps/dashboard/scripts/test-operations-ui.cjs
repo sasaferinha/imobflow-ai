@@ -82,6 +82,7 @@ assert(text(central.tree).includes('Faltam 3 imóveis'));
 button(central.tree, 'Solicitar atualização').props.onClick();
 assert.equal(central.calls.at(-1)[1], 'followups');
 assert.equal(central.calls.at(-1)[2].assignedTo, broker.brokerId);
+assert.equal(central.calls.at(-1)[2].captureGoalId, 'goal-one', 'Manual goal followups also suppress automatic duplicates');
 button(central.tree, 'Plantões').props.onClick(); central.render();
 assert(text(central.tree).includes('Em plantão agora'));
 button(central.tree, 'Resumo semanal').props.onClick(); central.render();

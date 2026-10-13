@@ -1,0 +1,62 @@
+/* Conversation-only sizing. Never hide the document scrollbar or shrink text to fit. */
+@media (min-width: 761px) and (min-height: 600px) {
+  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) {
+    display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%;
+  }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) > .workspace {
+    display: flex; flex-direction: column; flex: 1; min-height: 0;
+  }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .topbar { flex-shrink: 0; }
+  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"] .topbar { margin-bottom: 10px; padding-bottom: 0; border-bottom: 0; }
+  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"] .crm-context-copy { display: none; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-tools { flex-shrink: 0; margin-bottom: 12px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean {
+    display: flex; flex-direction: column; flex: 1; min-height: 0;
+  }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .inbox-layout {
+    flex: 1; min-height: 0; height: 100% !important;
+    grid-template-columns: minmax(190px, 25%) minmax(0, 1fr) !important;
+  }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .inbox-layout.has-profile {
+    grid-template-columns: minmax(190px, 22%) minmax(0, 1fr) minmax(210px, 24%) !important;
+  }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .inbox-layout > :is(.inbox-list, .full-chat, .lead-profile) {
+    grid-column: auto; grid-row: auto; min-width: 0; min-height: 0; height: 100% !important; max-height: 100%;
+  }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .inbox-layout > .lead-profile:not([hidden]) {
+    display: flex !important; flex-direction: column; gap: 0; padding: 0 16px 16px !important;
+    border-left: 1px solid var(--line); border-top: 0; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .lead-profile > * { flex-shrink: 0; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .conversation-lead-highlights { display: block; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .full-chat { overflow-y: auto; overscroll-behavior: contain; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .full-chat-body { min-height: 96px; padding: 14px; overflow-y: auto; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat > :not(.full-chat-body) { flex-shrink: 0; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat-head { padding: 12px; gap: 8px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat-head .conversation-head-actions { gap: 6px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-head-actions button { padding-inline: 8px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-inbox-heading > span { white-space: nowrap; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-empty-state { flex: 1; min-height: 0; }
+}
+@media (min-width: 761px) and (max-width: 1100px) and (min-height: 600px) {
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .inbox-layout.has-profile {
+    grid-template-columns: minmax(190px, 25%) minmax(0, 1fr) !important;
+  }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .inbox-layout.has-profile > .full-chat { display: none; }
+}
+@media (min-width: 901px) and (min-height: 600px) {
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(.evolution-operational):not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(.evolution-operational):not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) > .workspace { padding-block: 20px; }
+}
+@media (max-width: 760px), (max-height: 599px) {
+  .crm-workspace.crm-workspace[data-panel-view="conversations"] .conversation-clean .inbox-layout > .inbox-list {
+    height: clamp(210px, 32dvh, 280px); min-height: 0; max-height: 280px;
+  }
+  .crm-workspace.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat {
+    min-height: 420px; height: max(420px, calc(100dvh - 120px));
+  }
+  .crm-workspace.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat-body { min-height: 0; }
+}
+.app-shell.crm-workspace[data-panel-view="conversations"] :is(.conversation-contact-list, .full-chat, .full-chat-body, .lead-profile) {
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}

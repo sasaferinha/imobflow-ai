@@ -597,7 +597,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   }
 
   return (
-    <main className={`app-shell crm-workspace ${embedded ? 'evolution-operational' : ''} ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
+    <main data-panel-view={view} className={`app-shell crm-workspace ${embedded ? 'evolution-operational' : ''} ${settings.compact ? 'compact-mode' : ''} ${settings.dark ? 'dark-mode' : ''}`}>
       {!publicDemo && <ReleaseNotice />}
       {syncFailed && <div className="sync-notice" role="status">Não foi possível atualizar os atendimentos. Tentando reconectar…</div>}
       {!embedded && <aside className="sidebar">
