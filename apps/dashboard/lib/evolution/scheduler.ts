@@ -17,12 +17,35 @@ export async function runEvolutionScheduler(companyId: string, company: string, 
     let state = await readEvolutionState(actor);
     if (Date.now() + 12000 > deadline) return { report: 'deferred' };
     let released = 0;
+    let inactivePool: { status: 'disabled' | 'blocked' | 'deferred' | 'completed'; reason?: 'canonical-integration-required' | 'schema-unavailable' | 'unverified-contacts' } = { status: 'disabled' };
+    let releaseReady = false;
     if (state.settings.operations?.inactivePoolEnabled) {
-      if (!evolutionIntegrated()) throw new Error('inactive_pool_requires_canonical_integration');
+      if (!evolutionIntegrated()) inactivePool = { status: 'blocked', reason: 'canonical-integration-required' };
+      else {
+        // A persisted opt-in may predate the verified-contact migration. Recheck
+        // on every run; missing/old schema must never invoke the legacy policy.
+        try {
+          const ready = await supabaseServiceRequest<{ inactivePool?: boolean; verifiedInactiveContacts?: boolean } | null>(
+            'rpc/crm_operational_rules_ready', { method: 'POST', body: { p_company_id: companyId, p_actor_id: actor.brokerId }, timeoutMs: 3000 },
+          );
+          releaseReady = ready?.inactivePool === true && ready?.verifiedInactiveContacts === true;
+          inactivePool = { status: 'blocked', reason: 'unverified-contacts' };
+        } catch {
+          inactivePool = { status: 'blocked', reason: 'schema-unavailable' };
+        }
+      }
+      if (releaseReady && Date.now() + 12000 > deadline) {
+        releaseReady = false;
+        inactivePool = { status: 'deferred' };
+      }
+    }
+    // A blocked pool does not prevent independent capture reminders/reports.
+    if (releaseReady) {
       const pool = await supabaseServiceRequest<{ released: number; protected: Array<{ leadId: string; lastContactAt: string | null; reason?: string }> }>(
         'rpc/release_inactive_lead_pool', { method: 'POST', body: { p_company_id: companyId, p_actor_id: actor.brokerId }, timeoutMs: 5000 },
       );
       released = pool.released;
+      inactivePool = { status: 'completed' };
       state = await readEvolutionState(actor);
       // A failed CAS leaves the protected contact eligible for review on the next run.
       // Linking the contact and timestamp keeps retries/renames from duplicating requests.
@@ -57,14 +80,14 @@ export async function runEvolutionScheduler(companyId: string, company: string, 
       state = await readEvolutionState(actor);
     }
     const captureReminders = candidates.length;
-    if (Date.now() + 12000 > deadline) return { report: 'deferred', captureReminders, released };
-    if (!state.settings.operations?.weeklyReportsEnabled) return { report: 'disabled', captureReminders, released };
+    if (Date.now() + 12000 > deadline) return { report: 'deferred', captureReminders, released, inactivePool };
+    if (!state.settings.operations?.weeklyReportsEnabled) return { report: 'disabled', captureReminders, released, inactivePool };
     const report = weeklyReport(state);
     const notices = new Set(state.records.filter(r=>r.kind==='notices').map(r=>r.id));
     if (state.records.some(r => r.kind === 'notices' && r.data.name === report.title)
-      || state.events.some(e=>notices.has(e.recordId) && e.type==='created' && e.changes?.name?.to===report.title)) return { report: 'already-generated', captureReminders, released };
+      || state.events.some(e=>notices.has(e.recordId) && e.type==='created' && e.changes?.name?.to===report.title)) return { report: 'already-generated', captureReminders, released, inactivePool };
     // Same workspace CAS means overlapping cron executions cannot duplicate this notice.
     await executeEvolutionCommand(actor, { type: 'save', kind: 'notices', data: { name: report.title, text: report.text } }, state.version, state.sourceRevision);
-    return { report: 'generated', captureReminders, released };
+    return { report: 'generated', captureReminders, released, inactivePool };
   });
 }

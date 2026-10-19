@@ -4,6 +4,18 @@ Base conferida no GitHub: `main@408cedcadcfbf8827e9a78447a3c92c33e8c0df7`.
 Trabalho separado na branch `codex/operations-list-20261013`; não integra nem substitui o PR #2.
 Este documento descreve fontes e testes locais, não ativação do banco ou publicação.
 
+## Publicação principal solicitada — 19/10/2026
+
+O usuário autorizou publicar o trabalho das últimas semanas no painel principal. A conferência remota encontrou cinco commits revisados no PR #8 além de `main@408cedc`; as demais branches recentes de layout, conta, Registro, IA, funil e histórico já estão contidas nessa base. O PR #2 antigo, conflitante e de setembro, o backup e o protótipo local com alterações não revisadas ficam preservados e fora deste pacote. Trabalho de outro computador nunca enviado ao GitHub não pode ser certificado.
+
+- Publicar o código usa a configuração de produção existente; não promover diretamente a prévia, que não possui as mesmas variáveis de ambiente.
+- As seis migrations operacionais novas não foram aplicadas remotamente. Supabase ainda não conectado; não há comprovação de schema, backup/restauração ou rotina por minuto. Não ativar push nem liberar carteiras por suposição.
+- Proteção adicional: o agendador agora confere `inactivePool=true` e `verifiedInactiveContacts=true` a cada execução, mesmo se a opção já estiver gravada como ligada. Schema ausente/antigo/indisponível bloqueia somente essa liberação e registra o motivo; cobranças e relatório independentes continuam. Não registra liberações que não ocorreram.
+- Cadastros guiados, ajuste de Conversas, controles e lembretes locais podem ser publicados sem essas migrations; aviso urgente fica indisponível sem política 3, e push permanece sem envio sem configuração/consentimento. Publicar o código não equivale a ativar todos os serviços.
+- Referência de recuperação anterior à publicação: deployment `dpl_4fwAPdNJrDEX7iLwiEtduZegVBmo`, servido por `www.imobflow.net.br`, e main `408cedcadcfbf8827e9a78447a3c92c33e8c0df7`. Nenhum rollback foi executado; nenhuma alteração de dados foi incluída nesta preparação.
+
+Quatro testes direcionados, TypeScript e lint da proteção do agendador passaram com dados sintéticos. A execução completa de `build:production` também passou após a proteção, com testes externos de IA desativados. A publicação final e as verificações de domínio/versão serão registradas no PR #8; nenhum segredo, contratação ou alteração de plano integra este pacote.
+
 ## Ajuste confirmado dos avisos — 19/10/2026
 
 Esta seção substitui a regra histórica de “última mensagem sem resposta” e de tentativa única descrita abaixo. Não certifica ativação em produção.
