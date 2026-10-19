@@ -3,6 +3,7 @@ import { protectedRoute } from '@/lib/accounts';
 import { currentAccount } from '@/lib/tenant-context';
 import { supabaseRequest } from '@/lib/supabase';
 import { urgentAlertEligibleAt } from '@/lib/conversation-urgency';
+import { readUrgentAlertWindow, requireUrgentAlertPolicy } from '@/lib/urgent-alert-hours';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -23,6 +24,10 @@ export const GET = protectedRoute(async () => {
   const data: {leadId: string; waitingSince: string}[] = [];
   const seen = new Set<string>();
   try {
+    await requireUrgentAlertPolicy();
+    const activeUntil = await readUrgentAlertWindow(actor.companyId);
+    const respond = () => NextResponse.json({ data: activeUntil !== null && Date.now() < activeUntil ? data : [], fetchedAt, activeUntil }, {headers});
+    if (activeUntil === null) return respond();
     // Page contacts, not a global message sample. Keep going past reserved/recent
     // contacts so they cannot hide older eligible results behind a row limit.
     for (let page = 0; page < 25 && Date.now() - fetchedAt < 20000; page++) {
@@ -37,9 +42,9 @@ export const GET = protectedRoute(async () => {
         if (eligibleAt === null || eligibleAt > fetchedAt || seen.has(row.lead_id)) continue;
         seen.add(row.lead_id);
         data.push({leadId: row.lead_id, waitingSince: row.waiting_since});
-        if (data.length === RESULT_LIMIT) return NextResponse.json({data, fetchedAt}, {headers});
+        if (data.length === RESULT_LIMIT) return respond();
       }
-      if (rows.length < PAGE_SIZE) return NextResponse.json({data, fetchedAt}, {headers});
+      if (rows.length < PAGE_SIZE) return respond();
     }
     // Never silently present an incomplete global sample as an empty inbox.
     throw new Error('waiting_scan_limit');

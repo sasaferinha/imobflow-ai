@@ -27,7 +27,7 @@ export default function ConversationUrgentAlert({ currentBrokerId, visibleLeadId
       if (entity === 'conversations' || entity === 'leads') invalidate();
     };
     // A local/cross-tab claim invalidates the notice before its replacement read finishes.
-    // A read receipt alone does not dismiss a client still waiting for a reply.
+    // A read receipt or automatic reply does not count as a broker accepting the client.
     const channel = 'BroadcastChannel' in window ? new BroadcastChannel('imobflow_data_sync') : null;
     if (channel) channel.onmessage = onChange;
     window.addEventListener('imobflow_data_changed', onChange);
@@ -45,9 +45,10 @@ export default function ConversationUrgentAlert({ currentBrokerId, visibleLeadId
         try {
           const response = await dashboardFetch('/api/conversations/urgent', { signal: controller.signal, cache: 'no-store', credentials: 'same-origin' });
           if (!response.ok) throw new Error('urgent_snapshot_unavailable');
-          const payload = await response.json() as { data?: UrgentQueueSnapshot['data']; fetchedAt?: number } | null;
-          if (!payload || !Array.isArray(payload.data) || !Number.isFinite(payload.fetchedAt)) throw new Error('urgent_snapshot_invalid');
-          return { actorId: currentBrokerId, fetchedAt: payload.fetchedAt!, data: payload.data };
+          const payload = await response.json() as { data?: UrgentQueueSnapshot['data']; fetchedAt?: number; activeUntil?: number | null } | null;
+          if (!payload || !Array.isArray(payload.data) || !Number.isFinite(payload.fetchedAt)
+            || !(payload.activeUntil === null || typeof payload.activeUntil === 'number' && Number.isFinite(payload.activeUntil))) throw new Error('urgent_snapshot_invalid');
+          return { actorId: currentBrokerId, fetchedAt: payload.fetchedAt!, activeUntil: payload.activeUntil, data: payload.data };
         } finally {
           controller.abort();
           window.clearTimeout(timeout);
@@ -68,6 +69,13 @@ export default function ConversationUrgentAlert({ currentBrokerId, visibleLeadId
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [ready, demonstration, currentBrokerId]);
+  useEffect(() => {
+    if (snapshot?.activeUntil == null) return;
+    // Expire at the server's business-hours boundary, without awaiting the next poll.
+    const timer = window.setTimeout(() => setClock({ now: Date.now(), visible: document.visibilityState === 'visible', online: navigator.onLine }),
+      Math.max(0, Math.min(snapshot.activeUntil - Date.now(), 2_147_483_647)));
+    return () => window.clearTimeout(timer);
+  }, [snapshot]);
   const pending = visibleUrgentQueue({ snapshot, visibleLeadIds: new Set(visibleLeadIds), currentBrokerId,
     ready: ready && clock.visible && clock.online, demonstration: demonstration || isProductDemo(), now: clock.now });
   // The live region remains mounted, but unchanged counts are not reannounced on polls.
@@ -78,7 +86,7 @@ export default function ConversationUrgentAlert({ currentBrokerId, visibleLeadId
     {next && <section className={styles.banner} aria-label="Atendimento humano urgente">
       <svg className={styles.icon} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5m0 3v1"/></svg>
       <div className={styles.copy}><strong>CLIENTE ESTÁ SOZINHO E PRECISA SER ATENDIDO</strong>
-        <p>{pending.length === 1 ? '1 cliente está' : `${pending.length} clientes estão`} sem corretor, com mensagem aguardando resposta. Abra a conversa e confira o atendimento.</p>
+        <p>{pending.length === 1 ? '1 cliente está' : `${pending.length} clientes estão`} sem corretor responsável, aguardando aceite humano, mesmo que a IA esteja atendendo. Abra a conversa e confira o atendimento.</p>
       </div>
       <button type="button" className={styles.open} onClick={() => onOpen(next.leadId)}>Abrir próximo atendimento <span aria-hidden="true">→</span></button>
     </section>}

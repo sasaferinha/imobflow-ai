@@ -4,6 +4,22 @@ Base conferida no GitHub: `main@408cedcadcfbf8827e9a78447a3c92c33e8c0df7`.
 Trabalho separado na branch `codex/operations-list-20261013`; não integra nem substitui o PR #2.
 Este documento descreve fontes e testes locais, não ativação do banco ou publicação.
 
+## Ajuste confirmado dos avisos — 19/10/2026
+
+Esta seção substitui a regra histórica de “última mensagem sem resposta” e de tentativa única descrita abaixo. Não certifica ativação em produção.
+
+- **Relógio:** primeira mensagem recebida válida do cliente, mesmo enquanto a IA atende. Novas mensagens, leitura e resposta da IA não reiniciam nem encerram a espera. O aceite por um corretor ou o encerramento do atendimento remove a pendência.
+- **Prazos:** dois minutos para o plantão confirmado e cinco para os demais. Uma mensagem integrada com atraso não deve criar um novo prazo: a prioridade de aceite é encurtada para, no máximo, primeira chegada + cinco minutos, sem ampliar a preferência nem trocar os plantonistas registrados.
+- **Expediente:** usa o horário, fuso, dias da semana e feriados cadastrados na própria imobiliária. Somente quando o cadastro está ausente ou vazio usa o padrão existente (segunda a sexta, 08h–18h, America/Sao_Paulo, sem feriados presumidos). Configuração inválida ou indisponível não autoriza avisar. A espera continua em tempo corrido fora do expediente; clientes já vencidos ficam elegíveis quando ele abre.
+- **Persistência:** aviso destacado em Conversas e nova tentativa de push a cada cinco minutos completos enquanto o cliente continua sem responsável. O intervalo é por corretor/aparelho/lead, inclusive após falha, nova mensagem, logout e novo login; não existe rajada para compensar intervalos perdidos. A rotina por minuto e as restrições do celular podem atrasar a entrega; não se promete horário exato no aparelho.
+- **Fechamento e privacidade:** snapshot de até 30 segundos, limitado ao fechamento do expediente; push vencido é descartado e o worker revalida a conta e o expediente antes de mostrar. Texto genérico, sem nome/telefone do cliente. Notificações já recebidas continuam abrindo Conversas após o expediente se a conta ainda estiver autorizada. Ativar a permissão do aparelho fora do expediente é permitido.
+- **Migrações aditivas:** `20261019140000_persistent_unassigned_push.sql` preserva recibos, acrescenta intervalo atômico e alinha a reserva de plantão; `20261019150000_business_hours_push_candidates.sql` filtra empresas fechadas antes da paginação. A aplicação exige marcador de política versão 3, para não funcionar silenciosamente com o comportamento anterior. Nenhuma migration publicada anteriormente foi reescrita.
+- **Limite histórico:** não há evento confiável de nova chegada após devolver/reabrir um atendimento. Um lead que volte a ficar sem responsável utiliza a primeira entrada conhecida; não inventamos aceite humano a partir de atividade da IA. Um novo ciclo com relógio independente exigiria registrar esse evento explicitamente.
+
+Ativação continua pendente de conferência e aplicação segura das migrations no banco correto, configuração de push e rotina por minuto. Vercel Hobby não atende essa frequência; o caminho proposto é conferir Supabase Cron/pg_net/Vault já existente, sem contratar outro serviço. Acesso e limites dessa conta ainda precisam ser confirmados. Nenhuma cobrança adicional, mensagem a cliente ou notificação real foi disparada nesta implementação.
+
+Validação desta revisão: `pnpm --dir apps/dashboard run build:production` passou integralmente, incluindo regressões, TypeScript e build Next; verificações externas de IA ficaram explicitamente desativadas. ESLint direcionado e `git diff --check` passaram. Novos testes cobrem os limites de 299999/300000 ms, falha/relogin, aceite após mensagem atrasada, fechamento exato, feriados/fusos/DST e 601 contatos de empresas fechadas sem ocultar uma aberta. Transporte push simulado com criptografia real; banco PGlite isolado. Não certifica concorrência entre conexões PostgreSQL reais, schema remoto ou entrega no aparelho.
+
 ## Atualização de decisões e implementação — 19/10/2026
 
 Esta seção atualiza as descrições históricas abaixo; não prova ativação em produção.

@@ -14,70 +14,39 @@ function load(file, dependencies = {}, globals = {}) {
   }, Date, Set, Map, AbortController, console, ...globals });
   return mod.exports;
 }
-const inboxHelpers = load('lib/conversation-inbox.ts');
-const helper = load('lib/conversation-urgency.ts', { './conversation-inbox': inboxHelpers });
+const helper = load('lib/conversation-urgency.ts');
 const intake = Date.parse('2026-10-19T12:00:00Z');
 const iso = offset => new Date(intake + offset).toISOString();
-const fixture = (elapsed = 120000, preferred = true) => ({
-  actorId: 'broker-a', fetchedAt: intake + elapsed,
-  leads: [{ id: 'lead-a', assignedTo: null, lifecycleStatus: 'Novo' }],
-  attendance: [{ leadId: 'lead-a', assignedTo: null, assignedBrokerId: null, attendanceMode: 'paused' }],
-  messages: [{ id: 'incoming-a', leadId: 'lead-a', side: 'incoming', createdAt: iso(0) }],
-  inbox: [{ conversationId: 'conversation-a', leadId: 'lead-a', lastMessageId: 'incoming-a', lastMessageAt: iso(0), incomingCount: 1, unread: 0,
-    dutyPriorityUntil: iso(300000), dutyPreferred: preferred }],
-});
-function pending(snapshot, overrides = {}) {
-  return helper.urgentConversationCandidates({ snapshot, currentBrokerId: 'broker-a', visibleLeadIds: new Set(['lead-a']),
-    ready: true, demonstration: false, now: snapshot.fetchedAt, ...overrides });
-}
-assert.equal(pending(fixture(119999)).length, 0, 'Duty: before 2 minutes no alarm');
-assert.equal(pending(fixture(120000)).length, 1, 'Duty: exact 2-minute boundary');
-assert.equal(pending(fixture(299999, false)).length, 0, 'Others: respect first five minutes');
-assert.equal(pending(fixture(300000, false)).length, 1, 'Others: exact 5-minute boundary');
-assert.equal(pending(fixture(300000, false))[0].leadId, 'lead-a', 'Read message without response remains pending');
-for (const changes of [{ assignedTo: 'Other broker' }, { assignedBrokerId: 'broker-b' }, { assignedTo: 'Current broker', assignedBrokerId: 'broker-a' },
-  { attendanceMode: 'closed' }, { attendanceMode: 'unknown' }, { assignedBrokerId: undefined }]) {
-  const item = fixture(); Object.assign(item.attendance[0], changes);
-  assert.equal(pending(item).length, 0, JSON.stringify(changes));
-}
-for (const changes of [{ assignedTo: 'Lead owner' }, { lifecycleStatus: 'Convertido' }, { lifecycleStatus: 'Perdido' }]) {
-  const item = fixture(); Object.assign(item.leads[0], changes); assert.equal(pending(item).length, 0);
-}
-for (const overrides of [{ ready: false }, { demonstration: true }, { currentBrokerId: undefined }, { currentBrokerId: 'other-account' },
-  { visibleLeadIds: new Set() }, { now: intake + 150001 }, { now: intake - 1 }]) assert.equal(pending(fixture(), overrides).length, 0);
-for (const modify of [item => { item.attendance = []; }, item => { item.messages = []; }, item => { item.messages[0].side = 'outgoing'; },
-  item => { item.messages[0].leadId = 'foreign'; }, item => { item.inbox[0].lastMessageId = 'not-hydrated'; },
-  item => { item.inbox[0].dutyPriorityUntil = 'bad'; }, item => { item.inbox[0].lastMessageAt = 'bad'; },
-  item => { item.inbox[0].incomingCount = 0; }, item => { item.inbox[0].lastMessageAt = iso(999999); }]) {
-  const item = fixture(); modify(item); assert.equal(pending(item).length, 0);
-}
-const duplicateChannels = fixture(); duplicateChannels.attendance.push({ ...duplicateChannels.attendance[0], assignedBrokerId: 'other-broker' });
-assert.equal(pending(duplicateChannels).length, 0, 'Conflicting channel ownership suppresses urgent claim prompt');
-const automatic = fixture(); automatic.attendance[0].attendanceMode = 'automatic';
-assert.equal(pending(automatic).length, 1, 'Automatic bot without a reply after the waiting window still needs human attention');
-automatic.messages[0].side = 'outgoing'; assert.equal(pending(automatic).length, 0, 'Bot reply suppresses the warning');
-const repeated = fixture(120000);
-repeated.messages.push({ id: 'incoming-b', leadId: 'lead-a', side: 'incoming', createdAt: iso(110000) });
-Object.assign(repeated.inbox[0], { lastMessageId: 'incoming-b', lastMessageAt: iso(110000), incomingCount: 2 });
-assert.equal(pending(repeated).length, 1, 'Additional incoming does not reset server intake clock');
-assert.equal(pending(repeated)[0].waitingSince, iso(0));
-const noDuty = fixture(299999); delete noDuty.inbox[0].dutyPriorityUntil;
-assert.equal(pending(noDuty).length, 0);
-noDuty.fetchedAt = intake + 300000; assert.equal(pending(noDuty).length, 1, 'Missing roster: conservative five-minute fallback');
-const reply = fixture(450000); delete reply.inbox[0].dutyPriorityUntil;
-reply.messages = [reply.messages[0], { id: 'reply', leadId: 'lead-a', side: 'outgoing', createdAt: iso(200000) },
-  { id: 'new-incoming', leadId: 'lead-a', side: 'incoming', createdAt: iso(400000) }];
-Object.assign(reply.inbox[0], { lastMessageId: 'new-incoming', lastMessageAt: iso(400000) });
-assert.equal(pending(reply).length, 0, 'Already answered sequence does not age a newer pending request');
+const duty = { dutyPriorityUntil: iso(300000), dutyPreferred: true };
+const dutyAt = helper.urgentAlertEligibleAt(duty, iso(0));
+assert.equal(dutyAt, intake + 120000);
+assert.equal(dutyAt <= intake + 119999, false, 'Duty: before 2 minutes no alarm');
+assert.equal(dutyAt <= intake + 120000, true, 'Duty: exact 2-minute boundary');
+const generalAt = helper.urgentAlertEligibleAt({ ...duty, dutyPreferred: false }, iso(0));
+assert.equal(generalAt <= intake + 299999, false, 'Others: before 5 minutes no alarm');
+assert.equal(generalAt <= intake + 300000, true, 'Others: exact 5-minute boundary');
+assert.equal(helper.urgentAlertEligibleAt({}, iso(0)), intake + 300000, 'No confirmed duty preference: five-minute fallback');
+assert.equal(helper.urgentAlertEligibleAt(duty, 'bad'), null);
+assert.equal(helper.urgentAlertEligibleAt({ dutyPriorityUntil: 'bad', dutyPreferred: true }, iso(0)), null);
+// The full first-incoming timestamp comes from SQL. No UI message/read/bot state can replace it.
+assert.equal(helper.urgentAlertEligibleAt(duty, iso(0)), dutyAt, 'First arrival remains stable through bot activity and repeated messages');
 assert.equal(helper.urgentAlertEligibleAt({ dutyPriorityUntil: iso(300000), dutyPreferred: true }, iso(110000)), intake + 230000, 'A new waiting cycle gets its own minimum delay');
 assert.equal(helper.urgentAlertEligibleAt({ dutyPriorityUntil: iso(300000), dutyPreferred: true }, iso(900000)), intake + 1200000, 'Expired roster cannot grant a later cycle early preference');
-console.log('PASS urgency eligibility: 2/5-minute boundaries, ownership/tenant-visible scope, repeated messages, read-without-reply, closed/bot/unknown guards and snapshot expiry.');
+assert.equal(helper.urgentAlertEligibleAt({ dutyPriorityUntil: iso(900000), dutyPreferred: true }, iso(0)), intake + 120000, 'A duty reservation assigned late does not restart the first-arrival clock');
+assert.equal(helper.urgentAlertEligibleAt({ dutyPriorityUntil: iso(900000), dutyPreferred: false }, iso(0)), intake + 300000, 'Others become eligible five minutes after arrival even if the reservation was recorded late');
+assert.equal(helper.urgentConversationCandidates, undefined, 'No legacy paginated-message inference remains');
+console.log('PASS urgency eligibility: first-arrival 2/5-minute boundaries, conservative roster guards and no message-sample inference.');
 
-const queueInput = { snapshot: { actorId: 'broker-a', fetchedAt: intake + 120000, data: [{ leadId: 'lead-a', waitingSince: iso(0) }] },
+const queueInput = { snapshot: { actorId: 'broker-a', fetchedAt: intake + 120000, activeUntil: intake + 145500, data: [{ leadId: 'lead-a', waitingSince: iso(0) }] },
   visibleLeadIds: new Set(['lead-a']), currentBrokerId: 'broker-a', ready: true, demonstration: false, now: intake + 120000 };
 assert.equal(helper.visibleUrgentQueue(queueInput).length, 1);
 for (const changes of [{ ready: false }, { demonstration: true }, { currentBrokerId: 'broker-b' }, { visibleLeadIds: new Set() },
   { now: intake + 150001 }, { now: intake + 119999 }]) assert.equal(helper.visibleUrgentQueue({ ...queueInput, ...changes }).length, 0);
+assert.equal(helper.visibleUrgentQueue({ ...queueInput, now: intake + 145499 }).length, 1, 'Still open just before server boundary');
+assert.equal(helper.visibleUrgentQueue({ ...queueInput, now: intake + 145500 }).length, 0, 'Closes exactly at boundary, before 30-second snapshot expiry');
+for (const activeUntil of [null, undefined, '2026-10-19T12:03:00Z', NaN, Infinity, intake + 120000]) {
+  assert.equal(helper.visibleUrgentQueue({ ...queueInput, snapshot: { ...queueInput.snapshot, activeUntil } }).length, 0, 'Closed/missing/invalid business-hours metadata fails closed');
+}
 assert.equal(helper.visibleUrgentQueue({ ...queueInput, snapshot: { ...queueInput.snapshot,
   data: [...queueInput.snapshot.data, ...queueInput.snapshot.data, { leadId: 'foreign', waitingSince: iso(0) }, null,
     { leadId: 'lead-a', waitingSince: 'not-a-date' }] } }).length, 1, 'Server queue is narrowed to visible account scope and deduplicated');
@@ -92,8 +61,7 @@ function harness({ demo = false, ready = true } = {}) {
   Object.assign(doc, { visibilityState: 'visible' });
   Object.assign(win, { setInterval: (fn, ms) => { const id = Symbol(); timers.set(id, { fn, ms }); return id; }, clearInterval: id => timers.delete(id),
     setTimeout: (fn, ms) => { const id = Symbol(); timers.set(id, { fn, ms }); return id; }, clearTimeout: id => timers.delete(id) });
-  const current = fixture();
-  const confirmed = { data: [{ leadId: 'lead-a', waitingSince: iso(0) }] };
+  const confirmed = { data: [{ leadId: 'lead-a', waitingSince: iso(0) }], activeUntil: intake + 500000 };
   const React = {
     useState(initial) { const n = index++; if (!(n in slots)) slots[n] = { value: initial }; return [slots[n].value, value => { slots[n].value = value; }]; },
     useEffect(fn, dependencies) { const n = index++, previous = slots[n]; if (!previous || dependencies.some((value, i) => value !== previous.dependencies[i])) effects.push(() => {
@@ -107,16 +75,17 @@ function harness({ demo = false, ready = true } = {}) {
     '@/lib/dashboard-transport': { isProductDemo: () => demo, dashboardFetch: async (url, options) => {
       requests.push({ url, options });
       assert.equal(url, '/api/conversations/urgent', 'One authoritative server queue, no paginated history inference');
-      return { ok: true, json: async () => ({ data: confirmed.data, fetchedAt: now }) };
+      return { ok: true, json: async () => ({ data: confirmed.data, fetchedAt: now, activeUntil: confirmed.activeUntil }) };
     } },
     '@/lib/dashboard-sync': { subscribeDashboardSync: options => { subscription = options; return () => { stopped = true; }; } },
   }, { window: win, document: doc, navigator, Date: Clock }).default;
   const props = { currentBrokerId: 'broker-a', visibleLeadIds: ['lead-a'], ready, onOpen: id => opened.push(id) };
   const render = () => { index = 0; const tree = Component(props); while (effects.length) effects.shift()(); return tree; };
   render();
-  return { render, requests, opened, current, confirmed, props, doc, win, navigator, timers,
+  return { render, requests, opened, confirmed, props, doc, win, navigator, timers,
     get subscription() { return subscription; }, get stopped() { return stopped; },
     tick(value) { now = value; for (const timer of timers.values()) if (timer.ms === 1000) timer.fn(); },
+    fireTimeout(value, delay) { now = value; for (const [id, timer] of timers) if (timer.ms === delay) { timers.delete(id); timer.fn(); } },
     async refresh() { subscription.apply(await subscription.load(new AbortController().signal)); return render(); },
     unmount() { for (const slot of slots) slot.cleanup?.(); },
   };
@@ -130,6 +99,8 @@ function harness({ demo = false, ready = true } = {}) {
   const button = nodes(tree).find(node => node.type === 'button'); assert(button); button.props.onClick();
   assert.deepEqual(ui.opened, ['lead-a']); assert.equal(ui.requests.length, 1, 'Opening delegates selection only');
   assert.match(text(tree), /CLIENTE ESTÁ SOZINHO E PRECISA SER ATENDIDO/);
+  assert.match(text(tree), /aguardando aceite humano, mesmo que a IA esteja atendendo/);
+  assert.doesNotMatch(text(tree), /aguardando resposta/);
   const firstAnnouncement = text(nodes(tree).find(node => node.props.role === 'alert'));
   ui.tick(intake + 121000); tree = ui.render();
   assert.equal(text(nodes(tree).find(node => node.props.role === 'alert')), firstAnnouncement, 'Stable alert text on clock ticks');
@@ -151,11 +122,23 @@ function harness({ demo = false, ready = true } = {}) {
   assert.equal(nodes(ui.render()).some(node => node.type === 'section'), false, 'Offline does not assert abandonment from cache');
   await assert.rejects(() => ui.subscription.load(new AbortController().signal), /offline/);
   ui.unmount(); assert(ui.stopped); assert.equal(ui.timers.size, 0);
+  const closing = harness(); closing.confirmed.activeUntil = intake + 120250;
+  assert.ok(nodes(await closing.refresh()).some(node => node.type === 'section'));
+  closing.fireTimeout(intake + 120250, 250);
+  assert.equal(nodes(closing.render()).some(node => node.type === 'section'), false, 'Closing timeout removes banner without the one-second tick or a new request');
+  assert.equal(closing.requests.length, 1);
+  closing.confirmed.activeUntil = null;
+  assert.equal(nodes(await closing.refresh()).some(node => node.type === 'section'), false, 'Closed server queue remains hidden even if it contains an old item');
+  for (const invalid of [undefined, 'bad', Infinity]) {
+    closing.confirmed.activeUntil = invalid;
+    await assert.rejects(() => closing.subscription.load(new AbortController().signal), /urgent_snapshot_invalid/);
+  }
+  closing.unmount(); assert.equal(closing.timers.size, 0);
   for (const options of [{ demo: true }, { ready: false }]) {
     const blocked = harness(options); assert.equal(blocked.subscription, undefined); assert.equal(blocked.requests.length, 0); blocked.unmount();
   }
   const css = fs.readFileSync(path.join(root, 'app/conversation-urgent-alert.module.css'), 'utf8');
   assert.doesNotMatch(css, /animation\s*:|position:\s*fixed/, 'No flashing or obstructive overlay');
   assert.match(css, /min-height:\s*44px/);
-  console.log('PASS urgent banner: bounded read-only snapshot, visibility/offline/stale/demo guards, accessible unchanged announcement, selection-only CTA and cleanup.');
+  console.log('PASS urgent banner: bounded read-only snapshot, exact business-hours expiry, visibility/offline/stale/demo guards, stable announcement, selection-only CTA and cleanup.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

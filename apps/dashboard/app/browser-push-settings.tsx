@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { dashboardFetch, isProductDemo } from '@/lib/dashboard-transport';
 import styles from './browser-push-settings.module.css';
 
-type PushConfiguration = { configured: boolean; publicKey: string | null; subscribed: boolean; schedulerConfigured: boolean; bindingIds: string[] };
+type PushConfiguration = { configured: boolean; publicKey: string | null; subscribed: boolean; schedulerConfigured: boolean; bindingIds: string[]; businessHoursOpen: boolean | null };
 type Capability = 'checking' | 'supported' | 'unsupported' | 'install-ios';
 const workerPath = '/push-sw.js';
 
@@ -94,7 +94,8 @@ export default function BrowserPushSettings({ ready = false, demonstration = fal
         setKeyChanged(Boolean(local && status.configured === true && !matchesKey));
         setConfiguration({ configured: status.configured === true, publicKey: typeof status.publicKey === 'string' ? status.publicKey : null,
           subscribed: Boolean(local && matchesKey && status.subscribed === true && Array.isArray(status.bindingIds) && status.bindingIds.length),
-          schedulerConfigured: status.schedulerConfigured === true, bindingIds: Array.isArray(status.bindingIds) ? status.bindingIds : [] });
+          schedulerConfigured: status.schedulerConfigured === true, bindingIds: Array.isArray(status.bindingIds) ? status.bindingIds : [],
+          businessHoursOpen: typeof status.businessHoursOpen === 'boolean' ? status.businessHoursOpen : null });
       } catch {
         if (active && generation === readGeneration.current) { setConfiguration(null); setNotice('Não foi possível verificar os avisos deste aparelho. Tente verificar novamente.'); }
       } finally { window.clearTimeout(timeout); }
@@ -171,11 +172,13 @@ export default function BrowserPushSettings({ ready = false, demonstration = fal
     <div className={styles.content}>
       <strong>Avisar mesmo com o painel fechado</strong>
       <p>Ative no navegador do celular que você deseja avisar. Não usamos o telefone cadastrado e não enviamos WhatsApp ou SMS.</p>
-      <p>Avisos a partir de 2 minutos sem aceite para plantonistas e, a partir de 5 minutos, também para os demais corretores elegíveis, conforme a rotina de verificação. Sem nomes ou conteúdo de clientes na tela bloqueada.</p>
+      <p>Somente no expediente configurado da empresa. Para clientes sem corretor, contamos desde a primeira mensagem do cliente, mesmo que a IA esteja atendendo: avisos a partir de 2 minutos para plantonistas e 5 minutos para os demais corretores elegíveis.</p>
+      <p>Os avisos se repetem a cada 5 minutos até um corretor aceitar, conforme a rotina de verificação e a entrega do navegador. No painel, o destaque permanece enquanto o cliente estiver elegível no expediente. Sem nomes ou conteúdo de clientes na tela bloqueada.</p>
       {capability === 'checking' && <p>Verificando compatibilidade…</p>}
       {capability === 'install-ios' && <p className={styles.hint}>No iPhone ou iPad, abra a ImobFlow no Safari, toque em Compartilhar → Adicionar à Tela de Início. Depois abra pelo ícone e ative aqui. É necessário iOS/iPadOS 16.4 ou superior.</p>}
       {capability === 'unsupported' && <p className={styles.hint}>Este navegador não oferece os recursos necessários. Tente um navegador atualizado com HTTPS. Os avisos dentro da ImobFlow continuam disponíveis.</p>}
       {capability === 'supported' && configuration && !available && <p className={styles.hint}>Servidor ainda pendente de configuração{!configuration.schedulerConfigured ? ' e rotina de verificação' : ''}. A ativação ficará disponível quando essa preparação estiver concluída.</p>}
+      {capability === 'supported' && available && configuration?.businessHoursOpen === false && <p className={styles.hint}>Fora do expediente configurado: os avisos estão pausados, mas você pode ativar ou manter a inscrição neste aparelho.</p>}
       {capability === 'supported' && permission === 'denied' && <p className={styles.hint}>Notificações bloqueadas neste navegador. Para permitir, abra as configurações de notificações deste site e depois clique em Verificar novamente.</p>}
       {keyChanged && <p className={styles.hint}>A configuração de segurança dos avisos mudou. Reative neste aparelho para atualizar a inscrição.</p>}
       <div className={styles.actions}>
