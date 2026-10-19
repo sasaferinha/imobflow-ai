@@ -756,6 +756,7 @@
 .dialogHead h2 { color: var(--ev-brand-ink); font-size: 20px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
 .dialogHead p { margin-top: 5px; color: var(--ev-muted); font-size: 12px; }
 .dialog form { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.modalFormLayout { display: contents; }
 .formBody { min-height: 0; padding: 22px 24px; overflow: auto; }
 .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 27px 20px; }
 .formGrid label { display: flex; flex-direction: column; gap: 6px; min-width: 0; color: var(--ev-ink); font-size: 15px; font-weight: 600; letter-spacing: 0; text-transform: none; overflow-wrap: normal; word-break: normal; }
@@ -773,6 +774,64 @@
 .guidedOptional > summary small { display: block; margin: 5px 0 0 16px; color: var(--ev-muted); font-size: 12px; font-weight: 400; }
 .guidedOptional > summary:focus-visible { outline: 2px solid var(--ev-brand); outline-offset: 3px; border-radius: 12px; }
 .guidedOptional > .formGrid { padding: 8px 16px 20px; }
+
+/* Lead creation is a workspace page, not a dialog or an overlay. */
+.leadRegistrationPage { width: 100%; min-width: 0; padding-bottom: 8px; }
+.registrationBreadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 22px; color: var(--ev-muted); font-size: 13px; }
+.registrationBreadcrumb button { min-height: 36px; }
+.registrationForm { min-width: 0; }
+.registrationLayout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; align-items: start; gap: 24px; }
+.registrationFields { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.registrationSection { min-width: 0; padding: 26px; border: 1px solid var(--ev-line); border-radius: 16px; background: var(--ev-paper); scroll-margin-top: 24px; }
+.registrationSection > header { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 24px; }
+.registrationStep { display: grid; place-items: center; flex: 0 0 38px; height: 38px; border-radius: 11px; background: var(--ev-brand-wash); color: var(--ev-brand); font-size: 13px; font-weight: 700; }
+.registrationSection h2 { color: var(--ev-ink); font-size: 17px; font-weight: 650; line-height: 1.4; }
+.registrationSection header p { margin-top: 5px; color: var(--ev-muted); font-size: 12px; line-height: 1.6; }
+.registrationSection .formGrid { gap: 22px 24px; }
+.registrationSection .formGrid label { font-size: 13px; }
+.registrationSection .formGrid input, .registrationSection .formGrid select, .registrationSection .formGrid textarea { min-height: 46px; font-size: 14px; font-weight: 500; }
+.registrationSection .formGrid small { color: var(--ev-muted); }
+.registrationOptional { margin: 0; scroll-margin-top: 24px; border-radius: 16px; }
+.registrationOptional > summary { padding: 22px 26px; }
+.registrationOptional > .formGrid { padding: 6px 26px 26px; }
+.registrationAside { min-width: 0; position: sticky; top: 24px; }
+.registrationSummary { padding: 22px; border: 1px solid var(--ev-line); border-radius: 16px; background: var(--ev-paper); }
+.registrationEyebrow { color: var(--ev-brand); font-size: 10px; font-weight: 750; letter-spacing: 1.2px; }
+.registrationSummary h2 { margin-top: 10px; color: var(--ev-ink); font-size: 18px; font-weight: 650; line-height: 1.4; }
+.registrationSummary > p { margin: 10px 0 20px; color: var(--ev-muted); font-size: 12px; line-height: 1.7; }
+.registrationSummary nav { display: grid; gap: 3px; margin-top: 20px; }
+.registrationSummary nav button { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--ev-line); background: transparent; color: var(--ev-ink); text-align: left; font-size: 12px; line-height: 1.5; }
+.registrationSummary nav button > span { color: var(--ev-brand); font-size: 11px; font-weight: 700; }
+.registrationSummary nav button svg { flex-shrink: 0; margin-left: auto; color: var(--ev-muted); }
+.registrationSummary nav button:hover { color: var(--ev-brand); }
+.registrationSafety { display: flex; gap: 9px; margin-top: 20px; color: var(--ev-muted); font-size: 11px; line-height: 1.65; }
+.registrationSafety svg { flex-shrink: 0; color: var(--ev-brand); }
+.registrationActions { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 24px; padding: 16px 20px; border: 1px solid var(--ev-line); border-radius: 14px; background: var(--ev-paper); box-shadow: 0 -6px 24px rgb(27 69 113 / 5%); }
+.registrationActions > span { display: flex; align-items: center; gap: 8px; margin-right: auto; color: var(--ev-muted); font-size: 12px; }
+.registrationActions .primaryButton, .registrationActions .secondaryButton { min-height: 44px; padding: 10px 20px; font-size: 14px; }
+@media (max-width: 1200px) {
+  .registrationLayout { grid-template-columns: minmax(0, 1fr) 250px; gap: 18px; }
+  .registrationSection { padding: 22px; }
+  .registrationSummary { padding: 18px; }
+}
+@media (max-width: 850px) {
+  .registrationLayout { grid-template-columns: minmax(0, 1fr); }
+  .registrationAside { position: static; }
+  .registrationSummary nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+}
+@media (max-width: 560px) {
+  .registrationBreadcrumb { margin-bottom: 14px; }
+  .registrationSection { padding: 18px; border-radius: 12px; }
+  .registrationSection > header { gap: 10px; margin-bottom: 20px; }
+  .registrationSection h2 { font-size: 16px; }
+  .registrationSection .formGrid, .registrationOptional > .formGrid { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .registrationSection .formGrid input, .registrationSection .formGrid select, .registrationSection .formGrid textarea { font-size: 16px; }
+  .registrationOptional > summary { padding: 18px; }
+  .registrationOptional > .formGrid { padding: 4px 18px 20px; }
+  .registrationActions { gap: 8px; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .registrationActions > span { width: 100%; font-size: 11px; }
+  .registrationActions button { flex: 1; }
+}
 .formNote { margin: 15px 0; color: var(--ev-muted); font-size: 12px; line-height: 1.8; }
 .formBody > .formNote:first-child { margin-top: 0; }
 .dialogActions { display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; gap: 9px; padding: 16px 24px; border-top: 1px solid var(--ev-line); background: var(--ev-paper); }

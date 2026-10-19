@@ -14,7 +14,7 @@ import GuidedRecordField from '../guided-record-field';
 import { locationSuggestions, NEW_PROPERTY_FORM_ESSENTIALS, PROPERTY_FEATURE_CHOICES, PROPERTY_TYPE_CHOICES } from '@/lib/guided-record-fields';
 
 export type OperationalPage = 'conversations' | 'opportunities' | 'appointments' | 'imports' | 'integrations' | 'account' | 'brokers' | 'results' | 'operational-goals' | 'portfolio' | 'customer-base';
-type Page = Kind | 'dashboard' | 'reports' | 'members' | 'settings' | 'operations' | OperationalPage;
+type Page = Kind | 'dashboard' | 'reports' | 'members' | 'settings' | 'operations' | 'leads/new' | OperationalPage;
 const OPERATIONAL_TITLES: Record<OperationalPage, string> = {
   conversations: 'Conversas', opportunities: 'Oportunidades', appointments: 'Agenda de visitas', imports: 'Importar clientes', integrations: 'Integrações', account: 'Minha conta', brokers: 'Corretores e acessos', results: 'Resultados da operação', 'operational-goals': 'Metas da operação', portfolio: 'Catálogo e fotos', 'customer-base': 'Carteira de clientes',
 };
@@ -139,6 +139,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const [query, setQuery] = useState('');
   const [globalQuery, setGlobalQuery] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
+  const leadDraftRef = useRef({ active: false, dirty: false, busy: false });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -168,7 +169,8 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const selected = state.records.find(record => record.id === selectedId);
   const member = state.members.find(item => item.id === memberId);
   const pageTitle = (item: Page) => item in MODULES ? MODULES[item as Kind].title : isOperationalPage(item) ? OPERATIONAL_TITLES[item] : { dashboard: 'Dashboard', reports: 'Relatórios', members: 'Usuários e permissões', settings: 'Configurações', operations: 'Central de gestão' }[item as 'dashboard' | 'reports' | 'members' | 'settings' | 'operations'];
-  const title = pageTitle(page);
+  const creatingLeadPage = page === 'leads/new';
+  const title = creatingLeadPage ? 'Cadastrar lead' : pageTitle(page);
 
   useEffect(() => {
     if (mobileNavOpen) { drawerWasOpenRef.current = true; return; }
@@ -202,10 +204,49 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     return () => { document.body.style.overflow = previousOverflow; document.removeEventListener('keydown', keyboard); window.removeEventListener('resize', resize); };
   }, [mobileNavOpen]);
 
+  function canLeaveLeadPage() {
+    const draft = leadDraftRef.current;
+    return !draft.active || (!draft.busy && (!draft.dirty || window.confirm('Sair do cadastro e descartar os dados não salvos?')));
+  }
+
+  useEffect(() => { leadDraftRef.current.busy = busy; }, [busy]);
+
   useEffect(() => {
-    const hash = window.location.hash.slice(1) as Page;
-    if (hash in MODULES || ['dashboard', 'reports', 'members', 'settings', 'operations'].includes(hash) || (hasLiveOperation && isOperationalPage(hash) && (isAdmin || !['imports', 'brokers', 'operational-goals'].includes(hash)))) setPage(hash);
+    const syncHash = () => {
+      const hash = (window.location.hash.slice(1) || 'dashboard') as Page;
+      if (!(hash in MODULES || ['dashboard', 'reports', 'members', 'settings', 'operations', 'leads/new'].includes(hash) || (hasLiveOperation && isOperationalPage(hash) && (isAdmin || !['imports', 'brokers', 'operational-goals'].includes(hash))))) return;
+      if (leadDraftRef.current.active && hash !== 'leads/new') {
+        if (!canLeaveLeadPage()) {
+          window.history.pushState(null, '', `${window.location.pathname}${window.location.search}#leads/new`);
+          return;
+        }
+        leadDraftRef.current = { active: false, dirty: false, busy: false };
+        setEditor(null); setError('');
+      }
+      if (hash === 'leads/new' && !leadDraftRef.current.active) {
+        leadDraftRef.current = { active: true, dirty: false, busy: false };
+        setEditor({ kind: 'leads' }); setSelectedId(null); setError('');
+      }
+      setPage(hash);
+    };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      const draft = leadDraftRef.current;
+      if (draft.active && (draft.dirty || draft.busy)) { event.preventDefault(); event.returnValue = ''; }
+    };
+    syncHash();
+    window.addEventListener?.('popstate', syncHash);
+    window.addEventListener?.('hashchange', syncHash);
+    window.addEventListener?.('beforeunload', beforeUnload);
+    return () => {
+      window.removeEventListener?.('popstate', syncHash);
+      window.removeEventListener?.('hashchange', syncHash);
+      window.removeEventListener?.('beforeunload', beforeUnload);
+    };
   }, [hasLiveOperation, isAdmin]);
+
+  useEffect(() => {
+    if (creatingLeadPage) pageHeadingRef.current?.focus();
+  }, [creatingLeadPage]);
 
   useEffect(() => {
     if (mode !== 'live' || page !== 'operations' || busy || editor || selectedId || memberId || typeof window.setInterval !== 'function') return;
@@ -225,6 +266,11 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
 
   function navigate(next: Page, nextFilters: Partial<Filters> = {}) {
     if (isOperationalPage(next) && (!hasLiveOperation || (!isAdmin && ['imports', 'brokers', 'operational-goals'].includes(next)))) return;
+    if (!canLeaveLeadPage()) return;
+    if (leadDraftRef.current.active) {
+      leadDraftRef.current = { active: false, dirty: false, busy: false };
+      setEditor(null); setError('');
+    }
     setHistoricalDrill(null);
     if (operationalPage && !isOperationalPage(next)) void refresh(true);
     if (mobileNavOpen) focusContentOnCloseRef.current = true;
@@ -283,7 +329,32 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   };
   const clearFilters = () => { setFilters(INITIAL_FILTERS); setHistoricalDrill(null); };
   const canCreate = (kind: Kind) => isAdmin || (!MODULES[kind].admin && !['followups', 'captureGoals', 'shifts'].includes(kind));
-  const create = (kind: Kind, defaults?: Values) => { if (!canCreate(kind)) return; setError(''); setEditor({ kind, defaults }); };
+  const create = (kind: Kind, defaults?: Values) => {
+    if (!canCreate(kind) || !canLeaveLeadPage()) return;
+    setError(''); setEditor({ kind, defaults });
+    if (kind === 'leads') {
+      leadDraftRef.current = { active: true, dirty: false, busy: false };
+      setPage('leads/new'); setSelectedId(null); setGlobalQuery(''); setMenu(null); setMobileNavOpen(false);
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}#leads/new`);
+    }
+  };
+  const closeLeadPage = (saved = false) => {
+    if (!saved && !canLeaveLeadPage()) return;
+    leadDraftRef.current = { active: false, dirty: false, busy: false };
+    setEditor(null); setError(''); setSelectedId(null); setPage('leads');
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#leads`);
+    pageHeadingRef.current?.focus();
+  };
+  const saveEditor = async (data: Values) => {
+    if (!editor || busy || leadDraftRef.current.busy) return;
+    if (creatingLeadPage) leadDraftRef.current.busy = true;
+    const saved = await execute({ type: 'save', kind: editor.kind, ...(editor.record ? { id: editor.record.id } : {}), data });
+    leadDraftRef.current.busy = false;
+    if (saved) {
+      if (creatingLeadPage) closeLeadPage(true);
+      else setEditor(null);
+    }
+  };
   const attentionCount = operationsSummary(state).followups.overdue;
 
   function acceptedAmounts(records: CrmRecord[], compact = false) {
@@ -471,7 +542,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
       <div className={s.sidebarBrand}><button className={s.brand} onClick={() => navigate('dashboard')} aria-label="ImobFlow: ir para o dashboard"><svg width="29" height="36" viewBox="0 0 29 36" fill="none" aria-hidden="true"><path d="M2 34V19l8-4m0 19V8L22 2v32m0-20h5v20" stroke="currentColor" strokeWidth="2" /></svg><span>Imob<b>Flow</b></span></button><button ref={mobileCloseRef} className={s.sidebarClose} aria-label="Fechar navegação lateral" onClick={() => { setMobileNavOpen(false); }}><Icon name="close" /></button></div>
       <nav id="evolution-navigation" className={s.nav} aria-label="Navegação principal" onKeyDown={event => { if (event.key === 'Escape') setMenu(null); }}>
         {groups.map((group, index) => <div className={s.navGroup} key={group.title}>
-          <div className={`${s.navItem} ${page === group.target || group.items.includes(page) ? s.navActive : ''}`}>
+          <div className={`${s.navItem} ${page === group.target || group.items.includes(page) || creatingLeadPage && group.target === 'leads' ? s.navActive : ''}`}>
             <button className={s.navButton} disabled={group.disabled} title={group.disabled ? 'Disponível no painel integrado' : undefined} aria-current={page === group.target ? 'page' : undefined} onClick={() => navigate(group.target)}><Icon name={group.icon} size={21} /><span>{group.title}</span></button>
             {group.items.length > 0 && <button className={s.navExpand} aria-label={`Opções de ${group.title}`} aria-expanded={menu === group.title} aria-controls={`navigation-group-${index}`} onClick={() => setMenu(menu === group.title ? null : group.title)}><Icon name="chevron" size={13} /></button>}
           </div>
@@ -483,13 +554,14 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     <div className={s.workspace} inert={mobileNavOpen || undefined}>
     <header className={s.pageHead}>
       <button ref={mobileTriggerRef} className={s.mobileMenu} aria-label="Abrir navegação" aria-expanded={mobileNavOpen} aria-controls="evolution-navigation" onClick={() => setMobileNavOpen(true)}><Icon name="list" size={23} /></button>
-      <div className={s.pageHeading}><h1 ref={pageHeadingRef} tabIndex={-1}>{title}</h1><p>{page === 'dashboard' ? 'Visão geral do seu negócio imobiliário' : page === 'conversations' ? 'Relacionamentos que se transformam em oportunidades' : 'Sua operação organizada, do início ao próximo passo'}</p></div>
+      <div className={s.pageHeading}><h1 ref={pageHeadingRef} tabIndex={-1}>{title}</h1><p>{creatingLeadPage ? 'Organize o contato e o que ele procura, em um só lugar' : page === 'dashboard' ? 'Visão geral do seu negócio imobiliário' : page === 'conversations' ? 'Relacionamentos que se transformam em oportunidades' : 'Sua operação organizada, do início ao próximo passo'}</p></div>
       <div className={s.headerTools}><div className={s.headerSearch}><Icon name="search" size={18} /><input aria-label="Busca global" placeholder="Pesquisar leads, imóveis, clientes…" value={globalQuery} onChange={event => setGlobalQuery(event.target.value)} />{globalQuery.length >= 2 && <div className={s.searchResults}>{globalResults.length ? globalResults.map(record => <button key={record.id} onClick={() => { setSelectedId(record.id); setGlobalQuery(''); }}><span>{label(record)}<small>{MODULES[record.kind].title}</small></span><Icon name="arrow" size={15} /></button>) : <p>Nenhum registro encontrado.</p>}</div>}</div><button className={s.iconButton} aria-label="Atualizar" title="Atualizar dados" onClick={() => void refresh()} disabled={busy}><Icon name="refresh" size={19} /></button><button className={s.iconButton} aria-label="Mural de avisos" title="Mural de avisos" onClick={() => navigate('notices')}><Icon name="bell" size={22} /></button><AccountMenu name={actor.name} role={actor.role} preview={mode === 'preview'} onOpen={() => setMenu(null)} /></div>
     </header>
     <main className={s.main}>
       {mode === 'preview' && <div className={s.previewStrip}><Icon name="shield" size={14} /><strong>Prévia privada</strong><span>Dados fictícios · integrações desligadas · painel clássico preservado.</span></div>}
       {hasLiveOperation && page === 'dashboard' && <details className={s.integrationNote}><summary><Icon name="shield" size={13} />Sua operação real, no novo painel <Icon name="chevron" size={12} /></summary><div><p>Clientes, imóveis e visitas conectados à carteira. Conversas, oportunidades e resultados mantêm as mesmas permissões.</p><button className={s.textButton} onClick={() => navigate('conversations')}>Abrir conversas <Icon name="arrow" size={14} /></button></div></details>}
-      {!operationalPage && <>
+      {creatingLeadPage && editor && <RecordEditor editor={editor} state={state} actor={actor} busy={busy} error={error} fullPage onDirtyChange={dirty => { leadDraftRef.current.dirty = dirty; }} onClose={() => closeLeadPage()} onSave={saveEditor} />}
+      {!operationalPage && !creatingLeadPage && <>
       {page in MODULES && canCreate(page as Kind) && <div className={s.moduleActions}><button className={s.primaryButton} onClick={() => create(page as Kind)}><Icon name="plus" size={17} />{MODULES[page as Kind].singular}</button></div>}
       {error && !editor && !memberId && <div className={s.error} role="alert"><Icon name="alert" />{error}<button onClick={() => setError('')} aria-label="Fechar aviso"><Icon name="close" size={15} /></button></div>}
       {notice && !editor && !selected && !memberId && <div className={s.success} role="status"><Icon name="check" size={15} />{notice}<button onClick={() => setNotice('')} aria-label="Fechar confirmação"><Icon name="close" size={15} /></button></div>}
@@ -502,7 +574,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
       <footer className={s.footer}><span>ImobFlow <b>·</b> Operação conectada</span><a className={s.textButton} href="/painel?experiencia=classica">Painel clássico <Icon name="external" size={14} /></a><span>{mode === 'preview' ? 'Prévia protegida' : hasLiveOperation ? 'Operação real integrada' : 'Nova experiência'} · versão dos dados {state.version}</span></footer>
     </main>
     </div>
-    {editor && <RecordEditor editor={editor} state={state} actor={actor} busy={busy} error={error} onClose={() => { if (!busy) { setEditor(null); setError(''); } }} onSave={async data => { if (await execute({ type: 'save', kind: editor.kind, ...(editor.record ? { id: editor.record.id } : {}), data })) setEditor(null); }} />}
+    {editor && !creatingLeadPage && <RecordEditor editor={editor} state={state} actor={actor} busy={busy} error={error} onClose={() => { if (!busy) { setEditor(null); setError(''); } }} onSave={saveEditor} />}
     {selected && !editor && <RecordDetail key={selected.id} demonstration={mode !== 'live'} onSaved={() => { void refresh(true); }} onDemoSaved={setState} notify={setNotice} onOpenOperational={hasLiveOperation ? next => navigate(next) : undefined} record={selected} state={state} actor={actor} busy={busy} error={error} onClose={() => { setSelectedId(null); setError(''); }} onEdit={() => { setError(''); setEditor({ kind: selected.kind, record: selected }); }} onCreate={create} onSelect={setSelectedId} execute={execute} />}
     {member && <MemberEditor member={member} state={state} busy={busy} error={error} onClose={() => setMemberId(null)} onSave={async command => { if (await execute(command)) setMemberId(null); }} />}
   </div>;
@@ -516,7 +588,7 @@ function fieldSection(kind: Kind, field: Field) {
   return 'Informações do registro';
 }
 
-function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { editor: Editor; state: CrmState; actor: Actor; busy: boolean; error: string; onClose: () => void; onSave: (data: Values) => Promise<void> }) {
+function RecordEditor({ editor, state, actor, busy, error, onClose, onSave, fullPage = false, onDirtyChange }: { editor: Editor; state: CrmState; actor: Actor; busy: boolean; error: string; onClose: () => void; onSave: (data: Values) => Promise<void>; fullPage?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
   const definition = MODULES[editor.kind];
   const guided = ['people', 'leads', 'properties'].includes(editor.kind);
   const brokerReply = actor.role !== 'owner' && editor.kind === 'followups';
@@ -548,7 +620,9 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { 
   const fields = definition.fields.filter(field => !brokerReply || ['response', 'status'].includes(field.key));
   const sections = [...new Set(fields.map(field => fieldSection(editor.kind, field)))].sort((a, b) => Number(a.toLowerCase().includes('complementares')) - Number(b.toLowerCase().includes('complementares')));
   const draftRecord: CrmRecord = { id: editor.record?.id || 'draft', kind: editor.kind, data: existingSourceLead ? { ...data, source: existingSourceLead.data.source ?? '' } : data, createdAt: editor.record?.createdAt || new Date().toISOString(), updatedAt: editor.record?.updatedAt || new Date().toISOString(), createdBy: actor.brokerId };
-  const update = (field: Field, value: string) => setData(current => {
+  const update = (field: Field, value: string) => {
+    onDirtyChange?.(true);
+    setData(current => {
     const next: Values = { ...current, [field.key]: field.type === 'number' && value !== '' ? Number(value) : value };
     if (editor.kind === 'leads' && field.key === 'personId') {
       const person = state.records.find(item => item.kind === 'people' && item.id === value);
@@ -563,7 +637,8 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { 
       }
     }
     return next;
-  });
+    });
+  };
   function fieldControl(field: Field) {
     const missingOriginal = Boolean(editor.record?.legacy && (editor.record.data[field.key] === undefined || editor.record.data[field.key] === ''));
     const required = fieldRequired(field) && !missingOriginal;
@@ -598,19 +673,20 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { 
         : <input id={id} disabled={locked || busy} list={field.key === 'reason' ? 'evolution-reasons' : undefined} type={field.type || 'text'} required={required} min={creatingProperty && ['area', 'price'].includes(field.key) ? 0.01 : field.min} step={field.type === 'number' ? field.key === 'target' ? '1' : 'any' : undefined} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)} {...(field.key === 'month' ? { pattern: '[0-9]{4}-(0[1-9]|1[0-2])', placeholder: '2026-10' } : {})} />}
     </label>;
   }
-  return <Dialog title={brokerReply ? 'Responder ao gestor' : `${editor.record ? 'Editar' : 'Cadastrar'} ${definition.singular.toLowerCase()}`} subtitle="Os campos com * são obrigatórios. Alterações ficam registradas no histórico." onClose={onClose} wide>
-    <form onSubmit={event => { event.preventDefault(); void onSave(brokerReply ? { status: data.status, response: data.response } : { ...data, ...(existingSourceLead ? { source: existingSourceLead.data.source ?? '' } : typeof data.source === 'string' && data.source !== prepared.source ? { source: data.source.trim() } : {}) }); }}>
-      <div className={s.formBody}>
+  const form = <form className={fullPage ? s.registrationForm : undefined} aria-label={fullPage ? 'Cadastro de lead' : undefined} onSubmit={event => { event.preventDefault(); if (busy) return; void onSave(brokerReply ? { status: data.status, response: data.response } : { ...data, ...(existingSourceLead ? { source: existingSourceLead.data.source ?? '' } : typeof data.source === 'string' && data.source !== prepared.source ? { source: data.source.trim() } : {}) }); }}>
+      <div className={fullPage ? s.registrationLayout : s.modalFormLayout}>
+      <div className={fullPage ? s.registrationFields : s.formBody}>
         {error && <div className={s.error} role="alert"><Icon name="alert" size={16} />{error}</div>}
         {duplicate && <div className={s.warning}><Icon name="alert" size={16} />Já existe uma pessoa com este telefone ou email. Confira o cadastro existente; os contatos não serão mesclados automaticamente.</div>}
         {definition.description && <p className={s.formNote}>{definition.description}</p>}
         {brokerReply && editor.record && <div className={s.followupContext}><strong>{v(editor.record, 'name')}</strong><p>{v(editor.record, 'request')}</p><small>Prazo: {date(v(editor.record, 'dueAt'), true)} · a conclusão depende da revisão do gestor.</small></div>}
-        {guided && <div className={s.guidedIntro}><span className={s.guidedIntroIcon}><Icon name={editor.kind === 'properties' ? 'home' : 'people'} size={20} /></span><div><strong>{creatingProperty ? 'Selecione as opções e preencha os dados essenciais' : 'Selecione as opções e complete só o que souber'}</strong><p>{editor.kind === 'leads' ? 'Para uma ficha comercial completa: nome, telefone ou email da pessoa vinculada, responsável, origem, compra ou aluguel, tipo de imóvel, cidade ou região e orçamento máximo.' : editor.kind === 'properties' ? 'Comece pela identificação, finalidade, valor, tipo, localização e descrição. Informe área, quartos e vagas; selecione 0 quando não houver. Características adicionais e fotos ficam na seção complementar.' : 'Informe um telefone ou email para facilitar o próximo atendimento. Os demais detalhes podem ser preenchidos depois.'} Campos obrigatórios para salvar continuam marcados com *.</p></div></div>}
-        {['people', 'leads', 'properties'].includes(editor.kind) && <CatalogHealth state={state} record={draftRecord} />}
-        {sections.map(section => {
+        {guided && !fullPage && <div className={s.guidedIntro}><span className={s.guidedIntroIcon}><Icon name={editor.kind === 'properties' ? 'home' : 'people'} size={20} /></span><div><strong>{creatingProperty ? 'Selecione as opções e preencha os dados essenciais' : 'Selecione as opções e complete só o que souber'}</strong><p>{editor.kind === 'leads' ? 'Para uma ficha comercial completa: nome, telefone ou email da pessoa vinculada, responsável, origem, compra ou aluguel, tipo de imóvel, cidade ou região e orçamento máximo.' : editor.kind === 'properties' ? 'Comece pela identificação, finalidade, valor, tipo, localização e descrição. Informe área, quartos e vagas; selecione 0 quando não houver. Características adicionais e fotos ficam na seção complementar.' : 'Informe um telefone ou email para facilitar o próximo atendimento. Os demais detalhes podem ser preenchidos depois.'} Campos obrigatórios para salvar continuam marcados com *.</p></div></div>}
+        {!fullPage && ['people', 'leads', 'properties'].includes(editor.kind) && <CatalogHealth state={state} record={draftRecord} />}
+        {sections.map((section, index) => {
           const sectionFields = fields.filter(field => fieldSection(editor.kind, field) === section);
           const optional = guided && section.toLowerCase().includes('complementares') && sectionFields.every(field => !fieldRequired(field));
-          if (optional) return <details key={section} className={s.guidedOptional} onInvalidCapture={event => { event.currentTarget.open = true; }}><summary><span>{section}</span><small>Opcional · {sectionFields.filter(field => String(data[field.key] ?? '').trim()).length} preenchidos</small></summary><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></details>;
+          if (optional) return <details key={section} id={fullPage ? `lead-section-${index}` : undefined} className={`${s.guidedOptional} ${fullPage ? s.registrationOptional : ''}`} onInvalidCapture={event => { event.currentTarget.open = true; }}><summary><span>{section}</span><small>Opcional · {sectionFields.filter(field => String(data[field.key] ?? '').trim()).length} preenchidos</small></summary><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></details>;
+          if (fullPage) return <section key={section} id={`lead-section-${index}`} className={s.registrationSection} aria-labelledby={`lead-section-title-${index}`}><header><span className={s.registrationStep} aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><div><h2 id={`lead-section-title-${index}`}>{section}</h2><p>{section === 'Cliente e atendimento' ? 'Vincule o cliente e defina quem vai acompanhar o contato.' : section === 'Origem do cliente' ? 'Selecione como o cliente chegou até a imobiliária.' : 'Escolha o perfil de imóvel e a faixa de investimento.'}</p></div></header><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></section>;
           return section === 'Origem do cliente' ? <div className={s.formSection} key={section}>{sectionFields.map(fieldControl)}</div> : <fieldset className={s.formSection} key={section}><legend>{section}</legend><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></fieldset>;
         })}
         <datalist id="evolution-reasons">{state.settings.lossReasons.map(item => <option key={item} value={item} />)}</datalist>
@@ -618,9 +694,12 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { 
         {editor.kind === 'cases' && <p className={s.formNote}>Pausas e perdas precisam de motivo. Uma mudança de etapa mantém o histórico anterior.</p>}
         {editor.kind === 'followups' && <p className={s.formNote}>O corretor envia o retorno como “Respondida”. O gestor confere, escreve a avaliação e conclui ou solicita um novo retorno. Não há envio ao cliente.</p>}
       </div>
-      <footer className={s.dialogActions}><button type="button" className={s.secondaryButton} onClick={onClose} disabled={busy}>Cancelar</button><button type="submit" className={s.primaryButton} disabled={busy}><Icon name="check" size={16} />{busy ? 'Salvando…' : brokerReply && data.status === 'Respondida' ? 'Enviar retorno ao gestor' : 'Salvar registro'}</button></footer>
-    </form>
-  </Dialog>;
+      {fullPage && <aside className={s.registrationAside} aria-label="Resumo do preenchimento"><div className={s.registrationSummary}><span className={s.registrationEyebrow}>SEU NOVO LEAD</span><h2>Complete no seu ritmo</h2><p>Os campos com * são obrigatórios para salvar. Você pode complementar a ficha depois.</p><CatalogHealth state={state} record={draftRecord} /><nav aria-label="Seções do cadastro">{sections.map((section, index) => <button type="button" key={section} onClick={() => { const target = document.getElementById(`lead-section-${index}`); if (target instanceof HTMLDetailsElement) target.open = true; target?.scrollIntoView({ block: 'start', behavior: 'auto' }); target?.querySelector<HTMLElement>('input:not([type="hidden"]), select, textarea, summary')?.focus({ preventScroll: true }); }}><span>{String(index + 1).padStart(2, '0')}</span>{section}<Icon name="arrow" size={14} /></button>)}</nav><div className={s.registrationSafety}><Icon name="shield" size={17} /><span>Nenhuma mensagem será enviada ao cliente ao cadastrar.</span></div></div></aside>}
+      </div>
+      <footer className={fullPage ? s.registrationActions : s.dialogActions}>{fullPage && <span><Icon name="shield" size={16} />O cadastro só é criado ao salvar.</span>}<button type="button" className={s.secondaryButton} onClick={onClose} disabled={busy}>Cancelar</button><button type="submit" className={s.primaryButton} disabled={busy}><Icon name="check" size={16} />{busy ? 'Salvando…' : fullPage ? 'Salvar lead' : brokerReply && data.status === 'Respondida' ? 'Enviar retorno ao gestor' : 'Salvar registro'}</button></footer>
+    </form>;
+  if (fullPage) return <section className={s.leadRegistrationPage} aria-label="Página de cadastro de lead"><div className={s.registrationBreadcrumb}><button type="button" className={s.textButton} onClick={onClose} disabled={busy}><span aria-hidden="true">←</span> Voltar para leads</button><span aria-hidden="true">/</span><span>Novo cadastro</span></div>{form}</section>;
+  return <Dialog title={brokerReply ? 'Responder ao gestor' : `${editor.record ? 'Editar' : 'Cadastrar'} ${definition.singular.toLowerCase()}`} subtitle="Os campos com * são obrigatórios. Alterações ficam registradas no histórico." onClose={onClose} wide>{form}</Dialog>;
 }
 
 function RecordDetail({ record, state, actor, busy, error, onClose, onEdit, onCreate, onSelect, execute, onOpenOperational, demonstration, onSaved, onDemoSaved, notify }: { demonstration?: boolean; onSaved?: () => void; onDemoSaved?: (state: CrmState) => void; notify?: (message: string) => void; record: CrmRecord; state: CrmState; actor: Actor; busy: boolean; error: string; onClose: () => void; onEdit: () => void; onCreate: (kind: Kind, defaults?: Values) => void; onSelect: (id: string) => void; execute: (command: Command) => Promise<boolean>; onOpenOperational?: (page: OperationalPage) => void }) {
