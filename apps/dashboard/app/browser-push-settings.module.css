@@ -1,0 +1,16 @@
+.root { min-width: 0; max-width: 100%; color: var(--ink, #10294b); font: 400 12px/1.5 var(--crm-font, Inter, sans-serif); }
+.root summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 38px; padding: 8px 12px; border: 1px solid var(--line, #dce8f7); border-radius: 8px; background: var(--paper, #fff); color: var(--ink, #10294b); font-weight: 650; cursor: pointer; }
+.root summary span { color: var(--muted, #526b8c); font-size: 10px; font-weight: 400; }
+.root[open] { flex: 1 1 100%; }
+.root[open] summary { border-radius: 10px 10px 0 0; background: var(--secondary, #f6f9fe); }
+.content { padding: 15px; border: 1px solid var(--line, #dce8f7); border-top: 0; border-radius: 0 0 10px 10px; background: var(--paper, #fff); }
+.root .content strong { font: 650 13px/1.5 var(--crm-font, Inter, sans-serif); color: var(--ink, #10294b); }
+.root .content p { max-width: 760px; margin: 8px 0; color: var(--muted, #526b8c); font: inherit; }
+.root .content .hint { padding: 10px 12px; border-radius: 8px; background: var(--secondary, #f6f9fe); }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.root .actions button { min-height: 44px; padding: 10px 13px; border: 1px solid var(--crm-brand, #0066f5); border-radius: 8px; background: var(--crm-brand, #0066f5); color: white; font: 650 12px/1.4 var(--crm-font, Inter, sans-serif); cursor: pointer; }
+.root .actions .secondary { border-color: var(--line, #dce8f7); background: var(--paper, #fff); color: var(--accent-text, #0054cf); }
+.root .actions button:disabled { opacity: .55; cursor: not-allowed; }
+.root :is(button, summary):focus-visible { outline: 2px solid var(--accent, #0066f5); outline-offset: 3px; }
+.root .content .status { color: var(--ink, #10294b); }
+.root .content small { display: block; max-width: 760px; color: var(--muted, #526b8c); font-size: 11px; }

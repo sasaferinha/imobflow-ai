@@ -108,8 +108,9 @@ assert.equal(reply.calls.at(-1)[1].response, 'Retorno fictício concluído.');
 assert.equal(reply.calls.at(-1)[1].status, 'Respondida');
 
 const newLead = renderToStaticMarkup(React.createElement(RecordEditor, { editor: { kind: 'leads' }, state, actor: owner, busy: false, error: '', onClose() {}, onSave() {} }));
-assert(newLead.includes('O imóvel que o cliente procura'));
-assert(newLead.includes('Orçamento e qualificação'));
+assert(newLead.includes('Interesse principal do cliente'));
+assert(newLead.includes('Preferências e informações complementares'));
+assert(newLead.includes('Orçamento máximo'));
 assert(!/<option selected="">À vista<\/option>/.test(newLead), 'Unknown financing must not be prefilled as cash.');
 const finished = { ...state.records[0], data: { ...state.records[0].data, status: 'Concluída', response: 'Retorno fictício', review: 'Conferido' } };
 const detail = renderToStaticMarkup(React.createElement(RecordDetail, { record: finished, state, actor: owner, busy: false, error: '', onClose() {}, onEdit() {}, onCreate() {}, onSelect() {}, execute() {} }));

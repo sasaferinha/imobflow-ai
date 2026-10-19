@@ -14,6 +14,8 @@ import { ConversationWhatsAppHandoff } from './conversation-whatsapp-handoff';
 import ConversationRegistration from './conversation-registration';
 import ConversationAssistant from './conversation-assistant';
 import ConversationAlerts from './conversation-alerts';
+import ConversationUrgentAlert from './conversation-urgent-alert';
+import BrowserPushSettings from './browser-push-settings';
 import { isWhatsAppWindowError } from '@/lib/whatsapp-handoff';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
 import { inboxByLead, compareInboxActivity, dutyPriorityBlocked, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
@@ -22,8 +24,12 @@ export default function ConversationCenter(props: ComponentProps<typeof Conversa
   return <>
     <div className="conversation-tools">
       <ConversationAlerts inbox={props.inbox} ready={props.ready} demonstration={props.demonstration} />
+      <BrowserPushSettings key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} ready={props.ready} demonstration={props.demonstration} />
       <ConversationSettings/>
     </div>
+    <ConversationUrgentAlert key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} currentBrokerId={props.currentBrokerId}
+      ready={props.ready} demonstration={props.demonstration} visibleLeadIds={props.leads?.map(lead => lead.id)}
+      onOpen={leadId => props.dispatch({ type: 'select', id: `lead-${leadId}` })} />
     <ConversationWorkspace {...props} />
   </>;
 }

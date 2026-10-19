@@ -36,6 +36,8 @@ function runtime(react = React, environment = {}) {
         if (id.endsWith('.css')) return css;
         if (id === './account-menu') return load('app/evolution/account-menu.tsx');
         if (id === '../lead-source-picker') return load('app/lead-source-picker.tsx');
+        if (id === '../guided-record-field') return load('app/guided-record-field.tsx');
+        if (id === '@/lib/guided-record-fields') return load('lib/guided-record-fields.ts');
         if (id === '../conversation-registration') return load('app/conversation-registration.tsx');
         if (id === './lead-source-picker') return load('app/lead-source-picker.tsx');
         if (id === '@/lib/evolution/registration-contract') return load('lib/evolution/registration-contract.ts');

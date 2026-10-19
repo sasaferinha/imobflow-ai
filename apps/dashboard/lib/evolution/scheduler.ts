@@ -19,7 +19,7 @@ export async function runEvolutionScheduler(companyId: string, company: string, 
     let released = 0;
     if (state.settings.operations?.inactivePoolEnabled) {
       if (!evolutionIntegrated()) throw new Error('inactive_pool_requires_canonical_integration');
-      const pool = await supabaseServiceRequest<{ released: number; protected: Array<{ leadId: string; lastContactAt: string }> }>(
+      const pool = await supabaseServiceRequest<{ released: number; protected: Array<{ leadId: string; lastContactAt: string | null; reason?: string }> }>(
         'rpc/release_inactive_lead_pool', { method: 'POST', body: { p_company_id: companyId, p_actor_id: actor.brokerId }, timeoutMs: 5000 },
       );
       released = pool.released;
@@ -32,15 +32,20 @@ export async function runEvolutionScheduler(companyId: string, company: string, 
         if (Date.now() + 12000 > deadline) break;
         const leadId = `lead:${candidate.leadId}`;
         const lead = state.records.find(record => record.kind === 'leads' && record.id === leadId);
-        if (!lead || !Number.isFinite(Date.parse(candidate.lastContactAt))) continue;
-        const contactAt = new Date(candidate.lastContactAt).toISOString();
-        if (state.records.some(record => record.kind === 'followups' && record.data.protectedLeadId === leadId && record.data.poolContactAt === contactAt)
-          || state.events.some(event => event.type === 'created' && event.changes?.protectedLeadId?.to === leadId && event.changes?.poolContactAt?.to === contactAt)) continue;
+        const unverified = candidate.reason === 'contact-history-unverified';
+        const contactTime = candidate.lastContactAt ? Date.parse(candidate.lastContactAt) : NaN;
+        if (!lead || (!unverified && !Number.isFinite(contactTime))) continue;
+        // An empty optional date is the stable unknown key; never fabricate a contact date.
+        const contactAt = Number.isFinite(contactTime) ? new Date(contactTime).toISOString() : '';
+        if (state.records.some(record => record.kind === 'followups' && record.data.protectedLeadId === leadId && (record.data.poolContactAt || '') === contactAt)
+          || state.events.some(event => event.type === 'created' && event.changes?.protectedLeadId?.to === leadId && (event.changes?.poolContactAt?.to || '') === contactAt)) continue;
         await executeEvolutionCommand(actor, { type: 'save', kind: 'followups', data: {
           name: `Revisar carteira · ${String(lead.data.name).slice(0, 160)}`, assignedTo: actor.brokerId,
           protectedLeadId: leadId, poolContactAt: contactAt,
           dueAt: new Date(Date.now() + 86400000).toISOString(), priority: 'Alta', status: 'Pendente',
-          request: 'Este cliente está há pelo menos 30 dias sem contato, mas possui visita ou negociação que protege sua carteira. Confira o compromisso e solicite atualização ao corretor antes de decidir sobre a liberação.',
+          request: unverified
+            ? 'O histórico deste cliente não permite comprovar com segurança 30 dias sem contato. A carteira foi preservada. Confira as mensagens, especialmente contatos antigos do Instagram, e os registros manuais antes de decidir sobre a liberação.'
+            : 'Este cliente está há pelo menos 30 dias sem contato, mas possui visita ou negociação que protege sua carteira. Confira o compromisso e solicite atualização ao corretor antes de decidir sobre a liberação.',
         } }, state.version, state.sourceRevision);
         warnings++;
         state = await readEvolutionState(actor);

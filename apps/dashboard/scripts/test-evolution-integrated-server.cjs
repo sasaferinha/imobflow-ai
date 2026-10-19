@@ -185,6 +185,13 @@ async function run() {
     const installedVersion=state.version;
     assert.equal((await post('owner',{type:'settings',settings:{operations:{inactivePoolEnabled:true}}},state)).status,503,'partially installed schema cannot enable the unavailable release routine');
     assert.equal(await workspaceVersion(),installedVersion);
+    await db.exec('RESET ROLE');await db.exec(migration('20261013200000_inactive_lead_pool.sql'));await db.exec('SET ROLE service_role');
+    assert.equal((await post('owner',{type:'settings',settings:{operations:{inactivePoolEnabled:true}}},state)).status,503,'old release SQL without verified social contacts must remain blocked');
+    assert.equal(await workspaceVersion(),installedVersion);
+    await db.exec('RESET ROLE');await db.exec(migration('20261019120000_verified_inactive_contact.sql'));await db.exec('SET ROLE service_role');
+    state=await save('owner',{type:'settings',settings:{operations:{inactivePoolEnabled:true}}},state);
+    assert.equal(state.settings.operations.inactivePoolEnabled,true,'activation requires the verified-contact migration');
+    state=await save('owner',{type:'settings',settings:{operations:{inactivePoolEnabled:false}}},state);
     state=await save('owner',{type:'settings',settings:{operations:{dutyPriorityEnabled:false}}},state);
     const stored=(await db.query('SELECT document FROM crm_evolution_workspaces WHERE company_id=$1',[id(1)])).rows[0].document;
     assert.ok(!('sourceRevision' in stored));assert.ok(!stored.records.some(r=>r.legacy&&('photoUrl' in r.data||'phone' in r.data)),'canonical customer/photo snapshot is not duplicated in workspace');

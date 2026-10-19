@@ -9,7 +9,7 @@ const {createDatabase,seedCompanies,id,migration,isolationMigration}=require('./
   const start=new Date(Date.now()-3600000).toISOString(),end=new Date(Date.now()+3600000).toISOString();
   const document={companyId:id(1),version:1,records:[{id:'shift-sale',kind:'shifts',data:{assignedTo:id(12),purpose:'Venda',startsAt:start,endsAt:end,status:'Ativo'}}],events:[],members:[],settings:{operations:{dutyPriorityEnabled:false}}};
   await db.query('INSERT INTO crm_evolution_workspaces(company_id,version,document,updated_by) VALUES($1,1,$2::jsonb,$3)',[id(1),JSON.stringify(document),id(11)]);
-  assert.deepEqual((await db.query('SELECT crm_operational_rules_ready($1,$2) result',[id(1),id(11)])).rows[0].result,{dutyPriority:true,inactivePool:true});
+  assert.deepEqual((await db.query('SELECT crm_operational_rules_ready($1,$2) result',[id(1),id(11)])).rows[0].result,{dutyPriority:true,inactivePool:true,verifiedInactiveContacts:true});
   await assert.rejects(()=>db.query('SELECT crm_operational_rules_ready($1,$2)',[id(1),id(21)]),/owner_required/);
   const saveSettings=()=>db.query('UPDATE crm_evolution_workspaces SET document=$1::jsonb WHERE company_id=$2',[JSON.stringify(document),id(1)]);
   const intake=async(n,goal='Comprar',assignee=null)=>{

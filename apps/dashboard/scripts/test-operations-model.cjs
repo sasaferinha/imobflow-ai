@@ -30,6 +30,8 @@ const caseId=save('cases',{name:'Example negotiation',personId:person,leadId:lea
 const property=save('properties',{name:'Fictitious apartment',code:'OPS-01',purpose:'Venda',price:100000,status:'Disponível',assignedTo:'broker1'});
 assert.equal(ops.catalogCompleteness(state,state.records.find(r=>r.id===lead)).complete,false,'incomplete leads remain saved');
 assert.equal(ops.catalogCompleteness(state,state.records.find(r=>r.id===property)).complete,false,'old minimal property remains usable');
+const essentialProperty={...state.records.find(r=>r.id===property),data:{name:'Imóvel essencial fictício',code:'TESTE',purpose:'Venda',price:300000,assignedTo:'broker1',propertyType:'Casa',city:'Lavras',district:'Centro',area:80,description:'Descrição factual de teste'}};
+assert.equal(ops.catalogCompleteness(state,essentialProperty).complete,true,'photos and exact street address are optional, not required for commercial completeness');
 assert.equal(ops.operationsSettings(state).funnelEnabled,false);
 assert.equal(ops.operationsSettings(state).reassignmentEnabled,false);
 assert.equal(ops.redistributionCandidates(state,now).length,0);

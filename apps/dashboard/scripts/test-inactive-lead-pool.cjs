@@ -27,6 +27,11 @@ const { createDatabase, seedCompanies, id, migration, isolationMigration } = req
     await db.query("INSERT INTO messages(id,company_id,conversation_id,direction,sender_type,content,created_at,delivery_status) VALUES($1,$2,$3,'outgoing','ai','Mensagem automática fictícia',now(),'sent')", [id(990), id(1), id(501)]);
     assert.equal((await call()).released, 1, 'automated reply does not reset inactivity');
     await db.exec(`UPDATE conversations SET assigned_to='Dono 1',assigned_broker_id='${id(11)}' WHERE id='${id(501)}'; UPDATE leads SET assigned_to='Dono 1' WHERE id='${id(101)}';`);
+    await db.exec(`UPDATE leads SET last_contact_at=now(),updated_at=now() WHERE id='${id(101)}';`);
+    result = await call(); assert.equal(result.released, 0);
+    assert.equal(result.protected[0].reason, 'contact-history-unverified', 'manual cache is an unsupported historical claim, never a new exchange');
+    assert(Date.parse(result.protected[0].lastContactAt) < Date.now() - 30 * 86400000, 'administrative edit does not reset the proved contact clock');
+    await db.exec(`UPDATE leads SET last_contact_at=(SELECT created_at FROM messages WHERE id='${id(701)}') WHERE id='${id(101)}';`);
     await db.query("INSERT INTO messages(id,company_id,conversation_id,direction,sender_type,content,created_at,delivery_status) VALUES($1,$2,$3,'outgoing','human','Contato humano fictício',now(),'sent')", [id(991), id(1), id(501)]);
     assert.equal((await call()).released, 0, 'successful human contact resets inactivity');
     await db.exec(`UPDATE messages SET created_at=now()-interval '31 days' WHERE id='${id(991)}';`);
@@ -46,17 +51,25 @@ const { createDatabase, seedCompanies, id, migration, isolationMigration } = req
     await db.query("UPDATE message_outbox SET state='failed' WHERE id=$1", [id(992)]);
     await db.exec(`UPDATE leads SET lifecycle_status='Convertido' WHERE id='${id(101)}';`);
     assert.equal((await call()).released, 0, 'closed lead preserved');
-    await db.exec(`UPDATE leads SET lifecycle_status='Novo',last_contact_at=now()-interval '29 days' WHERE id='${id(101)}';`);
+    await db.exec(`UPDATE leads SET lifecycle_status='Novo',last_contact_at=NULL WHERE id='${id(101)}'; UPDATE messages SET created_at=now()-interval '29 days' WHERE id='${id(993)}';`);
     assert.equal((await call()).released, 0, 'never before 30 days');
-    await db.exec(`UPDATE leads SET last_contact_at=now()-interval '30 days' WHERE id='${id(101)}';`);
+    await db.exec(`UPDATE messages SET created_at=now()-interval '30 days' WHERE id='${id(993)}';`);
     assert.equal((await call()).released, 1, 'eligible at the 30-day boundary');
+    await db.exec(`UPDATE conversations SET assigned_to='Dono 1',assigned_broker_id='${id(11)}' WHERE id='${id(501)}'; UPDATE leads SET assigned_to='Dono 1' WHERE id='${id(101)}';`);
+    await db.query("INSERT INTO messages(id,company_id,conversation_id,direction,sender_type,content,created_at,delivery_status) VALUES($1,$2,$3,'outgoing','human','Confirmação tardia fictícia',now()-interval '31 days','sent')", [id(994), id(1), id(501)]);
+    await db.query("INSERT INTO message_outbox(id,company_id,conversation_id,request_key,broker_id,state,updated_at) VALUES($1,$2,$3,'pool-delayed',$4,'sent',now())", [id(994), id(1), id(501), id(11)]);
+    assert.equal((await call()).released, 0, 'late confirmed human delivery protects the portfolio');
+    await db.exec(`UPDATE message_outbox SET updated_at=now()-interval '31 days' WHERE id='${id(994)}'; UPDATE messages SET created_at=now()+interval '1 day' WHERE id='${id(993)}';`);
+    result = await call(); assert.equal(result.released, 0); assert.equal(result.protected[0].reason, 'contact-history-unverified', 'future timestamp requires review instead of resetting the clock');
+    await db.exec(`UPDATE messages SET created_at=now()-interval '31 days' WHERE id='${id(993)}';`);
+    assert.equal((await call()).released, 1, 'a failed human message is not evidence of renewed contact');
     for (let n = 0; n < 27; n++) await db.query(`INSERT INTO leads(id,company_id,name,phone,lifecycle_status,assigned_to,created_at,last_contact_at)
-      VALUES($1,$2,$3,$4,$5,'Dono 1',now()-interval '50 days',now()-interval '40 days')`, [id(1200+n), id(1), 'Carteira fictícia ' + n, '553599990' + String(n).padStart(4, '0'), n < 26 ? 'Proposta' : 'Novo']);
+      VALUES($1,$2,$3,$4,$5,'Dono 1',now()-interval '50 days',NULL)`, [id(1200+n), id(1), 'Carteira fictícia ' + n, '553599990' + String(n).padStart(4, '0'), n < 26 ? 'Proposta' : 'Novo']);
     assert.equal((await call()).released, 0, 'bounded first scan protects oldest commitments');
     assert.equal((await call()).released, 1, 'protected contacts cannot starve later available leads');
     const permissions = (await db.query("SELECT has_function_privilege('anon','release_inactive_lead_pool(uuid,uuid)','EXECUTE') AS a,has_function_privilege('authenticated','release_inactive_lead_pool(uuid,uuid)','EXECUTE') AS b,has_table_privilege('authenticated','lead_pool_releases','SELECT') AS c")).rows[0];
     assert.equal(permissions.a || permissions.b || permissions.c, false);
     assert.equal((await db.query("SELECT has_table_privilege('authenticated','lead_pool_reviews','SELECT') AS allowed")).rows[0].allowed, false);
-    console.log('PASS inactive pool SQL: full migrations, opt-in/owner/tenant guard, 30-day human contact, bot stays paused, audit/retry, commitments, queued/uncertain sends, closed leads and browser privileges.');
+    console.log('PASS inactive pool SQL: full migrations, opt-in/owner/tenant guard, verified 30-day contact, manual-cache review, delayed confirmation, future dates, bot stays paused, audit/retry, commitments, queued sends, closed leads and browser privileges.');
   } finally { await db.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

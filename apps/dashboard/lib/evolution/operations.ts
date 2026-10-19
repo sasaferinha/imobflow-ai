@@ -39,7 +39,7 @@ export function catalogCompleteness(state: CrmState, record: CrmRecord): { compl
     const person = linkedPerson(state, record);
     fields = [['Nome',present(d.name)],['Pessoa vinculada',Boolean(person)],['Telefone ou email',Boolean(person && (present(person.data.phone)||present(person.data.email)))],['Responsável',present(d.assignedTo)],['Origem',present(d.source)],['Finalidade',['Venda','Aluguel'].includes(String(d.purpose))],['Tipo de imóvel',present(d.propertyType)],['Cidade ou região',present(d.city)||present(d.region)],['Orçamento máximo',Number(d.budgetMax)>0]];
   }
-  if (record.kind === 'properties') fields = [['Título',present(d.name)],['Código',present(d.code)],['Finalidade',present(d.purpose)],['Preço',Number(d.price)>0],['Responsável',present(d.assignedTo)],['Tipo de imóvel',present(d.propertyType)],['Cidade',present(d.city)],['Bairro',present(d.district)||present(d.neighborhoodId)],['Endereço',present(d.address)],['Área',Number(d.area)>0],['Descrição',present(d.description)],['Foto',present(d.photoUrl)]];
+  if (record.kind === 'properties') fields = [['Título',present(d.name)],['Código',present(d.code)],['Finalidade',['Venda','Aluguel'].includes(String(d.purpose))],['Preço',Number(d.price)>0],['Responsável',present(d.assignedTo)],['Tipo de imóvel',present(d.propertyType)],['Cidade',present(d.city)],['Bairro',present(d.district)||present(d.neighborhoodId)],['Área',Number(d.area)>0],['Descrição',present(d.description)]];
   const missing = fields.filter(([,ok])=>!ok).map(([name])=>name);
   return { complete: missing.length === 0, percent: fields.length ? Math.round(100 * (fields.length - missing.length) / fields.length) : 100, missing };
 }

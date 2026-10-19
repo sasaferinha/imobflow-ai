@@ -4,6 +4,36 @@ Base conferida no GitHub: `main@408cedcadcfbf8827e9a78447a3c92c33e8c0df7`.
 Trabalho separado na branch `codex/operations-list-20261013`; não integra nem substitui o PR #2.
 Este documento descreve fontes e testes locais, não ativação do banco ou publicação.
 
+## Atualização de decisões e implementação — 19/10/2026
+
+Esta seção atualiza as descrições históricas abaixo; não prova ativação em produção.
+
+- **Lead completo:** nome, telefone ou email, responsável, origem, compra/aluguel, tipo, cidade/região e orçamento máximo. Temperatura e demais preferências são opcionais. A referência a uma pessoa é um vínculo técnico que reutiliza o contato, sem duplicá-lo.
+- **Cadastros guiados:** escolhas rápidas de finalidade, tipo, quantidades e comodidades; sugestões de localização somente da carteira autorizada; tipos e características personalizados preservados. Complementares recolhíveis e essenciais primeiro. A criação de imóvel sinaliza os campos exigidos pela base canônica; edição de legados incompletos não ganha exigências retroativas. Fotos e endereço exato não são exigidos na completude comercial. Identidade visual própria da ImobFlow, sem copiar o Robust.
+- **Aviso urgente:** para cliente sem corretor, com última mensagem recebida aguardando resposta: a partir de dois minutos para o plantão confirmado e cinco para os demais. Repetir mensagens não reinicia a espera. Uma nova espera após resposta não herda um prazo antigo. Ler não equivale a responder. O aviso não assume a conversa nem envia mensagem; seu botão abre o atendimento e preserva rascunhos.
+- **Confiabilidade do aviso:** consulta protegida `/api/conversations/urgent`, baseada em todos os atendimentos autorizados e paginada por contato, não nas últimas 200 mensagens globais. Até 50 alertas antigos elegíveis, calculados no servidor, com validade de 30 segundos. Falha, estado desconhecido, offline ou demonstração não produzem alegação de abandono. Modo automático sem resposta também pode gerar aviso; uma resposta do bot encerra aquela espera. O alerta visual fica em Conversas; não depende da permissão de notificações. Exige a migration `20261019130000_browser_web_push.sql` pela função compartilhada `broker_unassigned_waiting`, mas não exige ativar push ou cron.
+- **Celular:** usuário escolheu push do navegador, com consentimento por aparelho, não WhatsApp/SMS nem uso automático do telefone. API, inscrição, worker e dispatcher preparados; desligados por padrão. Não há entrega real comprovada.
+- **Privacidade do push:** sessão/empresa/conta verificadas, revogação ao sair ou expirar a sessão, conferência do vínculo pelo worker antes de exibir, mensagem genérica sem dados do cliente e destinos HTTPS permitidos. Uma tentativa por corretor/aparelho/ciclo de espera evita repetição, inclusive após novo login; falhas de resultado incerto não são reenviadas automaticamente.
+- **Correção dos 30 dias:** nova migration `20261019120000_verified_inactive_contact.sql`, sem reescrever a migration de 13/10. Considera timestamp original validado do Instagram. Edição administrativa não comprova contato; histórico inconclusivo preserva a carteira e gera revisão do gestor, sem alegar visita ou negociação inexistente. Ativação exige prontidão `verifiedInactiveContacts=true`.
+
+### Ativação do push: pendências reais
+
+1. Revisar e aplicar as migrations anteriores e `20261019130000_browser_web_push.sql`, no banco correto, com backup/restauração conferidos. Nenhuma migration remota aplicada nesta implementação.
+2. Configurar no servidor `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` e `WEB_PUSH_ENABLED=true`; nunca expor a chave privada no cliente/logs.
+3. Configurar uma rotina autenticada por minuto para `GET /api/notifications/push/dispatch`, com `Authorization: Bearer <CRON_SECRET>`. Somente depois declarar `WEB_PUSH_SCHEDULER_CONFIGURED=true`. A flag não prova execução nem entrega; não substitui monitoramento.
+4. A conta Vercel foi consultada em 19/10 e está no plano Hobby, limitado a cron diário. O cron diário existente não foi alterado nem foi contratado outro plano. Avaliar Supabase Cron/pg_net/Vault já no ambiente, com acesso autorizado e limites conferidos; não acrescentar credenciais literais em SQL versionado.
+5. Ativar no próprio celular, testar com clientes fictícios autorizados, validar logout/troca de conta, aceite por outro corretor, permissão revogada e recebimento com painel fechado. No iOS/iPadOS compatível, adicionar à Tela de Início. Sessão expirada, falta de conexão e restrições do sistema podem impedir entrega.
+
+Referências: [Next.js PWA](https://nextjs.org/docs/app/guides/progressive-web-apps), [Vercel Cron — limites](https://vercel.com/docs/cron-jobs/usage-and-pricing), [Supabase — agendamento seguro](https://supabase.com/docs/guides/functions/schedule-functions).
+
+### Testes de 19/10
+
+Testes sintéticos cobrem controles guiados, serialização de tipos personalizados e zero quartos/vagas, essenciais opcionais corretos, janelas de urgência, dados vencidos, leitura sem resposta, isolamento, origem e responsável preservados, Instagram real no parser ligado ao SQL isolado, histórico inconclusivo, prontidão da migration e revisão do gestor sem duplicação. O push usa criptografia real com transporte simulado; nenhuma mensagem de teste foi enviada a pessoas.
+
+QA de navegador em fixture temporária com componentes reais: lead salvo apenas em memória sem temperatura, Galpão/zero quartos preservados no formulário clássico e disposição em notebook e tela estreita sem transbordamento horizontal. A fixture não integra a entrega. Testes locais não certificam schema remoto, execução periódica, carga entre conexões independentes ou recebimento no celular.
+
+`pnpm --dir apps/dashboard run build:production` passou com todas as regressões, TypeScript e build Next. Checagens de IA externa foram explicitamente desativadas; os erros 401/429 nos testes são cenários simulados, não diagnóstico do provedor real. O primeiro build encontrou uma referência gerada para a fixture de QA já removida; regenerar os tipos de desenvolvimento resolveu, e o comando completo foi repetido com sucesso. ESLint dos componentes/serviços novos passou. Nos dois arquivos grandes de painel editados, a análise ainda aponta quatro erros `set-state-in-effect` e um aviso de dependência já presentes em `48a8379`; nenhuma regra de lint foi desabilitada para ocultá-los.
+
 ## Decisões confirmadas pelo usuário
 
 - A ficha deve estar completa tanto na classificação comercial do lead quanto no Registro de atendimento. Isso não autoriza exigir uma visita antes de toda proposta.

@@ -119,11 +119,15 @@ export async function saveSocialEvent(event: SocialEvent) {
       if (history.some(m=>m.id===event.externalId)) return { created:inserted.length>0 };
       const ordered = history.sort((a,b)=>Date.parse(String(a.at))-Date.parse(String(b.at)));
       const at = event.occurredAt || new Date().toISOString();
+      // Display fallback is not evidence that a retry represents a new contact.
+      // Keep the original received timestamp separately for the inactivity policy.
+      const occurred = event.occurredAt ? Date.parse(event.occurredAt) : NaN;
+      const contactAt = Number.isFinite(occurred) && occurred > 0 && occurred <= Date.now() ? new Date(occurred).toISOString() : null;
       // The UI promises the latest 40 messages, not the latest 40 deliveries.
       // Late retries must not evict newer retained messages from this bounded view.
       if (ordered.length>=40 && Date.parse(at)<Date.parse(String(ordered[ordered.length-40].at))) return {created:inserted.length>0};
       const condition = rows[0].interest_profile === null ? 'is.null' : `eq.${encodeURIComponent(JSON.stringify(rows[0].interest_profile ?? {}))}`;
-      const updated = await db<Array<{id:string}>>(`${path}&interest_profile=${condition}&select=id`, { method:'PATCH', prefer:'return=representation', body:{interest_profile:{...profile, socialChannel:'instagram', socialSenderId:event.senderId, socialMessages:[...ordered,{id:event.externalId,text:event.text,at}].sort((a,b)=>Date.parse(String(a.at))-Date.parse(String(b.at))).slice(-40)}} });
+      const updated = await db<Array<{id:string}>>(`${path}&interest_profile=${condition}&select=id`, { method:'PATCH', prefer:'return=representation', body:{interest_profile:{...profile, socialChannel:'instagram', socialSenderId:event.senderId, socialMessages:[...ordered,{id:event.externalId,text:event.text,at,contactAt}].sort((a,b)=>Date.parse(String(a.at))-Date.parse(String(b.at))).slice(-40)}} });
       if (updated.length) return {created:inserted.length>0};
     }
     throw new Error('social_update_conflict');

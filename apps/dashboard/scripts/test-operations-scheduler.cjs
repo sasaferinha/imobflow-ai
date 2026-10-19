@@ -63,6 +63,18 @@ function load(file){
   await scheduler.runEvolutionScheduler(company,'Company example');assert.equal(warnings().length,14,'same contact represented in another timezone format is not a new review');
   assert(warnings().every(r=>r.data.assignedTo==='owner'),'protected reviews go only to manager');
   assert.equal(model.visibleState(state,{companyId:company,brokerId:'broker',name:'Broker example',role:'broker'}).records.some(r=>r.data.protectedLeadId),false);
+  const uncertainId='00000000-0000-4000-8000-000000000099';
+  state.records.push({id:'lead:'+uncertainId,kind:'leads',createdAt:fixed,updatedAt:fixed,createdBy:'owner',data:{name:'Contato sem prova fictício'}});
+  pool.protected=[{leadId:uncertainId,lastContactAt:null,reason:'contact-history-unverified'}];
+  await scheduler.runEvolutionScheduler(company,'Company example');
+  const uncertainReview=warnings().find(r=>r.data.protectedLeadId==='lead:'+uncertainId);
+  assert(uncertainReview,'unknown contact date still creates a manager review');
+  assert.equal(uncertainReview.data.poolContactAt,'','unknown date must not be invented');
+  assert.match(uncertainReview.data.request,/não permite comprovar/);
+  assert.doesNotMatch(uncertainReview.data.request,/possui visita/);
+  const warningsBeforeRetry=warnings().length;
+  await scheduler.runEvolutionScheduler(company,'Company example');
+  assert.equal(warnings().length,warningsBeforeRetry,'unknown contact evidence has a stable deduplication key');
   const priorPoolCalls=poolCalls;
   assert.equal((await scheduler.runEvolutionScheduler(company,'Company example',Clock.now()+1000)).report,'deferred');
   assert.equal(poolCalls,priorPoolCalls,'deadline reserve prevents starting another release');
