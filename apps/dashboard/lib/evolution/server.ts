@@ -73,6 +73,14 @@ export async function executeEvolutionCommand(actor: Actor, command: CrmCommand,
   if (bridge && (!expectedSourceRevision || expectedSourceRevision !== bridge.sourceRevision)) {
     throw new EvolutionServerError(409, 'A base real foi atualizada. Recarregue e revise os dados antes de salvar.');
   }
+  if (command.type === 'settings' && (command.settings?.operations?.dutyPriorityEnabled === true || command.settings?.operations?.inactivePoolEnabled === true)) {
+    if (actor.role !== 'owner') throw new EvolutionServerError(403, 'Somente o gestor pode ativar estas regras.');
+    if (command.settings.operations.inactivePoolEnabled && !bridge) throw new EvolutionServerError(503, 'Ative a integração com a base canônica antes de liberar a carteira automaticamente. Nenhuma regra foi alterada.');
+    let ready: { dutyPriority: boolean; inactivePool: boolean; verifiedInactiveContacts?: boolean };
+    try { ready = await supabaseRequest('rpc/crm_operational_rules_ready', { method: 'POST', body: { p_company_id: actor.companyId, p_actor_id: actor.brokerId } }); }
+    catch { throw new EvolutionServerError(503, 'As migrations das regras de carteira e plantão precisam ser instaladas antes da ativação. Nenhuma regra foi alterada.'); }
+    if ((command.settings.operations.dutyPriorityEnabled && ready?.dutyPriority !== true) || (command.settings.operations.inactivePoolEnabled && (ready?.inactivePool !== true || ready?.verifiedInactiveContacts !== true))) throw new EvolutionServerError(503, 'A estrutura destas regras ainda não está disponível no banco. Instale também a verificação de contatos do Instagram antes de liberar carteiras. Nenhuma regra foi alterada.');
+  }
   const applied = applyCommand(state, actor, bridge ? prepareLegacyCommand(state, bridge, command) : command);
   const plan = bridge ? planLegacyWrites(state, applied, bridge, actor) : undefined;
   if (plan && bridge && command.type === 'register') {

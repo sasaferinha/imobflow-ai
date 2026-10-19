@@ -10,6 +10,8 @@ import { operationsSummary } from '@/lib/evolution/operations';
 import LeadSourcePicker from '../lead-source-picker';
 import ConversationRegistration from '../conversation-registration';
 import { historicalFunnel } from '@/lib/evolution/historical-funnel';
+import GuidedRecordField from '../guided-record-field';
+import { locationSuggestions, NEW_PROPERTY_FORM_ESSENTIALS, PROPERTY_FEATURE_CHOICES, PROPERTY_TYPE_CHOICES } from '@/lib/guided-record-fields';
 
 export type OperationalPage = 'conversations' | 'opportunities' | 'appointments' | 'imports' | 'integrations' | 'account' | 'brokers' | 'results' | 'operational-goals' | 'portfolio' | 'customer-base';
 type Page = Kind | 'dashboard' | 'reports' | 'members' | 'settings' | 'operations' | OperationalPage;
@@ -463,7 +465,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     { title: 'Configurações', icon: 'settings', target: isAdmin ? 'settings' : hasLiveOperation ? 'account' : 'links', items: [...(isAdmin ? ['settings', 'content', 'channels'] as Page[] : []), ...(hasLiveOperation ? ['account', 'integrations'] as Page[] : []), 'links'] },
   ];
 
-  return <div className={s.app} data-design="linha">
+  return <div className={s.app} data-design="linha" data-operational-page={operationalPage || undefined}>
     {mobileNavOpen && <button className={s.sidebarBackdrop} aria-label="Fechar navegação" onClick={() => { setMobileNavOpen(false); }} />}
     <aside ref={navigationRef} className={`${s.sidebar} ${mobileNavOpen ? s.sidebarOpen : ''}`} role={mobileNavOpen ? 'dialog' : undefined} aria-modal={mobileNavOpen || undefined} aria-label="Navegação ImobFlow">
       <div className={s.sidebarBrand}><button className={s.brand} onClick={() => navigate('dashboard')} aria-label="ImobFlow: ir para o dashboard"><svg width="29" height="36" viewBox="0 0 29 36" fill="none" aria-hidden="true"><path d="M2 34V19l8-4m0 19V8L22 2v32m0-20h5v20" stroke="currentColor" strokeWidth="2" /></svg><span>Imob<b>Flow</b></span></button><button ref={mobileCloseRef} className={s.sidebarClose} aria-label="Fechar navegação lateral" onClick={() => { setMobileNavOpen(false); }}><Icon name="close" /></button></div>
@@ -508,20 +510,23 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
 
 function fieldSection(kind: Kind, field: Field) {
   if (field.key === 'source') return 'Origem do cliente';
-  if (kind === 'people') return ['name', 'personType', 'category', 'assignedTo'].includes(field.key) ? 'Identificação e responsável' : ['phone', 'email', 'address', 'preferredChannel', 'contactPeriod'].includes(field.key) ? 'Contato e preferências' : 'Observações';
-  if (kind === 'leads') return ['name', 'personId', 'assignedTo', 'source', 'status', 'temperature'].includes(field.key) ? 'Contato e atendimento' : ['purpose', 'propertyId', 'propertyType', 'city', 'region', 'bedrooms', 'parkingSpaces', 'features'].includes(field.key) ? 'O imóvel que o cliente procura' : ['budgetMin', 'budgetMax', 'purchaseTimeline', 'financing', 'qualificationNotes'].includes(field.key) ? 'Orçamento e qualificação' : 'Observações';
-  if (kind === 'properties') return ['name', 'code', 'purpose', 'price', 'status', 'assignedTo', 'ownerId'].includes(field.key) ? 'Identificação e negociação' : ['city', 'district', 'address', 'neighborhoodId', 'condominiumId'].includes(field.key) ? 'Localização' : ['propertyType', 'bedrooms', 'bathrooms', 'parkingSpaces', 'area', 'features', 'condoFee', 'iptu'].includes(field.key) ? 'Características e valores' : 'Apresentação e documentação';
+  if (kind === 'people') return ['name', 'personType', 'category', 'assignedTo'].includes(field.key) ? 'Identificação e responsável' : ['phone', 'email'].includes(field.key) ? 'Como falar com o cliente' : 'Informações complementares';
+  if (kind === 'leads') return ['name', 'personId', 'assignedTo', 'status'].includes(field.key) ? 'Cliente e atendimento' : ['purpose', 'propertyType', 'city', 'region', 'budgetMax'].includes(field.key) ? 'Interesse principal do cliente' : 'Preferências e informações complementares';
+  if (kind === 'properties') return ['name', 'code', 'purpose', 'price', 'status', 'assignedTo', 'propertyType'].includes(field.key) ? 'Identificação e negociação' : ['city', 'district', 'address', 'area', 'description'].includes(field.key) ? 'Localização e apresentação' : ['bedrooms', 'parkingSpaces'].includes(field.key) ? 'Características principais' : 'Características e informações complementares';
   return 'Informações do registro';
 }
 
 function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { editor: Editor; state: CrmState; actor: Actor; busy: boolean; error: string; onClose: () => void; onSave: (data: Values) => Promise<void> }) {
   const definition = MODULES[editor.kind];
+  const guided = ['people', 'leads', 'properties'].includes(editor.kind);
   const brokerReply = actor.role !== 'owner' && editor.kind === 'followups';
+  const creatingProperty = editor.kind === 'properties' && !editor.record;
+  const fieldRequired = (field: Field) => Boolean(field.required || creatingProperty && NEW_PROPERTY_FORM_ESSENTIALS.some(key => key === field.key));
   const initial: Values = {};
   for (const field of definition.fields) {
     if (editor.record?.legacy) initial[field.key] = '';
     else {
-      if (field.required && field.options?.length) initial[field.key] = field.options[0];
+      if (field.required && field.options?.length && !(guided && ['purpose', 'temperature', 'propertyType'].includes(field.key))) initial[field.key] = field.options[0];
       if (field.ref === 'members') initial[field.key] = ['followups', 'captureGoals', 'shifts'].includes(editor.kind) ? '' : actor.brokerId;
     }
   }
@@ -537,13 +542,19 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { 
     prepared[field.key] = value;
   }
   const [data, setData] = useState<Values>(prepared);
+  const selectedPerson = editor.kind === 'leads' ? state.records.find(record => record.kind === 'people' && record.id === data.personId) : undefined;
   const existingSourceLead = !editor.record && ['leads', 'cases'].includes(editor.kind) ? state.records.find(record => record.kind === 'leads' && record.legacy?.table === 'leads' && record.data.personId === data.personId) : undefined;
   const duplicate = editor.kind === 'people' && state.records.some(record => record.kind === 'people' && record.id !== editor.record?.id && ((data.email && v(record, 'email').toLowerCase() === String(data.email).toLowerCase()) || (data.phone && v(record, 'phone').replace(/\D/g, '') === String(data.phone).replace(/\D/g, ''))));
   const fields = definition.fields.filter(field => !brokerReply || ['response', 'status'].includes(field.key));
-  const sections = [...new Set(fields.map(field => fieldSection(editor.kind, field)))];
+  const sections = [...new Set(fields.map(field => fieldSection(editor.kind, field)))].sort((a, b) => Number(a.toLowerCase().includes('complementares')) - Number(b.toLowerCase().includes('complementares')));
   const draftRecord: CrmRecord = { id: editor.record?.id || 'draft', kind: editor.kind, data: existingSourceLead ? { ...data, source: existingSourceLead.data.source ?? '' } : data, createdAt: editor.record?.createdAt || new Date().toISOString(), updatedAt: editor.record?.updatedAt || new Date().toISOString(), createdBy: actor.brokerId };
   const update = (field: Field, value: string) => setData(current => {
     const next: Values = { ...current, [field.key]: field.type === 'number' && value !== '' ? Number(value) : value };
+    if (editor.kind === 'leads' && field.key === 'personId') {
+      const person = state.records.find(item => item.kind === 'people' && item.id === value);
+      const previousPerson = state.records.find(item => item.kind === 'people' && item.id === current.personId);
+      if (person && (!String(current.name || '').trim() || current.name === previousPerson?.data.name)) next.name = person.data.name;
+    }
     if (field.key === 'journey') next.stage = 'Lead';
     if (['caseId', 'leadId'].includes(field.key)) {
       const record = state.records.find(item => item.id === value);
@@ -555,7 +566,7 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { 
   });
   function fieldControl(field: Field) {
     const missingOriginal = Boolean(editor.record?.legacy && (editor.record.data[field.key] === undefined || editor.record.data[field.key] === ''));
-    const required = Boolean(field.required && !missingOriginal);
+    const required = fieldRequired(field) && !missingOriginal;
     const storedPhoto = field.key === 'photoUrl' && editor.record?.legacy && /^data:image\//.test(String(data[field.key] || ''));
     let options = field.key === 'stage' ? (data.journey === 'Captação' ? CAPTURE_STAGES : NEGOTIATION_STAGES) : field.key === 'category' ? [...new Set([...state.settings.categories, 'Cliente e proprietário'])] : field.options;
     if (editor.kind === 'followups' && field.key === 'status') {
@@ -571,13 +582,20 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { 
     const rental = data.purpose === 'Aluguel' || (editor.kind === 'proposals' && state.records.some(item => item.id === data.caseId && item.data.purpose === 'Aluguel'));
     const fieldLabel = rental && field.key === 'amount' ? (editor.kind === 'goals' ? 'Meta de aluguel mensal contratado (R$)' : 'Aluguel mensal proposto (R$)') : rental && field.key === 'price' ? 'Aluguel mensal (R$)' : field.label;
     if (field.key === 'source') return <div key={field.key} className={s.fullField}><LeadSourcePicker id={id} value={String((existingSourceLead ? existingSourceLead.data.source : data.source) ?? '')} onChange={source => update(field, source)} options={state.settings.sources} disabled={locked || busy} required={required} />{locked && <p className={s.formNote}>Origem vinculada ao lead. Para corrigir, use Registro em Conversas.</p>}</div>;
+    if (guided && field.control) {
+      const suggestions = field.key === 'propertyType' ? PROPERTY_TYPE_CHOICES : field.key === 'features' ? PROPERTY_FEATURE_CHOICES
+        : ['city', 'district', 'region'].includes(field.key) ? locationSuggestions(state.records, field.key as 'city' | 'district' | 'region', String(data.city || '')) : options || [];
+      const choices = field.key === 'purpose' && editor.kind === 'leads' ? [{ value: 'Venda', label: 'Comprar' }, { value: 'Aluguel', label: 'Alugar' }] : suggestions;
+      const hint = creatingProperty && field.control === 'count' && required ? 'Selecione uma quantidade. Informe 0 quando não houver.' : field.hint;
+      return <div key={field.key} className={['choices', 'multi'].includes(field.control) ? s.fullField : ''}><GuidedRecordField id={id} label={fieldLabel} value={String(data[field.key] ?? '')} onChange={value => update(field, value)} mode={field.control} options={choices} required={required} disabled={locked || busy} hint={hint} allowCustom={field.key === 'propertyType'} /></div>;
+    }
     return <label key={field.key} htmlFor={id} className={field.type === 'textarea' ? s.fullField : ''}>
       <span>{fieldLabel}{required && <b> *</b>}</span>
       {storedPhoto ? <small>Foto existente preservada. Gerencie imagens em Catálogo e fotos.</small>
-        : references ? <><select id={id} disabled={locked || busy} required={required} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)}><option value="">Selecione…</option>{references.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select>{assignmentFromConversation && <small>O responsável é definido ao assumir ou devolver o atendimento em Conversas.</small>}{references.length === 0 && <small>Cadastre {field.ref === 'members' ? 'um usuário' : MODULES[field.ref as Kind].singular.toLowerCase()} antes de vincular.</small>}</>
-        : options ? <select id={id} disabled={locked || busy} required={required} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)}>{(missingOriginal || !required) && <option value="">Não informado</option>}{options.map(option => <option key={option}>{option}</option>)}</select>
+        : references ? <><select id={id} disabled={locked || busy} required={required} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)}><option value="">Selecione…</option>{references.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select>{assignmentFromConversation && <small>O responsável é definido ao assumir ou devolver o atendimento em Conversas.</small>}{references.length === 0 && <small>Cadastre {field.ref === 'members' ? 'um usuário' : MODULES[field.ref as Kind].singular.toLowerCase()} antes de vincular.</small>}{field.key === 'personId' && editor.kind === 'leads' && <small>{selectedPerson ? [v(selectedPerson, 'phone'), v(selectedPerson, 'email')].filter(Boolean).join(' · ') || 'Contato não informado. Complete telefone ou email na ficha da pessoa para catalogar este lead.' : 'Selecione a pessoa já cadastrada para reutilizar seu telefone ou email, sem duplicar o cliente.'}</small>}</>
+        : options ? <select id={id} disabled={locked || busy} required={required} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)}><option value="">{required ? 'Selecione…' : 'Não informado'}</option>{options.map(option => <option key={option}>{option}</option>)}</select>
         : field.type === 'textarea' ? <textarea id={id} disabled={busy} rows={field.key === 'response' ? 5 : 3} required={required || field.key === 'response' && data.status === 'Respondida'} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)} />
-        : <input id={id} disabled={locked || busy} list={field.key === 'reason' ? 'evolution-reasons' : undefined} type={field.type || 'text'} required={required} min={field.min} step={field.type === 'number' ? field.key === 'target' ? '1' : 'any' : undefined} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)} {...(field.key === 'month' ? { pattern: '[0-9]{4}-(0[1-9]|1[0-2])', placeholder: '2026-10' } : {})} />}
+        : <input id={id} disabled={locked || busy} list={field.key === 'reason' ? 'evolution-reasons' : undefined} type={field.type || 'text'} required={required} min={creatingProperty && ['area', 'price'].includes(field.key) ? 0.01 : field.min} step={field.type === 'number' ? field.key === 'target' ? '1' : 'any' : undefined} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)} {...(field.key === 'month' ? { pattern: '[0-9]{4}-(0[1-9]|1[0-2])', placeholder: '2026-10' } : {})} />}
     </label>;
   }
   return <Dialog title={brokerReply ? 'Responder ao gestor' : `${editor.record ? 'Editar' : 'Cadastrar'} ${definition.singular.toLowerCase()}`} subtitle="Os campos com * são obrigatórios. Alterações ficam registradas no histórico." onClose={onClose} wide>
@@ -587,8 +605,14 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave }: { 
         {duplicate && <div className={s.warning}><Icon name="alert" size={16} />Já existe uma pessoa com este telefone ou email. Confira o cadastro existente; os contatos não serão mesclados automaticamente.</div>}
         {definition.description && <p className={s.formNote}>{definition.description}</p>}
         {brokerReply && editor.record && <div className={s.followupContext}><strong>{v(editor.record, 'name')}</strong><p>{v(editor.record, 'request')}</p><small>Prazo: {date(v(editor.record, 'dueAt'), true)} · a conclusão depende da revisão do gestor.</small></div>}
+        {guided && <div className={s.guidedIntro}><span className={s.guidedIntroIcon}><Icon name={editor.kind === 'properties' ? 'home' : 'people'} size={20} /></span><div><strong>{creatingProperty ? 'Selecione as opções e preencha os dados essenciais' : 'Selecione as opções e complete só o que souber'}</strong><p>{editor.kind === 'leads' ? 'Para uma ficha comercial completa: nome, telefone ou email da pessoa vinculada, responsável, origem, compra ou aluguel, tipo de imóvel, cidade ou região e orçamento máximo.' : editor.kind === 'properties' ? 'Comece pela identificação, finalidade, valor, tipo, localização e descrição. Informe área, quartos e vagas; selecione 0 quando não houver. Características adicionais e fotos ficam na seção complementar.' : 'Informe um telefone ou email para facilitar o próximo atendimento. Os demais detalhes podem ser preenchidos depois.'} Campos obrigatórios para salvar continuam marcados com *.</p></div></div>}
         {['people', 'leads', 'properties'].includes(editor.kind) && <CatalogHealth state={state} record={draftRecord} />}
-        {sections.map(section => section === 'Origem do cliente' ? <div className={s.formSection} key={section}>{fields.filter(field => fieldSection(editor.kind, field) === section).map(fieldControl)}</div> : <fieldset className={s.formSection} key={section}><legend>{section}</legend><div className={s.formGrid}>{fields.filter(field => fieldSection(editor.kind, field) === section).map(fieldControl)}</div></fieldset>)}
+        {sections.map(section => {
+          const sectionFields = fields.filter(field => fieldSection(editor.kind, field) === section);
+          const optional = guided && section.toLowerCase().includes('complementares') && sectionFields.every(field => !fieldRequired(field));
+          if (optional) return <details key={section} className={s.guidedOptional} onInvalidCapture={event => { event.currentTarget.open = true; }}><summary><span>{section}</span><small>Opcional · {sectionFields.filter(field => String(data[field.key] ?? '').trim()).length} preenchidos</small></summary><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></details>;
+          return section === 'Origem do cliente' ? <div className={s.formSection} key={section}>{sectionFields.map(fieldControl)}</div> : <fieldset className={s.formSection} key={section}><legend>{section}</legend><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></fieldset>;
+        })}
         <datalist id="evolution-reasons">{state.settings.lossReasons.map(item => <option key={item} value={item} />)}</datalist>
         {editor.kind === 'proposals' && <p className={s.formNote}>Marcar como “Enviada” registra o status interno. Não envia uma mensagem ao cliente.</p>}
         {editor.kind === 'cases' && <p className={s.formNote}>Pausas e perdas precisam de motivo. Uma mudança de etapa mantém o histórico anterior.</p>}

@@ -1,7 +1,12 @@
 export type ConversationInboxItem = {
   conversationId: string; leadId: string; lastMessageId: string;
   lastMessageAt: string; lastMessageText: string | null; incomingCount: number; unread: number;
+  dutyPriorityUntil?: string | null; dutyPreferred?: boolean;
 };
+/** Server timestamps are authoritative. UI guard does not replace the claim RPC. */
+export function dutyPriorityBlocked(item: Pick<ConversationInboxItem, 'dutyPriorityUntil' | 'dutyPreferred'> | undefined, now = Date.now()) {
+  return Boolean(item?.dutyPriorityUntil && !item.dutyPreferred && Date.parse(item.dutyPriorityUntil) > now);
+}
 export type ConversationReadPosition = { conversationId: string; position: number };
 
 export function inboxByLead(items: ConversationInboxItem[]) {

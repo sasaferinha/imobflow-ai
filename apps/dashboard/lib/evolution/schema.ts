@@ -1,6 +1,6 @@
 /** Shared form contract. Values are validated again by the server-side engine. */
 export type Kind = 'people' | 'leads' | 'cases' | 'tasks' | 'proposals' | 'properties' | 'condominiums' | 'neighborhoods' | 'keys' | 'goals' | 'notes' | 'links' | 'notices' | 'messages' | 'content' | 'channels' | 'teams' | 'followups' | 'captureGoals' | 'shifts';
-export type Field = { key: string; label: string; type?: 'text' | 'textarea' | 'number' | 'date' | 'datetime-local' | 'select' | 'email' | 'url'; required?: boolean; options?: string[]; ref?: Kind | 'members'; min?: number };
+export type Field = { key: string; label: string; type?: 'text' | 'textarea' | 'number' | 'date' | 'datetime-local' | 'select' | 'email' | 'url'; required?: boolean; options?: string[]; ref?: Kind | 'members'; min?: number; control?: 'choices' | 'count' | 'suggestions' | 'multi'; hint?: string };
 export type ModuleDefinition = { title: string; singular: string; group: string; fields: Field[]; admin?: boolean; description?: string };
 const field = (key: string, label: string, more: Partial<Field> = {}): Field => ({ key, label, ...more });
 const name = field('name', 'Nome', { required: true });
@@ -38,5 +38,19 @@ export const MODULES: Record<Kind, ModuleDefinition> = {
 // Optional qualification fields never discard an incomplete intake. Completeness
 // and configurable progression gates are derived separately by the domain engine.
 MODULES.people.fields.push(field('preferredChannel','Canal preferido',{type:'select',options:['WhatsApp','Telefone','Email']}),field('contactPeriod','Melhor horário para contato'));
+MODULES.followups.fields.push(field('captureGoalId', 'Meta de captação relacionada', { ref: 'captureGoals' }));
+MODULES.followups.fields.push(field('protectedLeadId', 'Cliente protegido por compromisso', { ref: 'leads' }), field('poolContactAt', 'Contato usado na revisão', { type: 'datetime-local' }));
 MODULES.leads.fields.push(field('city','Cidade de interesse'),field('bedrooms','Quartos desejados',{type:'number',min:0}),field('parkingSpaces','Vagas desejadas',{type:'number',min:0}),field('purchaseTimeline','Prazo para decidir'),field('financing','Forma de pagamento',{type:'select',options:['À vista','Financiamento','A definir']}),field('qualificationNotes','Detalhes da qualificação',{type:'textarea'}));
 MODULES.properties.fields.push(field('bathrooms','Banheiros',{type:'number',min:0}),field('condoFee','Condomínio (R$)',{type:'number',min:0}),field('iptu','IPTU anual (R$)',{type:'number',min:0}),field('features','Comodidades',{type:'textarea'}),field('documentation','Situação documental',{type:'select',options:['A conferir','Regular','Com pendências']}));
+
+// Presentation metadata never restricts legacy/custom values or discards partial intake.
+for (const kind of ['leads', 'properties'] as const) {
+  MODULES[kind].fields = MODULES[kind].fields.map(item => ({
+    ...item,
+    ...(kind === 'leads' && item.key === 'temperature' ? { required: false } : {}),
+    ...(['purpose', 'propertyType'].includes(item.key) ? { control: 'choices' as const } : {}),
+    ...(['bedrooms', 'parkingSpaces', 'bathrooms'].includes(item.key) ? { control: 'count' as const, hint: 'Selecione uma quantidade ou informe o número exato. Deixe vazio se não souber.' } : {}),
+    ...(['city', 'district', 'region'].includes(item.key) ? { control: 'suggestions' as const, hint: 'Sugestões da sua carteira. Você também pode digitar um novo local.' } : {}),
+    ...(item.key === 'features' ? { control: 'multi' as const, hint: 'Marque as opções conhecidas. Características diferentes podem ser escritas abaixo.' } : {}),
+  }));
+}

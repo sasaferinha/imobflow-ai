@@ -3,17 +3,21 @@ const fixed='2026-10-12T12:00:00.000Z';
 class Clock extends Date {constructor(...args){super(...(args.length?args:[fixed]));}static now(){return Date.parse(fixed);}}
 const company='11111111-1111-4111-a111-111111111111';
 let enabled=true,hasOwner=true,activeActor=null,reads=0,queries=0,writes=0;
+let pool = { released: 0, protected: [] }, poolCalls = 0;
+let readiness = { inactivePool: true, verifiedInactiveContacts: true }, readinessFailure = false, readinessCalls = 0;
+let integrated = true;
 const cache=new Map();let state;
 function load(file){
   if(cache.has(file))return cache.get(file);
   const mod={exports:{}};cache.set(file,mod.exports);
   const requireLocal=specifier=>{
-    if(file.endsWith('scheduler.ts')&&specifier==='../supabase')return{async supabaseServiceRequest(url){queries++;assert.match(url,new RegExp(`company_id=eq.${company}`));assert.match(url,/active=eq.true&role=eq.owner/);return hasOwner?[{id:'owner',name:'Manager example'}]:[];}};
+    if(file.endsWith('scheduler.ts')&&specifier==='../supabase')return{async supabaseServiceRequest(url,options){queries++;if(url==='rpc/crm_operational_rules_ready'){assert.deepEqual(JSON.parse(JSON.stringify(options.body)),{p_company_id:company,p_actor_id:'owner'});assert.equal(options.timeoutMs,3000);assert.ok(activeActor);readinessCalls++;if(readinessFailure)throw Error('Synthetic schema readiness unavailable');return structuredClone(readiness);}if(url==='rpc/release_inactive_lead_pool'){assert.deepEqual(JSON.parse(JSON.stringify(options.body)),{p_company_id:company,p_actor_id:'owner'});assert.equal(options.timeoutMs,5000);assert.equal(readiness?.inactivePool,true);assert.equal(readiness?.verifiedInactiveContacts,true);assert.equal(readinessFailure,false);poolCalls++;return structuredClone(pool);}assert.match(url,new RegExp(`company_id=eq.${company}`));assert.match(url,/active=eq.true&role=eq.owner/);return hasOwner?[{id:'owner',name:'Manager example'}]:[];}};
     if(file.endsWith('scheduler.ts')&&specifier==='../tenant-context')return{withAccount:async(actor,callback)=>{assert.equal(actor.companyId,company);assert.equal(actor.role,'owner');activeActor=actor;try{return await callback();}finally{activeActor=null;}}};
     if(file.endsWith('scheduler.ts')&&specifier==='./feature')return{evolutionEnabled:id=>enabled&&id===company};
     if(file.endsWith('scheduler.ts')&&specifier==='./server')return{
+      evolutionIntegrated:()=>integrated,
       readEvolutionState:async actor=>{reads++;assert.equal(actor.companyId,company);assert.ok(activeActor);return structuredClone(state);},
-      executeEvolutionCommand:async(actor,command,version)=>{assert.equal(actor.companyId,company);assert.equal(command.kind,'notices');assert.equal(command.type,'save');assert.ok(!JSON.stringify(command).includes('Private customer'));if(version!==state.version)throw Error('CAS conflict');state=load('lib/evolution/model.ts').applyCommand(state,actor,command,fixed);writes++;},
+      executeEvolutionCommand:async(actor,command,version)=>{assert.equal(actor.companyId,company);if(command.type!=='capture-reminders'){assert.ok(['notices','followups'].includes(command.kind));assert.equal(command.type,'save');}assert.ok(!JSON.stringify(command).includes('Private customer'));if(version!==state.version)throw Error('CAS conflict');state=load('lib/evolution/model.ts').applyCommand(state,actor,command,fixed);writes++;},
     };
     if(!specifier.startsWith('.'))throw Error(`Unexpected scheduler dependency: ${specifier}`);
     return load(path.posix.normalize(path.posix.join(path.posix.dirname(file),specifier))+'.ts');
@@ -36,5 +40,72 @@ function load(file){
   assert.equal((await scheduler.runEvolutionScheduler(company,'Company example')).report,'already-generated','immutable creation audit survives title edits');assert.equal(writes,1);
   state.settings.operations.weeklyReportsEnabled=false;
   assert.equal((await scheduler.runEvolutionScheduler(company,'Company example')).report,'disabled');assert.equal(writes,1);
-  console.log('PASS operations scheduler: opt-in, active owner/tenant context, disabled states, no external-send dependencies, truthful internal report, CAS duplicate prevention and renamed-notice audit deduplication.');
+  state.members.push({id:'broker',name:'Broker example',role:'broker',specialization:'Venda'});
+  state=model.applyCommand(state,{companyId:company,brokerId:'owner',name:'Manager example',role:'owner'},{type:'save',kind:'captureGoals',data:{name:'Meta de teste',assignedTo:'broker',purpose:'Venda',month:'2026-10',target:3}},fixed);
+  state.settings.operations.captureRemindersEnabled=true;
+  const captureRuns=await Promise.allSettled([scheduler.runEvolutionScheduler(company,'Company example'),scheduler.runEvolutionScheduler(company,'Company example')]);
+  assert.equal(captureRuns.filter(r=>r.status==='fulfilled'&&r.value.captureReminders===1).length,1);
+  assert.equal(state.records.filter(r=>r.kind==='followups').length,1,'concurrent scheduler runs cannot duplicate capture requests');
+  assert.equal((await scheduler.runEvolutionScheduler(company,'Company example')).captureReminders,0);
+  assert.equal(poolCalls,0,'inactive release requires explicit opt-in');
+  assert.equal(readinessCalls,0,'disabled pool does not require the new readiness RPC');
+  const previousState=structuredClone(state);
+  for(const scenario of [
+    {name:'false marker',ready:{inactivePool:true,verifiedInactiveContacts:false},reason:'unverified-contacts'},
+    {name:'legacy response',ready:{inactivePool:true},reason:'unverified-contacts'},
+    {name:'missing result',ready:null,reason:'unverified-contacts'},
+    {name:'invalid marker',ready:{inactivePool:true,verifiedInactiveContacts:'true'},reason:'unverified-contacts'},
+    {name:'missing pool',ready:{inactivePool:false,verifiedInactiveContacts:true},reason:'unverified-contacts'},
+    {name:'missing RPC or failed check',ready:null,fail:true,reason:'schema-unavailable'},
+    {name:'integration disabled',ready:{inactivePool:true,verifiedInactiveContacts:true},integration:false,reason:'canonical-integration-required'},
+  ]) {
+    state=model.emptyState(company);state.members=structuredClone(previousState.members);
+    state.settings.operations={...ops.operationsSettings(state),inactivePoolEnabled:true,captureRemindersEnabled:true,weeklyReportsEnabled:true};
+    state=model.applyCommand(state,{companyId:company,brokerId:'owner',name:'Manager example',role:'owner'},{type:'save',kind:'captureGoals',data:{name:'Meta independente',assignedTo:'broker',purpose:'Venda',month:'2026-10',target:3}},fixed);
+    readiness=scenario.ready;readinessFailure=Boolean(scenario.fail);integrated=scenario.integration!==false;
+    const callsBefore=poolCalls,checksBefore=readinessCalls;
+    const result=await scheduler.runEvolutionScheduler(company,'Company example');
+    assert.deepEqual(JSON.parse(JSON.stringify(result.inactivePool)),{status:'blocked',reason:scenario.reason},scenario.name);
+    assert.equal(result.released,0,scenario.name+' must not claim releases');
+    assert.equal(poolCalls,callsBefore,scenario.name+' must not call legacy release policy');
+    assert.equal(readinessCalls-checksBefore,integrated?1:0,'readiness is scoped to active integrated tenant');
+    assert.equal(result.captureReminders,1,scenario.name+' preserves capture reminders');
+    assert.equal(result.report,'generated',scenario.name+' preserves weekly report');
+    assert.equal(state.records.filter(r=>r.kind==='notices').length,1);
+    assert.equal(state.records.filter(r=>r.kind==='followups').length,1,'only the independent capture request is saved');
+  }
+  state=previousState;readiness={inactivePool:true,verifiedInactiveContacts:true};readinessFailure=false;integrated=true;
+  state.settings.operations.inactivePoolEnabled=true;
+  for(let n=1;n<=14;n++) {
+    const id=`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+    state.records.push({id:'lead:'+id,kind:'leads',createdAt:fixed,updatedAt:fixed,createdBy:'owner',data:{name:'Contato protegido fictício '+n}});
+    pool.protected.push({leadId:id,lastContactAt:'2026-08-01T12:00:00+00:00'});
+  }
+  pool.protected.push({leadId:'foreign-lead',lastContactAt:'2026-08-01T12:00:00Z'});
+  const warnings=()=>state.records.filter(r=>r.kind==='followups'&&r.data.protectedLeadId);
+  pool.released=2;
+  const happy=await scheduler.runEvolutionScheduler(company,'Company example');assert.equal(warnings().length,5);
+  assert.equal(happy.inactivePool.status,'completed');assert.equal(happy.released,2,'ready schema keeps the normal release result');pool.released=0;
+  await scheduler.runEvolutionScheduler(company,'Company example');assert.equal(warnings().length,10,'deduplication before cap lets subsequent reviews progress');
+  await scheduler.runEvolutionScheduler(company,'Company example');assert.equal(warnings().length,14);
+  pool.protected.forEach(candidate=>candidate.lastContactAt='2026-08-01T12:00:00.000Z');
+  await scheduler.runEvolutionScheduler(company,'Company example');assert.equal(warnings().length,14,'same contact represented in another timezone format is not a new review');
+  assert(warnings().every(r=>r.data.assignedTo==='owner'),'protected reviews go only to manager');
+  assert.equal(model.visibleState(state,{companyId:company,brokerId:'broker',name:'Broker example',role:'broker'}).records.some(r=>r.data.protectedLeadId),false);
+  const uncertainId='00000000-0000-4000-8000-000000000099';
+  state.records.push({id:'lead:'+uncertainId,kind:'leads',createdAt:fixed,updatedAt:fixed,createdBy:'owner',data:{name:'Contato sem prova fictício'}});
+  pool.protected=[{leadId:uncertainId,lastContactAt:null,reason:'contact-history-unverified'}];
+  await scheduler.runEvolutionScheduler(company,'Company example');
+  const uncertainReview=warnings().find(r=>r.data.protectedLeadId==='lead:'+uncertainId);
+  assert(uncertainReview,'unknown contact date still creates a manager review');
+  assert.equal(uncertainReview.data.poolContactAt,'','unknown date must not be invented');
+  assert.match(uncertainReview.data.request,/não permite comprovar/);
+  assert.doesNotMatch(uncertainReview.data.request,/possui visita/);
+  const warningsBeforeRetry=warnings().length;
+  await scheduler.runEvolutionScheduler(company,'Company example');
+  assert.equal(warnings().length,warningsBeforeRetry,'unknown contact evidence has a stable deduplication key');
+  const priorPoolCalls=poolCalls;
+  assert.equal((await scheduler.runEvolutionScheduler(company,'Company example',Clock.now()+1000)).report,'deferred');
+  assert.equal(poolCalls,priorPoolCalls,'deadline reserve prevents starting another release');
+  console.log('PASS operations scheduler: legacy opt-in fails closed for missing/false/failed readiness, independent capture/report routines continue, ready pool still executes, active owner/tenant context, deadline, CAS and review deduplication. Synthetic only.');
 })().catch(error=>{console.error(error);process.exit(1);});

@@ -46,7 +46,7 @@ async function run() {
           const fn=resource.slice(4), entries=Object.entries(JSON.parse(options.body));
           if (fn==='commit_crm_evolution_changes' && beforeCommit) { const callback=beforeCommit;beforeCommit=undefined;await callback(); }
           const rows=(await db.query(`SELECT * FROM public.${identifier(fn)}(${entries.map(([key],i)=>`${identifier(key)}=>$${i+1}`).join(',')})`,entries.map(([,value])=>typeof value==='object'&&value!==null?JSON.stringify(value):value))).rows;
-          const result=['save_crm_evolution_workspace','commit_crm_evolution_changes'].includes(fn)?rows[0][fn]:rows;
+          const result=['save_crm_evolution_workspace','commit_crm_evolution_changes','crm_operational_rules_ready'].includes(fn)?rows[0][fn]:rows;
           if (fn==='commit_crm_evolution_changes' && result===true && failAfterCommit) {failAfterCommit=false;failedReadPending=true;}
           return Response.json(result);
         }
@@ -159,6 +159,40 @@ async function run() {
     assert.equal(failure.status,503);assert.match((await failure.json()).error,/salva/i,'response must disclose accepted commit despite reload failure');
     assert.equal(Number(await workspaceVersion()),versionBeforeReadFailure+1);
     state=await snapshot('owner');assert.ok(state.events.some(e=>e.summary==='Commit succeeds but reload fails'));
+    // New reminder command uses the actual route, session, canonical bridge and SQL CAS.
+    const month=new Date(Date.now()-3*3600000).toISOString().slice(0,7);
+    state=await save('owner',{type:'save',kind:'captureGoals',data:{name:'Meta integrada fictícia',assignedTo:id(12),purpose:'Venda',month,target:3}},state);
+    state=await save('owner',{type:'settings',settings:{operations:{captureRemindersEnabled:true}}},state);
+    const reminderStale=structuredClone(state), reminderVersion=state.version;
+    state=await save('owner',{type:'capture-reminders'},state);
+    assert.equal(state.version,reminderVersion+1);
+    const reminder=state.records.find(record=>record.kind==='followups'&&record.data.captureGoalId);
+    assert(reminder);assert.equal(reminder.data.assignedTo,id(12));
+    assert.equal((await post('owner',{type:'capture-reminders'},reminderStale)).status,409);
+    assert.equal((await post('broker',{type:'capture-reminders'},await snapshot('broker'))).status,403);
+    assert(!(await snapshot('otherBroker')).records.some(record=>record.id===reminder.id));
+    const replied=await save('broker',{type:'save',kind:'followups',id:reminder.id,data:{status:'Respondida',response:'Retorno fictício para conferência.'}},await snapshot('broker'));
+    assert.equal(replied.records.find(record=>record.id===reminder.id).data.status,'Respondida');
+    state=await save('owner',{type:'capture-reminders'},await snapshot('owner'));
+    assert.equal(state.records.filter(record=>record.kind==='followups'&&record.data.captureGoalId).length,1);
+    const beforeMissingMigration=await workspaceVersion();
+    assert.equal((await post('owner',{type:'settings',settings:{operations:{dutyPriorityEnabled:true}}},state)).status,503,'schema prerequisite cannot be bypassed by a checkbox');
+    assert.equal(await workspaceVersion(),beforeMissingMigration,'failed readiness preserves settings/version');
+    await db.exec('RESET ROLE');await db.exec(migration('20261013210000_duty_priority.sql'));await db.exec('SET ROLE service_role');
+    state=await save('owner',{type:'settings',settings:{operations:{dutyPriorityEnabled:true}}},state);
+    assert.equal(state.settings.operations.dutyPriorityEnabled,true,'verified schema permits explicit activation');
+    assert.equal((await post('broker',{type:'settings',settings:{operations:{dutyPriorityEnabled:true}}},await snapshot('broker'))).status,403);
+    const installedVersion=state.version;
+    assert.equal((await post('owner',{type:'settings',settings:{operations:{inactivePoolEnabled:true}}},state)).status,503,'partially installed schema cannot enable the unavailable release routine');
+    assert.equal(await workspaceVersion(),installedVersion);
+    await db.exec('RESET ROLE');await db.exec(migration('20261013200000_inactive_lead_pool.sql'));await db.exec('SET ROLE service_role');
+    assert.equal((await post('owner',{type:'settings',settings:{operations:{inactivePoolEnabled:true}}},state)).status,503,'old release SQL without verified social contacts must remain blocked');
+    assert.equal(await workspaceVersion(),installedVersion);
+    await db.exec('RESET ROLE');await db.exec(migration('20261019120000_verified_inactive_contact.sql'));await db.exec('SET ROLE service_role');
+    state=await save('owner',{type:'settings',settings:{operations:{inactivePoolEnabled:true}}},state);
+    assert.equal(state.settings.operations.inactivePoolEnabled,true,'activation requires the verified-contact migration');
+    state=await save('owner',{type:'settings',settings:{operations:{inactivePoolEnabled:false}}},state);
+    state=await save('owner',{type:'settings',settings:{operations:{dutyPriorityEnabled:false}}},state);
     const stored=(await db.query('SELECT document FROM crm_evolution_workspaces WHERE company_id=$1',[id(1)])).rows[0].document;
     assert.ok(!('sourceRevision' in stored));assert.ok(!stored.records.some(r=>r.legacy&&('photoUrl' in r.data||'phone' in r.data)),'canonical customer/photo snapshot is not duplicated in workspace');
     assert.ok(calls.filter(c=>['leads','properties','appointments','conversations','broker_accounts','crm_evolution_workspaces'].includes(c.resource)).every(c=>c.query.get('company_id')?.startsWith('eq.')));

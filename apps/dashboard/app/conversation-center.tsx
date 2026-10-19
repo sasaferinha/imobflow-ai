@@ -2,79 +2,35 @@
 import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 /* eslint-disable @next/next/no-img-element -- property previews use uploaded data URLs */
 
-import { useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type FormEvent, type ComponentProps } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ComponentProps } from 'react';
 import type { LeadProfile } from '@/lib/leads';
 import type { ConversationMessage, ConversationAttendanceSummary } from '@/lib/conversations';
 import type { PropertyRecord } from '@/lib/operations';
-import { demoContacts, demoConversationReducer, demoTemperature, type DemoContact, type DemoConversationAction, type DemoConversationState } from '@/lib/demo-conversations';
+import type { DemoContact, DemoConversationAction, DemoConversationState } from '@/lib/demo-conversations';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
-import type { SharedDemoThread } from '@/lib/shared-demo-conversations';
 import { ConversationMessageBubble } from './conversation-message';
 import { ConversationSettings } from './conversation-settings';
 import { ConversationWhatsAppHandoff } from './conversation-whatsapp-handoff';
 import ConversationRegistration from './conversation-registration';
 import ConversationAssistant from './conversation-assistant';
 import ConversationAlerts from './conversation-alerts';
+import ConversationUrgentAlert from './conversation-urgent-alert';
+import BrowserPushSettings from './browser-push-settings';
 import { isWhatsAppWindowError } from '@/lib/whatsapp-handoff';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
-import { inboxByLead, compareInboxActivity, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
-
-const previewLeads: LeadProfile[] = demoContacts.map(contact => ({
-  id: `example-${contact.id}`, name: contact.name, phone: 'Exemplo — sem telefone real', email: null,
-  goal: contact.goal, propertyType: contact.propertyType, region: contact.region, budget: contact.budget,
-  details: `${contact.rooms} quartos · ${contact.payment}`, summary: contact.suggestion, score: contact.score, scoreDefined: true,
-  temperature: demoTemperature(contact.score), source: 'Demonstração', assignedTo: null,
-  lifecycleStatus: 'Em atendimento', lastContactAt: null, inactivityDays: null,
-  recoveryPotential: 'Baixo', scoreReasons: [], recoverySelected: false, createdAt: '2026-09-08T12:00:00Z',
-}));
+import { inboxByLead, compareInboxActivity, dutyPriorityBlocked, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
 
 export default function ConversationCenter(props: ComponentProps<typeof ConversationWorkspace>) {
-  const [preview, setPreview] = useState(false);
-  const [demoReady, setDemoReady] = useState(false);
-  const [demoSyncFailed, setDemoSyncFailed] = useState(false);
-  const [previewState, previewDispatch] = useReducer(demoConversationReducer, undefined, () => ({
-    selectedId: `lead-example-${demoContacts[0].id}`,
-    threads: Object.fromEntries(demoContacts.map(contact => [`lead-example-${contact.id}`, {
-      messages: contact.messages.map(message => ({ ...message })), draft: '', unread: contact.unread, humanMode: false,
-    }])),
-  }));
-  useEffect(() => subscribeDashboardSync({
-    entities: ['demo-conversations'],
-    load: async signal => {
-      const response = await fetch('/api/conversations/demo', { cache: 'no-store', signal });
-      if (!response.ok) throw new Error('Falha ao sincronizar a demonstração.');
-      return (await response.json() as { data: SharedDemoThread[] }).data;
-    },
-    apply: contacts => { previewDispatch({ type: 'hydrate', contacts }); setDemoReady(true); setDemoSyncFailed(false); },
-    onError: () => setDemoSyncFailed(true),
-  }), []);
-  async function saveDemoAction(input: { contactId: string; action: 'claim' | 'message'; content?: string; messageId?: string; propertyId?: string }) {
-    const response = await fetch('/api/conversations/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-    const result = await response.json() as { data?: SharedDemoThread; error?: string };
-    if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar o atendimento.');
-    previewDispatch({ type: 'hydrate', contacts: [result.data] });
-    announceDashboardChange('demo-conversations');
-    return result.data;
-  }
   return <>
     <div className="conversation-tools">
-    <div className="conversation-preview-toolbar" role="group" aria-label="Modo das conversas">
-      <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}><ConversationIcon name="inbox"/>Clientes cadastrados</button>
-      <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}><ConversationIcon name="play"/>Ver demonstração</button>
-      {preview && <span role="status">{demoSyncFailed ? 'Não foi possível atualizar a demonstração. Tentando reconectar…' : !demoReady ? 'Carregando atendimentos da empresa…' : 'Demonstração compartilhada com sua equipe. Nenhuma mensagem é enviada a clientes reais.'}</span>}
+      <ConversationAlerts inbox={props.inbox} ready={props.ready} demonstration={props.demonstration} />
+      <BrowserPushSettings key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} ready={props.ready} demonstration={props.demonstration} />
+      <ConversationSettings/>
     </div>
-    {!preview&&<><ConversationAlerts inbox={props.inbox} ready={props.ready} demonstration={props.demonstration} /><ConversationSettings/></>}
-    </div>
-    {preview ? <ConversationWorkspace {...props} demonstration ready={demoReady} state={previewState} dispatch={previewDispatch} leads={previewLeads}
-      claimLead={async lead => { await saveDemoAction({ contactId: lead.id, action: 'claim' }); }}
-      persistMessage={async input => {
-        const messageId = crypto.randomUUID();
-        const thread = await saveDemoAction({ contactId: input.leadId, action: 'message', content: input.content, messageId, propertyId: input.propertyId });
-        const message = thread.messages.find(item => item.id === messageId)!;
-        return { id: message.id, time: message.time };
-      }}
-      openAgenda={() => props.notify('Exemplo de agendamento: selecione um cliente cadastrado para marcar uma visita real.')}
-    /> : <ConversationWorkspace {...props} />}
+    <ConversationUrgentAlert key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} currentBrokerId={props.currentBrokerId}
+      ready={props.ready} demonstration={props.demonstration} visibleLeadIds={props.leads?.map(lead => lead.id)}
+      onOpen={leadId => props.dispatch({ type: 'select', id: `lead-${leadId}` })} />
+    <ConversationWorkspace {...props} />
   </>;
 }
 
@@ -89,11 +45,10 @@ const liveTemperature = (temperature: string) => {
 const contactTemperature = (contact: ConversationContact) => liveTemperature(contact.sourceLead?.temperature || 'Frio');
 const formatDate = (value: string | null) => value ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem registro';
 
-function ConversationIcon({ name }: { name: 'inbox' | 'search' | 'play' | 'person' | 'property' | 'send' | 'message' }) {
+function ConversationIcon({ name }: { name: 'inbox' | 'search' | 'person' | 'property' | 'send' | 'message' }) {
   const paths = {
     inbox: <><path d="M4 4h16v16H4zM4 13h5l2 3h2l2-3h5"/><path d="M8 8h8"/></>,
     search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>,
-    play: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 5 4-5 4z"/></>,
     person: <><circle cx="12" cy="8" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/></>,
     property: <><path d="m3 10 9-7 9 7M5 9v12h14V9M10 21v-7h4v7"/></>,
     send: <><path d="m3 3 18 9-18 9 4-9-4-9ZM7 12h14"/></>,
@@ -122,8 +77,13 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const [whatsappHandoff, setWhatsAppHandoff] = useState<{ leadId: string; incomingId?: string; text: string } | null>(null);
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(true);
+  const [profileOpen, setProfileOpen] = useState(false);
   const profileToggleRef = useRef<HTMLButtonElement>(null);
+  const profileWasOpen = useRef(false);
+  useEffect(() => {
+    if (profileOpen) { profileWasOpen.current = true; return; }
+    if (profileWasOpen.current) { profileWasOpen.current = false; profileToggleRef.current?.focus(); }
+  }, [profileOpen]);
   const [propertyPickerOpen, setPropertyPickerOpen] = useState(false);
   const [loadingProperties, setLoadingProperties] = useState(false);
   const summaries = useMemo(() => inboxByLead(inbox), [inbox]);
@@ -222,6 +182,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
       if (positions.every(item => item.position <= (acknowledged.current.get(item.conversationId) ?? -1))) return;
       // Do not mark a new arrival read while the user is browsing older history.
       const body = bodyRef.current;
+      if (body && body.getClientRects().length === 0) return;
       if (body && body.scrollHeight - body.scrollTop - body.clientHeight > 80) return;
       sending = true;
       try {
@@ -236,10 +197,11 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     const body = bodyRef.current;
     onVisible();
     window.addEventListener('focus',onVisible);
+    window.addEventListener('resize',onVisible);
     document.addEventListener('visibilitychange',onVisible);
     body?.addEventListener('scroll',onVisible);
-    return () => { active=false;controller.abort();window.removeEventListener('focus',onVisible);document.removeEventListener('visibilitychange',onVisible);body?.removeEventListener('scroll',onVisible); };
-  }, [demonstration,ready,lead?.id,historyPage]);
+    return () => { active=false;controller.abort();window.removeEventListener('focus',onVisible);window.removeEventListener('resize',onVisible);document.removeEventListener('visibilitychange',onVisible);body?.removeEventListener('scroll',onVisible); };
+  }, [demonstration,ready,lead?.id,historyPage,profileOpen]);
   if(!ready&&!selected)return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state" role="status"><span className="conversation-empty-icon"><ConversationIcon name="inbox"/></span><h2>Sincronizando conversas</h2><p>Aguarde a confirmação do carregamento. Em caso de falha, os controles permanecerão desabilitados.</p></section></div>;
   if (!selected || !lead) return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state"><span className="conversation-empty-icon"><ConversationIcon name="message"/></span><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
   const leadId = lead.id;
@@ -268,7 +230,8 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   });
   const assignedBroker = (demonstration ? thread.assignedTo : attendance.owner)?.trim() || null;
   const isCurrentBroker = demonstration ? Boolean(assignedBroker && normalize(assignedBroker) === normalize(currentBrokerName)) : attendance.isCurrentBroker;
-  const canClaim = demonstration ? !isCurrentBroker : attendance.canClaim;
+  const dutyWaiting = !demonstration && dutyPriorityBlocked(summaries.get(lead.id));
+  const canClaim = demonstration ? !isCurrentBroker : attendance.canClaim && !dutyWaiting;
   const canSend = demonstration || attendance.canSend;
   const latestIncomingId = thread.messages.filter(message => message.side === 'incoming').at(-1)?.id;
   const lastMessage = thread.messages.at(-1);
@@ -400,6 +363,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
           <div className="conversation-contact-heading"><strong>{selected.name}</strong><span className="conversation-owner-line">{assignedBroker ? `Corretor responsável: ${assignedBroker}${isCurrentBroker ? ' (você)' : ''}` : 'Sem corretor responsável'}</span></div>
           <div className="conversation-head-actions">
             {canClaim && <button type="button" className="conversation-claim-button" disabled={!ready || saving} onClick={() => void claimConversation()}>Assumir atendimento</button>}
+            {dutyWaiting && <p className="conversation-duty-wait" role="status">Preferência do plantão: outros corretores poderão assumir após cinco minutos da chegada do lead.</p>}
             <ConversationRegistration key={leadId} leadId={leadId} customerName={selected.name} allowNewNegotiation demonstration={demonstration} disabled={!ready || saving} notify={notify} onSaved={() => {
               for (const entity of ['leads', 'appointments', 'properties', 'opportunities', 'performance']) announceDashboardChange(entity);
             }} />
@@ -417,7 +381,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
         <form className="full-composer" onSubmit={send}><button type="button" className="conversation-property-button" disabled={loadingProperties || !ready || saving || !canSend} onClick={() => void openPropertyPicker()}><ConversationIcon name="property"/>{loadingProperties ? 'Atualizando…' : 'Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => { setSendNotice(''); dispatch({ type: 'draft', id: selected.id, text: event.target.value }); }} aria-label={`Mensagem para ${selected.name}`} placeholder={canSend ? 'Escreva uma resposta…' : attendance.mode === 'closed' ? 'Conversa encerrada' : canClaim ? 'Assuma o atendimento para enviar' : 'Envio disponível ao corretor responsável'} maxLength={4000}/><button className="send-button" type="button" onClick={() => void submitDraft()} disabled={!thread.draft.trim() || !ready || saving || !canSend} aria-label="Adicionar mensagem"><ConversationIcon name="send"/></button></form>
       </section>
       <aside id="conversation-client-profile" hidden={!profileOpen} className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
-        <div className="conversation-profile-title"><h2>Ficha do cliente</h2><button type="button" aria-label="Fechar ficha do cliente" onClick={() => { setProfileOpen(false); profileToggleRef.current?.focus(); }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+        <div className="conversation-profile-title"><h2>Ficha do cliente</h2><button type="button" aria-label="Fechar ficha do cliente" onClick={() => setProfileOpen(false)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
         <div className="conversation-profile-identity"><span className={`lead-avatar avatar-${selected.tone}`}>{selected.initials}</span><div><strong>{selected.name}</strong><span>Perfil comercial</span></div></div>
         <div className="conversation-priority-line"><span>Score do lead</span><strong data-defined={Boolean(lead.scoreDefined)} aria-label={lead.scoreDefined ? `${lead.score}/100` : 'Indefinido'}>{lead.scoreDefined ? <>{lead.score}<small>/100</small></> : 'Indefinido'}</strong></div>
         <h3 className="conversation-profile-section">Interesses do cliente</h3>

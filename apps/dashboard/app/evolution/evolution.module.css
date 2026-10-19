@@ -764,6 +764,15 @@
 .formGrid input, .formGrid select, .formGrid textarea { width: 100%; min-width: 0; min-height: 44px; color: var(--ev-navy); font-size: 15px; font-weight: 700; }
 .formGrid small { color: var(--ev-yellow-text); font-size: 12px; line-height: 1.6; }
 .fullField { grid-column: 1 / -1; }
+.guidedIntro { display: flex; align-items: flex-start; gap: 12px; padding: 16px; margin-bottom: 18px; border: 1px solid var(--ev-line); border-radius: 12px; background: var(--ev-brand-wash); }
+.guidedIntroIcon { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--ev-paper); color: var(--ev-brand); }
+.guidedIntro strong { color: var(--ev-navy); font-size: 14px; }
+.guidedIntro p { margin-top: 5px; color: var(--ev-muted); font-size: 12px; line-height: 1.65; }
+.guidedOptional { margin-top: 24px; border: 1px solid var(--ev-line); border-radius: 12px; background: var(--ev-paper); }
+.guidedOptional > summary { padding: 16px; color: var(--ev-navy); cursor: pointer; font-size: 14px; font-weight: 650; }
+.guidedOptional > summary small { display: block; margin: 5px 0 0 16px; color: var(--ev-muted); font-size: 12px; font-weight: 400; }
+.guidedOptional > summary:focus-visible { outline: 2px solid var(--ev-brand); outline-offset: 3px; border-radius: 12px; }
+.guidedOptional > .formGrid { padding: 8px 16px 20px; }
 .formNote { margin: 15px 0; color: var(--ev-muted); font-size: 12px; line-height: 1.8; }
 .formBody > .formNote:first-child { margin-top: 0; }
 .dialogActions { display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; gap: 9px; padding: 16px 24px; border-top: 1px solid var(--ev-line); background: var(--ev-paper); }
@@ -973,6 +982,15 @@
 
 /* Linha workspace: a persistent, quiet navigation rail and an open work canvas. */
 .app { --ev-sidebar-width: 208px; }
+/* The live conversation workspace consumes the viewport instead of stacking fixed-height panels. */
+@media (min-width: 761px) and (min-height: 600px) {
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))):not(:has(:global(.conversation-sync-notice))) { height: 100dvh; min-height: 0; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))):not(:has(:global(.conversation-sync-notice))) > .workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))):not(:has(:global(.conversation-sync-notice))) > .workspace > .pageHead { flex-shrink: 0; min-height: 80px; padding-block: 16px 12px; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))):not(:has(:global(.conversation-sync-notice))) > .workspace > .main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-bottom: 16px; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))):not(:has(:global(.conversation-sync-notice))) .operationalPanel:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))):not(:has(:global(.conversation-sync-notice))) .footer { flex-shrink: 0; margin-top: 10px; padding-block: 8px; }
+}
 .workspace { margin-left: var(--ev-sidebar-width); min-width: 0; }
 .sidebar { position: fixed; z-index: 45; inset: 0 auto 0 0; width: var(--ev-sidebar-width); display: flex; flex-direction: column; padding: 0 12px 18px 0; border-right: 1px solid var(--ev-line); background: var(--ev-paper); color: var(--ev-ink); overflow-y: auto; overscroll-behavior: contain; }
 .sidebarBrand { display: flex; align-items: center; justify-content: space-between; min-height: 92px; padding: 17px 18px 17px 25px; }

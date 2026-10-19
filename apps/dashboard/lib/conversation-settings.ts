@@ -5,7 +5,9 @@ export async function readBusinessHours(companyId: string) {
     `conversation_settings?company_id=eq.${companyId}&select=business_hours&limit=1`,
     { timeoutMs: 4000 },
   );
-  if (!rows[0] || !Object.keys(rows[0].business_hours as object).length)
-    return defaultBusinessHours;
-  return validateBusinessHours(rows[0].business_hours);
+  if (!rows[0]) return defaultBusinessHours;
+  const settings = rows[0].business_hours;
+  if (settings !== null && typeof settings === 'object' && !Array.isArray(settings)
+    && Object.keys(settings).length === 0) return defaultBusinessHours;
+  return validateBusinessHours(settings);
 }
