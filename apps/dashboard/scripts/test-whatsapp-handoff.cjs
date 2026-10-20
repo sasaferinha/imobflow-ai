@@ -37,6 +37,8 @@ const ui = load('app/conversation-center.tsx', {
   './conversation-alerts': { default: () => null },
   './conversation-urgent-alert': { default: () => null },
   './browser-push-settings': { default: () => null },
+  './conversation-channels': { default: () => null },
+  './instagram-conversations': { default: () => null },
   react: { useState: initial => { const n = cursor++; if (!(n in states)) states[n] = initial?.leadId === '' ? { leadId: 'a', ready: true } : initial; return [states[n], v => { states[n] = typeof v === 'function' ? v(states[n]) : v; }]; }, useEffect() {}, useMemo: fn => fn(), useRef: initial => ({ current: initial }) },
   '@/lib/dashboard-transport': {}, '@/lib/demo-conversations': { demoContacts: [] },
   '@/lib/dashboard-sync': {}, '@/lib/conversation-inbox': load('lib/conversation-inbox.ts'),

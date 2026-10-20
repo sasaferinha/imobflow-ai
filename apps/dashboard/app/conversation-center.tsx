@@ -16,21 +16,55 @@ import ConversationAssistant from './conversation-assistant';
 import ConversationAlerts from './conversation-alerts';
 import ConversationUrgentAlert from './conversation-urgent-alert';
 import BrowserPushSettings from './browser-push-settings';
+import ConversationChannels, { type ConversationChannel } from './conversation-channels';
+import InstagramConversations from './instagram-conversations';
 import { isWhatsAppWindowError } from '@/lib/whatsapp-handoff';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
 import { inboxByLead, compareInboxActivity, dutyPriorityBlocked, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
 
-export default function ConversationCenter(props: ComponentProps<typeof ConversationWorkspace>) {
+const isInstagramLead = (lead: Pick<LeadProfile, 'source'>) => lead.source === 'Instagram Direct';
+
+export default function ConversationCenter(props: Omit<ComponentProps<typeof ConversationWorkspace>, 'onBusyChange'>) {
+  const selectedLead = props.leads?.find(lead => `lead-${lead.id}` === props.state.selectedId);
+  const [channel, setChannel] = useState<ConversationChannel>(() => selectedLead && isInstagramLead(selectedLead) ? 'instagram' : 'whatsapp');
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const selection = useRef(selectedLead?.id);
+  const whatsappLeads = useMemo(() => props.leads?.filter(lead => !isInstagramLead(lead)), [props.leads]);
+  const whatsappInbox = useMemo(() => props.inbox?.filter(item => !props.leads?.some(lead => lead.id === item.leadId && isInstagramLead(lead))), [props.inbox, props.leads]);
+  useEffect(() => {
+    if (!selectedLead || selection.current === selectedLead.id || workspaceBusy) return;
+    if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      selection.current = selectedLead.id;
+      if (isInstagramLead(selectedLead)) setChannel('instagram');
+    });
+    return () => { active = false; };
+  }, [selectedLead, workspaceBusy]);
+  function changeChannel(next: ConversationChannel) {
+    if (next === channel) return true;
+    if (workspaceBusy || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) {
+      props.notify('Conclua a operação ou feche a janela aberta antes de trocar de canal.');
+      return false;
+    }
+    setChannel(next);
+    return true;
+  }
   return <>
-    <div className="conversation-tools">
-      <ConversationAlerts inbox={props.inbox} ready={props.ready} demonstration={props.demonstration} />
+    <ConversationChannels channel={channel} onChange={changeChannel} busy={workspaceBusy} />
+    <div className="conversation-tools" role="group" aria-label="Avisos do WhatsApp">
+      {channel === 'instagram' && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Avisos do WhatsApp</span>}
+      <ConversationAlerts inbox={whatsappInbox} ready={props.ready} demonstration={props.demonstration} />
       <BrowserPushSettings key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} ready={props.ready} demonstration={props.demonstration} />
-      <ConversationSettings/>
+      {channel === 'whatsapp' && <ConversationSettings/>}
     </div>
     <ConversationUrgentAlert key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} currentBrokerId={props.currentBrokerId}
-      ready={props.ready} demonstration={props.demonstration} visibleLeadIds={props.leads?.map(lead => lead.id)}
-      onOpen={leadId => props.dispatch({ type: 'select', id: `lead-${leadId}` })} />
-    <ConversationWorkspace {...props} />
+      ready={props.ready} demonstration={props.demonstration} visibleLeadIds={whatsappLeads?.map(lead => lead.id)}
+      onOpen={leadId => { if (changeChannel('whatsapp')) props.dispatch({ type: 'select', id: `lead-${leadId}` }); }} />
+    {channel === 'whatsapp'
+      ? <ConversationWorkspace {...props} leads={whatsappLeads} inbox={whatsappInbox} onBusyChange={setWorkspaceBusy} />
+      : <InstagramConversations key={`${props.currentBrokerId || 'preview'}:${selectedLead && isInstagramLead(selectedLead) ? selectedLead.id : ''}`} demonstration={props.demonstration} initialLeadId={selectedLead?.id} />}
   </>;
 }
 
@@ -57,7 +91,7 @@ function ConversationIcon({ name }: { name: 'inbox' | 'search' | 'person' | 'pro
   return <svg className="conversation-ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, currentBrokerId, isAdministrator = false, leads = [], properties = [], inbox = [], demonstration = false, ready: parentReady = true }: {
+function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMessage, refreshProperties, claimLead, currentBrokerName, currentBrokerId, isAdministrator = false, leads = [], properties = [], inbox = [], demonstration = false, ready: parentReady = true, onBusyChange }: {
   state: DemoConversationState; dispatch: Dispatch<DemoConversationAction>;
   notify: (message: string) => void; openAgenda: () => void;
   persistMessage: (input: { leadId: string; content: string; images?: string[]; propertyId?: string }) => Promise<{ id: string; time: string }>;
@@ -70,6 +104,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   demonstration?: boolean;
   ready?: boolean;
   inbox?: ConversationInboxItem[];
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -107,6 +142,10 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const lead = selected?.sourceLead;
   const [historyPage, setHistoryPage] = useState<{ leadId: string; cursor: string | null; ready: boolean; positions?: ConversationReadPosition[] }>({ leadId: '', cursor: null, ready: false });
   const [loadingOlder, setLoadingOlder] = useState(false);
+  useEffect(() => {
+    onBusyChange?.(saving || loadingProperties || loadingOlder);
+    return () => onBusyChange?.(false);
+  }, [saving, loadingProperties, loadingOlder, onBusyChange]);
   const selectedLeadRef = useRef(lead?.id);
   useEffect(() => { selectedLeadRef.current = lead?.id; }, [lead?.id]);
   useEffect(() => {
@@ -202,8 +241,8 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     body?.addEventListener('scroll',onVisible);
     return () => { active=false;controller.abort();window.removeEventListener('focus',onVisible);window.removeEventListener('resize',onVisible);document.removeEventListener('visibilitychange',onVisible);body?.removeEventListener('scroll',onVisible); };
   }, [demonstration,ready,lead?.id,historyPage,profileOpen]);
-  if(!ready&&!selected)return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state" role="status"><span className="conversation-empty-icon"><ConversationIcon name="inbox"/></span><h2>Sincronizando conversas</h2><p>Aguarde a confirmação do carregamento. Em caso de falha, os controles permanecerão desabilitados.</p></section></div>;
-  if (!selected || !lead) return <div className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state"><span className="conversation-empty-icon"><ConversationIcon name="message"/></span><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
+  if(!ready&&!selected)return <div id="conversation-channel-content" className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state" role="status"><span className="conversation-empty-icon"><ConversationIcon name="inbox"/></span><h2>Sincronizando conversas</h2><p>Aguarde a confirmação do carregamento. Em caso de falha, os controles permanecerão desabilitados.</p></section></div>;
+  if (!selected || !lead) return <div id="conversation-channel-content" className="conversation-demo conversation-clean"><section className="panel empty-live-data conversation-empty-state"><span className="conversation-empty-icon"><ConversationIcon name="message"/></span><h2>Nenhuma conversa disponível</h2><p>As conversas aparecerão aqui quando houver clientes cadastrados no banco de dados.</p></section></div>;
   const leadId = lead.id;
   const filtered = contacts.filter((contact) => {
     const current = state.threads[contact.id] || emptyThread;
@@ -327,7 +366,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     try{const response=await fetch('/api/conversations/owner',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({leadId,release:true})});const result=await response.json() as {error?:string};if(!response.ok)throw Error(result.error || 'Não foi possível devolver o atendimento.');announceDashboardChange('conversations');notify('Atendimento automático retomado para as próximas mensagens.');}
     catch(e){notify(e instanceof Error?e.message:'Não foi possível devolver o atendimento.');}finally{savingRef.current = false; setSaving(false);}
   }
-  return <div className="conversation-demo conversation-clean">
+  return <div id="conversation-channel-content" className="conversation-demo conversation-clean">
     {!ready&&<p className="conversation-sync-notice" role="status">A sincronização está indisponível. Aguarde a atualização antes de enviar.</p>}
     <div className={`inbox-layout${profileOpen ? ' has-profile' : ''}`}>
       <aside className="inbox-list panel" aria-label="Conversas">

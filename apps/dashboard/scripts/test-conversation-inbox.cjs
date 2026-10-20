@@ -100,6 +100,8 @@ function load(file,deps={},globals={},suffix='') {
     './conversation-assistant':{default:()=>null}, './conversation-alerts':{default:()=>null},
     './conversation-urgent-alert':{default:()=>null},
     './browser-push-settings':{default:()=>null},
+    './conversation-channels':{default:()=>null},
+    './instagram-conversations':{default:()=>null},
     '@/lib/whatsapp-handoff':load('lib/whatsapp-handoff.ts'),
     './conversation-attendance':{describeConversationAttendance:()=>({canSend:true,owner:null})},
   },{window:events,document:doc,AbortController},'\nexport { ConversationWorkspace };');
