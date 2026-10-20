@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const vm=require('node:vm');const ts=require('typescript');
 const {singleMessageTurns}=require('./attendance-turn-fixture.cjs');
 function load(relative, overrides={}) {
- overrides={'node:timers/promises':{setTimeout:async()=>{}},...overrides};
+ overrides={'node:timers/promises':{setTimeout:async()=>{}},'./ai/tenant-settings-server':require('./helpers/tenant-ai-fixture.cjs').legacyTenantAIReader,...overrides};
  const source=fs.readFileSync(path.join(__dirname,'..',relative),'utf8');
  const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  const module={exports:{}};

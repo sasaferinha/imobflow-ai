@@ -10,7 +10,7 @@ function load(file, dependencies = {}, globals = {}, sourceSuffix = '') {
   const module = { exports: {} };
   const source = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8') + sourceSuffix, { reportDiagnostics: true, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } });
   assert.equal(source.diagnostics.filter(item => item.category === ts.DiagnosticCategory.Error).length, 0, file);
-  vm.runInNewContext(source.outputText, { module, exports: module.exports, require: name => name === 'server-only' ? {} : name in dependencies ? dependencies[name] : require(name), Buffer, URL, Response, Request, AbortController, AbortSignal, Set, Map, Date, Intl, console, ...globals }, { filename: file });
+  vm.runInNewContext(source.outputText, { module, exports: module.exports, require: name => name === 'server-only' ? {} : name in dependencies ? dependencies[name] : name.startsWith('.') ? load(path.posix.join(path.posix.dirname(file), name + '.ts'), dependencies, globals) : require(name), Buffer, URL, Response, Request, AbortController, AbortSignal, Set, Map, Date, Intl, console, ...globals }, { filename: file });
   return module.exports;
 }
 const messages = [{ id: uuid(40), side: 'incoming', text: 'Procuro um apartamento no Centro. Posso investir até 450 mil.' }, { id: uuid(41), side: 'outgoing', text: 'Temos uma casa de 700 mil.' }];
@@ -79,6 +79,7 @@ const completion = value => ({ status: 'completed', output: [{ type: 'message', 
     '@/lib/evolution/model': { CrmError, canAccess: (_state, _actor, _record, mode) => mode === 'write' && canWrite },
     '@/lib/evolution/server': { EvolutionServerError, getEvolutionSnapshot: async () => { snapshotReads++; if (snapshotReads % 2 === 0) onSecondRead?.(); return { state: structuredClone(state), actor }; } },
     '@/lib/ai/broker-assistant': { ...provider, generateBrokerAssistance: async input => { generationCalls.push(input); return syntheticOutput; } },
+    '@/lib/ai/tenant-settings-server': require('./helpers/tenant-ai-fixture.cjs').legacyTenantAIReader,
     '@/lib/supabase': { supabaseRequest: async url => { reads.push(url); return url.startsWith('conversations?') ? [{ id: uuid(20), company_id: actor.companyId, lead_id: uuid(30) }] : messages.map(item => ({ id: item.id, company_id: actor.companyId, conversation_id: uuid(20), direction: item.side, content: item.text })).reverse(); } },
   }, { structuredClone });
   const request = (body = { leadId: uuid(30), sector: 'automatic' }, headers = { origin: 'https://test.invalid' }) => new Request('https://test.invalid/api/conversations/assist', { method: 'POST', headers, body: JSON.stringify(body) });

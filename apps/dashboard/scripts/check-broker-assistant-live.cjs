@@ -1,11 +1,7 @@
 // Opt-in deployment gate. Only fictional conversations, never customer data or outbound messages.
 if (process.argv.includes('--if-requested') && process.env.IMOBFLOW_VERIFY_BROKER_ASSISTANT !== '1') process.exit(0);
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const ts = require('typescript');
 const assert = require('node:assert/strict');
-const mod = { exports: {} };
+const { loadLocalAI } = require('./helpers/load-local-ai.cjs');
 const codes = ['invalid_json_schema', 'invalid_api_key', 'model_not_found', 'insufficient_quota', 'rate_limit_exceeded', 'unsupported_parameter', 'invalid_request_error'];
 const parameters = ['model', 'text.format', 'text.format.schema', 'max_output_tokens'];
 const checkedFetch = async (url, options) => {
@@ -19,12 +15,7 @@ const checkedFetch = async (url, options) => {
   }
   return response;
 };
-const output = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../lib/ai/broker-assistant.ts'), 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText;
-vm.runInNewContext(output, { exports: mod.exports, module: mod, process, fetch: checkedFetch, AbortSignal, console,
-  require: name => { if (name !== 'server-only') throw new Error('unexpected_import'); return {}; },
-});
+const mod = { exports: loadLocalAI('broker-assistant.ts', { process, fetch: checkedFetch, console }) };
 (async () => {
   if (!mod.exports.brokerAssistantConfigured()) throw new Error('OPENAI_KEY_NOT_AVAILABLE');
   const cases = [

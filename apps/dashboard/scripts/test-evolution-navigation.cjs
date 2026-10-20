@@ -35,6 +35,8 @@ function runtime(react = React, environment = {}) {
         if (id === 'react/jsx-runtime') return require(id);
         if (id.endsWith('.css')) return css;
         if (id === './account-menu') return load('app/evolution/account-menu.tsx');
+        if (id === './ai-settings') return load('app/evolution/ai-settings.tsx');
+        if (id === '../ai/tenant-settings' || id === '@/lib/ai/tenant-settings') return load('lib/ai/tenant-settings.ts');
         if (id === '../lead-source-picker') return load('app/lead-source-picker.tsx');
         if (id === '../guided-record-field') return load('app/guided-record-field.tsx');
         if (id === '@/lib/guided-record-fields') return load('lib/guided-record-fields.ts');

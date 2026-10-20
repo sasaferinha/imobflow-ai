@@ -7,6 +7,7 @@ import { supabaseRequest } from '@/lib/supabase';
 import { canAccess, CrmError } from '@/lib/evolution/model';
 import { getEvolutionSnapshot, EvolutionServerError } from '@/lib/evolution/server';
 import { BrokerAssistantError, generateBrokerAssistance, type AssistantMessage, type AssistantSector } from '@/lib/ai/broker-assistant';
+import { readTenantAISettings } from '@/lib/ai/tenant-settings-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,10 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     if (!lead || lead.legacy?.id !== leadId || lead.legacy.table !== 'leads' || !canAccess(snapshot.state, actor, lead, 'write')) {
       return NextResponse.json({ error: 'Este cliente não está disponível para análise na sua carteira.' }, { status: 403 });
     }
+    // Broker snapshots intentionally omit private owner settings. Resolve only
+    // the authenticated tenant on the server; never accept policy from the UI.
+    const settings = await readTenantAISettings(actor.companyId);
+    if (!settings.brokerAssistantEnabled) return NextResponse.json({ error: 'O assistente do corretor está desativado para esta imobiliária.' }, { status: 403 });
     // Existing rate-limit storage caps bucket names at 80 characters.
     const bucket = `assist:${actor.companyId.replaceAll('-', '')}:${actor.brokerId.replaceAll('-', '')}`;
     if (!await consumeRateLimit(request, bucket, 6, 60) || !await consumeRateLimit(request, `${bucket}:hour`, 60, 3600)) {
@@ -47,11 +52,12 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     const rows = await supabaseRequest<Array<{ id: string; company_id: string; conversation_id: string; direction: string; content: string }>>(`messages?company_id=eq.${company}&conversation_id=in.(${[...conversationIds].join(',')})&select=id,company_id,conversation_id,direction,content&order=created_at.desc,id.desc&limit=40`);
     if (!Array.isArray(rows) || rows.length > 40 || rows.some(row => !uuid.test(row.id) || row.company_id !== actor.companyId || !conversationIds.has(row.conversation_id))) throw new Error('scope');
     const messages: AssistantMessage[] = rows.slice().reverse().filter(row => typeof row.content === 'string' && row.content.trim()).map(row => ({ id: row.id, side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing', text: row.content.slice(0, 2000) }));
-    const assistance = await generateBrokerAssistance({ sector, profile: lead.data, messages });
+    const assistance = await generateBrokerAssistance({ sector, profile: lead.data, messages, settings });
     // Recheck access after the external request; never return stale review data after reassignment.
     const fresh = await getEvolutionSnapshot(actor);
     const current = fresh.state.records.find(record => record.id === lead.id && record.kind === 'leads');
     if (!current || !canAccess(fresh.state, actor, current, 'write')) return NextResponse.json({ error: 'Seu acesso a este cliente mudou. Atualize a conversa.' }, { status: 403 });
+    if (!isDeepStrictEqual(settings, await readTenantAISettings(actor.companyId))) return NextResponse.json({ error: 'A configuração da IA mudou durante a análise. Analise novamente com as regras atuais.' }, { status: 409 });
     // Another customer's update must not discard this analysis. Compare the
     // complete target (including ownership/source metadata), then return the
     // fresh global version/revision so saving still uses the normal strict CAS.

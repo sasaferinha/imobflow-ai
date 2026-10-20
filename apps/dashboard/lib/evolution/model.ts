@@ -2,6 +2,7 @@ import { CAPTURE_STAGES, MODULES, NEGOTIATION_STAGES, type Kind } from './schema
 import { REGISTRATION_ACTIONS, REGISTRATION_CHANNELS, REGISTRATION_OUTCOMES, type RegistrationAction, type RegistrationCommand } from './registration-contract';
 import { DEFAULT_OPERATIONS_SETTINGS, captureReminderCandidates, captureGoalProgress, catalogCompleteness, operationsSettings, funnelBlockReason, type OperationsSettings } from './operations';
 import { validLeadSource } from '../lead-sources';
+import { validateTenantAISettings, TenantAISettingsValidationError, type StoredTenantAISettings, type TenantAISettings } from '../ai/tenant-settings';
 
 export type Value = string | number | boolean;
 export type Actor = { companyId: string; brokerId: string; name: string; role: 'owner' | 'broker' };
@@ -9,9 +10,9 @@ export type CrmMember = { id: string; name: string; role: 'owner' | 'broker'; sp
 export type LegacyRecordSource = { table: 'leads' | 'properties' | 'appointments'; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; missingPurpose?: boolean };
 export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; createdAt: string; updatedAt: string; createdBy: string; legacy?: LegacyRecordSource; manualNegotiation?: true; negotiationCaseId?: string };
 export type CrmEvent = { id: string; recordId: string; caseId?: string; at: string; actorId: string; actorName: string; type: string; summary: string; changes?: Record<string, { from: Value; to: Value }>; registration?: { requestId: string; fingerprint: string; action: RegistrationAction; resultCaseId?: string } };
-export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings };
+export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings; ai?: StoredTenantAISettings };
 export type CrmState = { companyId: string; version: number; records: CrmRecord[]; events: CrmEvent[]; members: CrmMember[]; settings: CrmSettings; sourceRevision?: string };
-export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<CrmSettings> } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | { type: 'capture-reminders' } | RegistrationCommand;
+export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<Omit<CrmSettings, 'ai'>> & { ai?: TenantAISettings } } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | { type: 'capture-reminders' } | RegistrationCommand;
 export type CaseFilter = { purpose?: string; assignedTo?: string; from?: string; to?: string; stage?: string; freshness?: string; journey?: string; status?: string; query?: string };
 export class CrmError extends Error { constructor(message: string, public status = 400) { super(message); this.name = 'CrmError'; } }
 const deny = () => { throw new CrmError('Você não tem permissão para acessar ou alterar este registro.', 403); };
@@ -67,7 +68,9 @@ export function visibleState(state: CrmState, actor: Actor): CrmState {
   checkActor(state, actor);
   const records = state.records.filter(r => canAccess(state, actor, r));
   const ids = new Set(records.map(r => r.id));
-  return { ...state, records, events: state.events.filter(e => ids.has(e.recordId) && (!e.caseId || ids.has(e.caseId))), members: state.members.map(m => actor.role === 'owner' || m.id === actor.brokerId ? { ...m } : { id: m.id, name: m.name, role: m.role, specialization: m.specialization }) };
+  const settings = { ...state.settings };
+  if (actor.role !== 'owner') delete settings.ai;
+  return { ...state, settings, records, events: state.events.filter(e => ids.has(e.recordId) && (!e.caseId || ids.has(e.caseId))), members: state.members.map(m => actor.role === 'owner' || m.id === actor.brokerId ? { ...m } : { id: m.id, name: m.name, role: m.role, specialization: m.specialization }) };
 }
 function text(value: unknown, max = 500): string {
   if (value === undefined || value === null) return '';
@@ -520,7 +523,11 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
     if (actor.role !== 'owner') deny();
     const settings = command.settings;
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new CrmError('Configuração inválida.');
-    if (Object.keys(settings).some(k => !['inactivityDays','sources','categories','lossReasons','distributionEnabled','operations'].includes(k))) throw new CrmError('Configuração não permitida.');
+    if (Object.keys(settings).some(k => !['inactivityDays','sources','categories','lossReasons','distributionEnabled','operations','ai'].includes(k))) throw new CrmError('Configuração não permitida.');
+    if (Object.hasOwn(settings, 'ai')) {
+      try { state.settings.ai = { ...validateTenantAISettings(settings.ai), updatedAt: now, updatedBy: actor.brokerId }; }
+      catch (error) { if (error instanceof TenantAISettingsValidationError) throw new CrmError(error.message); throw error; }
+    }
     if (settings.distributionEnabled !== undefined && settings.distributionEnabled !== false) throw new CrmError('Distribuição automática ainda não liberada. A especialização não transfere nem oculta atendimentos existentes.');
     if (settings.operations !== undefined) {
       const operations=settings.operations;
