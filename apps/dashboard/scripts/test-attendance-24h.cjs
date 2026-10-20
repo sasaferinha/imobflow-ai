@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const { singleMessageTurns } = require('./attendance-turn-fixture.cjs');
 function load(file, mocks = {}) {
-  mocks = { 'node:timers/promises': { setTimeout: async () => {} }, ...mocks };
+  mocks = { 'node:timers/promises': { setTimeout: async () => {} }, './ai/tenant-settings-server': require('./helpers/tenant-ai-fixture.cjs').legacyTenantAIReader, ...mocks };
   const module = { exports: {} };
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

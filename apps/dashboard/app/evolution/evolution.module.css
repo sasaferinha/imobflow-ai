@@ -1266,6 +1266,11 @@
   .moduleActions { justify-content: flex-start; }
 }
 
+.aiSettingsShortcut { display: flex; width: 100%; align-items: center; gap: 16px; padding: 22px; margin-bottom: 22px; border: 1px solid #c9dfff; border-radius: 12px; background: linear-gradient(110deg,#eef5ff,#fff); color: #0066f5; text-align: left; }
+.aiSettingsShortcut > span { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: white; flex-shrink: 0; }
+.aiSettingsShortcut > div { flex: 1; }
+.aiSettingsShortcut strong { display: block; font-size: 16px; }
+.aiSettingsShortcut small { display: block; margin-top: 7px; color: #607893; line-height: 1.6; font-size: 12px; }
 .historyTabs { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; padding: 16px 12px 0; }
 .historyTabs button { min-height: 38px; padding: 8px 14px; border: 1px solid var(--ev-line); border-radius: 7px; background: var(--ev-paper); color: var(--ev-muted); font-size: 13px; }
 .historyTabs button[aria-pressed='true'] { border-color: var(--ev-brand); background: var(--ev-brand-wash); color: var(--ev-brand); font-weight: 700; }

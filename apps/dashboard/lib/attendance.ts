@@ -10,6 +10,9 @@ import { readBusinessHours } from './conversation-settings';
 import {sendQueuedMessage} from './message-outbox';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ATTENDANCE_DEBOUNCE_MS, claimAttendanceTurn, enqueueAttendanceTurn, releaseAttendanceTurn, reconcileAttendanceHandoffs } from './attendance-turns';
+import { readTenantAISettings } from './ai/tenant-settings-server';
+import type { TenantAISettings } from './ai/tenant-settings';
+import { handoffCopy, mentionsUnsupportedService, serviceAllowed, tenantCopy, tenantQualificationQuestion, unsupportedServiceReply } from './ai/tenant-runtime';
 
 const FALLBACK_MESSAGE = 'Recebemos sua mensagem. Um corretor dará continuidade ao seu atendimento.';
 const AFTER_HOURS_COMPLETE_MESSAGE = 'Muito obrigado pelas informações! Seu cadastro foi concluído. No momento não há corretores disponíveis. Nossa equipe dará continuidade ao seu atendimento no próximo horário comercial.';
@@ -20,7 +23,7 @@ export type AttendanceInput = {
   accessToken: string | null; apiVersion: string; occurredAt: string;
 };
 type LeadRow = { interest_profile: InterestProfile; goal: string; property_type: string; region: string; budget_max: number; updated_at: string };
-type AttendanceDraft = { profile: InterestProfile; skipAI?: boolean; summaryUnseen?: boolean };
+type AttendanceDraft = { profile: InterestProfile; skipAI?: boolean; summaryUnseen?: boolean; aiSettings?: TenantAISettings; lastReply?: string };
 function currentPreferences(row: LeadRow): InterestProfile {
   const known = (value: string) => Boolean(value && !['não informado','nao informado','null','undefined','-'].includes(value.trim().toLowerCase()));
   return { ...row.interest_profile,
@@ -43,9 +46,9 @@ function profileAcknowledgement(patch: InterestProfile) {
   return details.length ? `Perfeito, anotei: ${details.join(', ')}.` : 'Entendi.';
 }
 
-function informationalReply(message: string, current: InterestProfile) {
+function informationalReply(message: string, current: InterestProfile, settings: TenantAISettings) {
   const text=message.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  const next=qualificationQuestion(current);
+  const next=tenantQualificationQuestion(current, settings, qualificationQuestion(current));
   if(/\b(como funciona|como voces trabalham|o que voces fazem)\b/.test(text))return `Vou entender o imóvel que você procura e encaminhar seu perfil para um corretor com as informações organizadas.\n\n${next}`;
   if(/\b(tem|possuem|ha)\s+(?:algum|imovel|casa|apartamento)|\btem imoveis\b/.test(text))return `Posso ajudar a encontrar opções compatíveis. Primeiro preciso entender melhor o que você procura.\n\n${next}`;
   if(/\b(?:financiamento|financiar)\b/.test(text) && /\b(como|posso|consegue|faz|aceita)\b/.test(text))return `É possível simular o financiamento, mas a aprovação e as condições dependem do banco.\n\n${next}`;
@@ -81,26 +84,60 @@ async function recentConversation(input: AttendanceInput): Promise<LLMConversati
   } catch { return []; }
 }
 
-export async function buildAttendanceReply(input: AttendanceInput, onHandoff?: () => void, draft?: AttendanceDraft): Promise<string> {
-  if (input.hasAudio) return 'Recebemos seu áudio. Para continuar o atendimento automático, envie também sua solicitação por texto.';
+export async function buildAttendanceReply(input: AttendanceInput, onHandoff?: (reason?: 'unsupported_service' | 'scope_closed') => void, draft?: AttendanceDraft): Promise<string> {
+  // Only server-loaded settings enter a turn. A read failure must defer the turn,
+  // never replace an unknown tenant policy with permissive legacy defaults.
+  const aiSettings = draft?.aiSettings ?? await readTenantAISettings(input.companyId);
+  if (aiSettings.automaticMode === 'human' || requestsHuman(input.message)) {
+    onHandoff?.();
+    return handoffCopy(aiSettings, FALLBACK_MESSAGE);
+  }
   const lead = draft ? undefined : (await supabaseServiceRequest<LeadRow[]>(`leads?company_id=eq.${input.companyId}&id=eq.${input.leadId}&select=interest_profile,goal,property_type,region,budget_max,updated_at&limit=1`))[0];
   if (!lead && !draft) return FALLBACK_MESSAGE;
   const current = draft ? draft.profile : currentPreferences(lead!);
-  if (isSimpleGreeting(input.message) && !basicPreferences(input.message, current).summaryConfirmed) {
-    const question = qualificationQuestion(current);
+  const savePreferences = async (patch: InterestProfile) => {
+    if (!Object.keys(patch).length) return;
+    if (draft) draft.profile = { ...current, ...patch };
+    else {
+      const saved = await supabaseServiceRequest<boolean>('rpc/merge_attendance_profile', { method: 'POST', body: {
+        p_company_id: input.companyId, p_lead_id: input.leadId, p_version: lead!.updated_at, p_profile: patch,
+      } });
+      if (!saved) throw new Error('attendance_profile_conflict');
+    }
+  };
+  const localPatch = basicPreferences(input.message, current);
+  // A short answer may confirm a single-service question only if that exact
+  // question was previously sent. Company services alone never fill intent.
+  const purposeQuestion = tenantQualificationQuestion(current, aiSettings, qualificationQuestion(current));
+  if (!current.purpose && !localPatch.purpose && aiSettings.services.length === 1
+    && draft?.lastReply?.trim().endsWith(purposeQuestion)) {
+    const answer = input.message.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[.!]+$/, '');
+    if (aiSettings.services[0] === 'Aluguel' && /^(?:sim|isso|correto|sim por favor)$/.test(answer)) localPatch.purpose = 'Aluguel';
+    if (aiSettings.services[0] === 'Venda' && /^(?:(?:para )?(?:morar|investir)|sim|isso|correto|sim por favor)$/.test(answer)) localPatch.purpose = 'Venda';
+  }
+  const outsideScope = async (purpose: InterestProfile['purpose']) => {
+    // Record the customer's actual intent, never the tenant's enabled service.
+    // The worker keeps this draft in the same CAS transaction as its handoff.
+    if (purpose && purpose !== current.purpose) await savePreferences({ purpose, summaryConfirmed: false, correctionRequested: false });
+    onHandoff?.(aiSettings.unsupportedService === 'explain_close' ? 'scope_closed' : 'unsupported_service');
+    return unsupportedServiceReply(aiSettings);
+  };
+  if (!serviceAllowed(aiSettings, localPatch.purpose ?? current.purpose)) return outsideScope(localPatch.purpose ?? current.purpose);
+  if (input.hasAudio) return 'Recebemos seu áudio. Para continuar o atendimento automático, envie também sua solicitação por texto.';
+  if (isSimpleGreeting(input.message) && !localPatch.summaryConfirmed) {
+    const question = tenantQualificationQuestion(current, aiSettings, qualificationQuestion(current));
     if (question === QUALIFICATION_COMPLETE_MESSAGE) {
       onHandoff?.();
-      return 'Seu cadastro já está registrado. Vou direcionar sua conversa para um corretor continuar o atendimento.';
+      return handoffCopy(aiSettings, 'Seu cadastro já está registrado. Vou direcionar sua conversa para um corretor continuar o atendimento.');
     }
     if (question === qualificationSummary(current)) return 'Olá! Já tenho suas preferências registradas.\n\nVocê quer manter essa busca ou mudar alguma informação?';
-    return !current.purpose ? `Olá! Sou o assistente da imobiliária. Vou te ajudar a encontrar um imóvel.\n\n${question}` : question;
+    const assistantName = tenantCopy(aiSettings.assistantName, aiSettings, 'assistente da imobiliária');
+    const greeting = tenantCopy(aiSettings.greeting, aiSettings, `Olá! Sou o ${assistantName}. Vou te ajudar a encontrar um imóvel.`);
+    return !current.purpose ? `${greeting}\n\n${question}` : question;
   }
   if (input.hasImage && (!input.message.trim() || input.message === '[Foto]')) return 'Recebemos sua foto. Pode descrever o que você gostaria de encontrar nesse imóvel?';
   try {
-    if (requestsHuman(input.message)) {
-      return FALLBACK_MESSAGE;
-    }
-    let patch = basicPreferences(input.message, current);
+    let patch = localPatch;
     let confirmed = patch.summaryConfirmed === true;
     let rejected = patch.correctionRequested === true;
     let needsHuman = needsBrokerAnswer(input.message);
@@ -113,7 +150,7 @@ export async function buildAttendanceReply(input: AttendanceInput, onHandoff?: (
         if (provider) {
           const history = await recentConversation(input);
           const { data } = await provider.extractLeadProfile({ message: input.message,
-            currentProfile: toAIProfile(current), recentMessages: [...history.slice(-5), { role: 'assistant', content: qualificationQuestion(current) }] });
+            currentProfile: toAIProfile(current), recentMessages: [...history.slice(-5), { role: 'assistant', content: tenantQualificationQuestion(current, aiSettings, qualificationQuestion(current)) }] });
           // Explicit deterministic corrections win over stale fields echoed by a model.
           patch = { ...extractedPreferences(data), ...patch };
           if (Number.isFinite(data.confidence) && data.confidence >= .85) {
@@ -127,6 +164,7 @@ export async function buildAttendanceReply(input: AttendanceInput, onHandoff?: (
         }
       } catch { console.warn('whatsapp_ai_fallback'); }
     }
+    if (!serviceAllowed(aiSettings, patch.purpose ?? current.purpose)) return outsideScope(patch.purpose ?? current.purpose);
     // Echoed fields from the model are not a profile update or a reason to repeat the summary.
     delete patch.summaryConfirmed;
     delete patch.correctionRequested;
@@ -146,7 +184,7 @@ export async function buildAttendanceReply(input: AttendanceInput, onHandoff?: (
       patch.correctionRequested = false;
     }
     if (!needsHuman && !Object.keys(patch).length) {
-      const information=informationalReply(input.message,current);
+      const information=informationalReply(input.message,current,aiSettings);
       if(information)return information;
       if (/^(?:oi|olá|ola|bom dia|boa tarde|boa noite)\b/i.test(input.message.trim())
         && qualificationQuestion(current) === qualificationSummary(current)) {
@@ -154,20 +192,12 @@ export async function buildAttendanceReply(input: AttendanceInput, onHandoff?: (
       }
       needsHuman = current.summaryConfirmed === true || /\?|\b(onde|como|qual|quanto|quando|por que|porque|me diga|me explica)\b/i.test(input.message);
     }
-    if (Object.keys(patch).length) {
-      if (draft) draft.profile = { ...current, ...patch };
-      else {
-        const saved = await supabaseServiceRequest<boolean>('rpc/merge_attendance_profile', { method: 'POST', body: {
-          p_company_id: input.companyId, p_lead_id: input.leadId, p_version: lead!.updated_at, p_profile: patch,
-        } });
-        if (!saved) throw new Error('attendance_profile_conflict');
-      }
-    }
+    await savePreferences(patch);
     if (needsHuman) {
       onHandoff?.();
-      return `${confirmed ? 'Cadastro confirmado. ' : ''}Para te passar essa informação com segurança, vou direcionar sua conversa para um corretor continuar o atendimento.`;
+      return `${confirmed ? 'Cadastro confirmado. ' : ''}${handoffCopy(aiSettings, 'Para te passar essa informação com segurança, vou direcionar sua conversa para um corretor continuar o atendimento.')}`;
     }
-    const next = qualificationQuestion({ ...current, ...patch });
+    const next = tenantQualificationQuestion({ ...current, ...patch }, aiSettings, qualificationQuestion({ ...current, ...patch }));
     if(patch.financingIntent === 'Sim' && current.financingIntent !== 'Sim') {
       const simulatorUrl = await financingSimulatorUrl(input.companyId);
       return `Ótimo! Você pode fazer sua simulação de financiamento aqui:\n${simulatorUrl}\n\nO resultado é uma estimativa e não representa aprovação ou condições definitivas do banco.\n\n${next}`;
@@ -175,7 +205,7 @@ export async function buildAttendanceReply(input: AttendanceInput, onHandoff?: (
     if(next === QUALIFICATION_COMPLETE_MESSAGE) return next;
     if (next === qualificationSummary({ ...current, ...patch })) return next;
     if(Object.keys(patch).length) return `${profileAcknowledgement(patch)}\n\n${next}`;
-    return clarificationReply(current);
+    return tenantQualificationQuestion(current, aiSettings, clarificationReply(current));
   } catch (error) { console.error('attendance_profile_unavailable'); throw error; }
 }
 
@@ -200,28 +230,41 @@ export async function respondToIncomingMessage(input: AttendanceInput, outerDead
       continue;
     }
     try {
+      const aiSettings = await readTenantAISettings(input.companyId);
       const settings = await readBusinessHours(input.companyId);
       const now = attendanceTime(new Date(), settings);
       const [lead] = await supabaseServiceRequest<LeadRow[]>(`leads?company_id=eq.${input.companyId}&id=eq.${input.leadId}&select=interest_profile,goal,property_type,region,budget_max,updated_at&limit=1`, { timeoutMs: 4000 });
       if (!lead) throw new Error('attendance_lead_missing');
       const original = currentPreferences(lead);
-      const draft: AttendanceDraft = { profile: { ...original } };
+      const draft: AttendanceDraft = { profile: { ...original }, aiSettings, lastReply: typeof turn.lastReply === 'string' ? turn.lastReply : undefined };
       const normalizeReply = (text: string) => text.replace(/\s+/g, ' ').trim();
       const summaryVisible = turn.lastReply === undefined || (typeof turn.lastReply === 'string'
         && (normalizeReply(turn.lastReply).endsWith(normalizeReply(qualificationSummary(original)))
           || turn.lastReply.includes('Você quer manter essa busca ou mudar alguma informação?')));
-      let humanRequested = Boolean(turn.overflow);
-      let content = humanRequested ? 'Recebi suas mensagens. Vou chamar um corretor para analisar tudo com você.' : '';
+      let humanRequested = Boolean(turn.overflow) || aiSettings.automaticMode === 'human';
+      let scopeHandoff = false, scopeClosed = false;
+      let content = humanRequested ? handoffCopy(aiSettings, turn.overflow ? 'Recebi suas mensagens. Vou chamar um corretor para analisar tudo com você.' : FALLBACK_MESSAGE) : '';
       let simulator: string | undefined;
       for (const [index, message] of turn.messages.entries()) {
         if (humanRequested) break;
-        if (requestsHuman(message.message)) { humanRequested = true; content = FALLBACK_MESSAGE; break; }
+        if (requestsHuman(message.message)) { humanRequested = true; scopeHandoff = false; scopeClosed = false; content = handoffCopy(aiSettings, FALLBACK_MESSAGE); break; }
         // Interpret short consecutive answers in order, then send only the final reply.
         // Only the last item may call the model; earlier items use the local parser.
         draft.skipAI = index < turn.messages.length - 1;
         draft.summaryUnseen = !summaryVisible || Object.keys(changedPreferences(draft.profile, original)).length > 0;
-        content = await buildAttendanceReply({ ...input, ...message, incomingExternalMessageId: message.externalMessageId }, () => { humanRequested = true; }, draft);
+        // A service mismatch may be corrected by a later message in this burst.
+        // Explicit requests for a person still take immediate priority.
+        scopeHandoff = false; scopeClosed = false;
+        content = await buildAttendanceReply({ ...input, ...message, incomingExternalMessageId: message.externalMessageId }, reason => {
+          if (reason) { scopeHandoff = true; scopeClosed = reason === 'scope_closed'; }
+          else humanRequested = true;
+        }, draft);
         simulator ||= content.match(/https:\/\/www\.imobflow\.net\.br\/simulador-financiamento[^\s]*/)?.[0];
+      }
+      humanRequested ||= scopeHandoff;
+      if (!humanRequested && mentionsUnsupportedService(content, aiSettings)) {
+        humanRequested = true; scopeClosed = aiSettings.unsupportedService === 'explain_close';
+        content = unsupportedServiceReply(aiSettings);
       }
       if (!content.trim()) throw new Error('attendance_empty_reply');
       if (simulator && !content.includes(simulator) && !humanRequested && draft.profile.financingIntent === 'Sim') {
@@ -231,7 +274,7 @@ export async function respondToIncomingMessage(input: AttendanceInput, outerDead
         // Keep any preceding simulator link, but do not promise an immediate handoff.
         // Qualification remains available 24h; only the completed profile gets this notice.
         content = content.replace(QUALIFICATION_COMPLETE_MESSAGE, AFTER_HOURS_COMPLETE_MESSAGE);
-      } else if(now.afterHours && humanRequested) {
+      } else if(now.afterHours && humanRequested && !scopeClosed) {
         content += '\n\nNo momento não há corretores disponíveis. Sua solicitação já ficou registrada e a equipe continuará o atendimento no próximo horário comercial.';
       }
       const result = await enqueueAttendanceTurn(input, turn, content, { handoff: humanRequested,

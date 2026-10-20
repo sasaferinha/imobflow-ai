@@ -10,6 +10,7 @@ async function run() {
   const db = await createDatabase();
   const env = { SUPABASE_URL: 'https://evolution-isolated.example.test', SUPABASE_SECRET_KEY: 'isolated-test-key' };
   const calls = [];
+  let workspaceUnavailable = false;
   try {
     await seedCompanies(db);
     await db.exec(migration('20261007190000_crm_evolution_workspace.sql'));
@@ -31,6 +32,7 @@ async function run() {
       const resource = url.pathname.replace('/rest/v1/', '');
       calls.push({ resource, search: url.searchParams, method: options.method || 'GET' });
       try {
+        if (workspaceUnavailable && resource === 'crm_evolution_workspaces') throw new Error('synthetic private transport details');
         if (resource.startsWith('rpc/')) {
           const fn = resource.slice(4), entries = Object.entries(JSON.parse(options.body));
           const rows = (await db.query(`SELECT * FROM public.${identifier(fn)}(${entries.map(([key], i) => `${identifier(key)} => $${i + 1}`).join(',')})`,
@@ -45,7 +47,11 @@ async function run() {
           assert.ok(value.startsWith('eq.'), value); values.push(key === 'active' ? value.slice(3) === 'true' : value.slice(3)); conditions.push(`${identifier(key)}=$${values.length}`);
         }
         const selected = url.searchParams.get('select') || '*';
-        const columns = selected === '*' ? '*' : selected.split(',').map(identifier).join(',');
+        const columns = selected === '*' ? '*' : selected.split(',').map(column => {
+          if (column === 'document_company_id:document->>companyId') return `document->>'companyId' AS document_company_id`;
+          if (column === 'settings:document->settings') return `document->'settings' AS settings`;
+          return identifier(column);
+        }).join(',');
         const limit = Number(url.searchParams.get('limit') || 100), offset = Number(url.searchParams.get('offset') || 0);
         assert.ok(Number.isSafeInteger(limit) && Number.isSafeInteger(offset) && limit > 0 && offset >= 0);
         const rows = (await db.query(`SELECT ${columns} FROM public.${identifier(resource)}${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} LIMIT ${limit} OFFSET ${offset}`, values)).rows;
@@ -126,14 +132,62 @@ async function run() {
     env.CRM_EVOLUTION_ENABLED = 'true';
     const restored = (await (await get('owner')).json()).state;
     assert.equal(restored.version, 3); assert.equal(restored.records.length, 2); assert.equal(restored.events.length, 3, 'turning feature off/on preserves data');
+    // Tenant AI configuration uses the same real owner/session/tenant/CAS path.
+    const tenantAI = load('lib/ai/tenant-settings.ts');
+    const aiReader = load('lib/ai/tenant-settings-server.ts');
+    const aiStatus = load('app/api/ai/settings/route.ts');
+    const status = actor => aiStatus.GET(request('GET', actor));
+    assert.equal((await status(undefined)).status, 401);
+    const beforeBrokerStatus = calls.filter(call => call.resource === 'crm_evolution_workspaces').length;
+    assert.equal((await status('broker')).status, 403);
+    assert.equal(calls.filter(call => call.resource === 'crm_evolution_workspaces').length, beforeBrokerStatus, 'owner guard runs before settings read');
+    const defaultStatus = await status('owner');
+    assert.match(defaultStatus.headers.get('cache-control'), /private.*no-store/);
+    assert.deepEqual(await defaultStatus.json(), { providerConfigured: false, providerTested: false, configuration: 'default', updatedAt: null, updatedBy: null });
+    const ai = { ...tenantAI.getTenantAISettings(), services: ['Venda'], businessSummary: 'Empresa sintética A' };
+    assert.equal((await post('broker', { type: 'settings', settings: { ai } }, 3)).status, 403);
+    assert.equal((await post('owner', { type: 'settings', settings: { ai: { ...ai, updatedBy: id(21), updatedAt: '2000-01-01T00:00:00.000Z' } } }, 3)).status, 400);
+    assert.equal((await post('owner', { type: 'settings', settings: { ai: { ...ai, model: 'not-editable' } } }, 3)).status, 400);
+    assert.equal((await post('owner', { type: 'settings', settings: { ai: { ...ai, services: [] } } }, 3)).status, 400);
+    const savedAI = await post('owner', { type: 'settings', settings: { ai } }, 3);
+    assert.equal(savedAI.status, 200);
+    const aiState = (await savedAI.json()).state;
+    assert.equal(aiState.version, 4); assert.equal(aiState.settings.ai.updatedBy, id(11));
+    assert.ok(Number.isFinite(Date.parse(aiState.settings.ai.updatedAt)));
+    assert.deepEqual(aiState.settings.sources, restored.settings.sources, 'ai-only update preserves unrelated settings');
+    assert.deepEqual(aiState.records, restored.records); assert.deepEqual(aiState.events, restored.events);
+    assert.ok(!('ai' in (await (await get('broker')).json()).state.settings), 'broker response never contains AI config or metadata');
+    assert.equal((await aiReader.readTenantAISettings(id(1))).businessSummary, 'Empresa sintética A');
+    assert.equal((await aiReader.readTenantAISettings(id(2))).businessSummary, '', 'no cross-tenant settings inheritance');
+    const aiRace = await Promise.all([
+      post('owner', { type: 'settings', settings: { ai: { ...ai, assistantName: 'Clara' } } }, 4),
+      post('owner', { type: 'settings', settings: { ai: { ...ai, assistantName: 'Lia' } } }, 4),
+    ]);
+    assert.deepEqual(aiRace.map(item => item.status).sort(), [200, 409], 'AI settings retain atomic version conflict protection');
+    assert.equal((await post('otherCompany', { type: 'settings', settings: { ai: { ...ai, services: ['Aluguel'], businessSummary: 'Empresa sintética B' } } }, 0)).status, 200);
+    assert.equal((await aiReader.readTenantAISettings(id(1))).businessSummary, 'Empresa sintética A');
+    assert.equal((await aiReader.readTenantAISettings(id(2))).businessSummary, 'Empresa sintética B');
+    assert.equal((await post('owner', { type: 'settings', settings: { categories: ['Cliente', 'Proprietário'] } }, 5)).status, 200);
+    assert.equal((await aiReader.readTenantAISettings(id(1))).businessSummary, 'Empresa sintética A', 'unrelated settings preserve stored ai');
+    env.OPENAI_API_KEY = 'synthetic-provider-marker-not-a-credential';
+    const savedStatus = await (await status('owner')).json();
+    assert.equal(savedStatus.providerConfigured, true); assert.equal(savedStatus.providerTested, false);
+    assert.equal(savedStatus.configuration, 'saved'); assert.equal(savedStatus.updatedBy, id(11));
+    assert.ok(!JSON.stringify(savedStatus).includes(env.OPENAI_API_KEY), 'status never returns credentials');
+    workspaceUnavailable = true;
+    const failedStatus = await status('owner');
+    assert.equal(failedStatus.status, 503, 'a failed settings read cannot masquerade as defaults');
+    assert.ok(!(await failedStatus.text()).includes('private transport details'));
+    workspaceUnavailable = false;
     await db.exec('RESET ROLE');
     await db.query('UPDATE broker_accounts SET active=false WHERE id=$1', [id(12)]);
     await db.exec('SET ROLE service_role');
     assert.equal((await get('broker')).status, 401, 'deactivated account loses access');
+    assert.equal((await status('broker')).status, 401, 'deactivated session cannot query AI status');
     assert.equal((await (await get('owner')).json()).state.members.length, 2, 'inactive member is removed from authoritative roster');
     assert.ok(calls.filter(call => ['crm_evolution_workspaces', 'broker_accounts'].includes(call.resource)).every(call => call.search.get('company_id')?.startsWith('eq.')));
     assert.equal((await db.query('SELECT count(*)::int n FROM leads')).rows[0].n, 2, 'legacy leads untouched');
-    console.log('PASS CRM evolution API: real session/ALS/route/model/store, default-off allowlist, two tenants, broker portfolios, history redaction, CAS race, CSRF, size limit, no seeds and reversible feature gate.');
+    console.log('PASS CRM evolution API: real session/ALS/route/model/store, default-off allowlist, two tenants, broker portfolios, history/AI redaction, AI owner RBAC and metadata, CAS races, CSRF, size limit, no seeds and reversible feature gate.');
     console.log('Tests use isolated PGlite and a denied-external-network transport; no production credentials or services.');
   } finally { await db.close(); }
 }

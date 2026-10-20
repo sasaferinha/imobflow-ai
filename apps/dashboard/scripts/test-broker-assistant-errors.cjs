@@ -3,13 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const ts = require('typescript');
-const mod = { exports: {} }, logs = [];
+const { loadLocalAI } = require('./helpers/load-local-ai.cjs');
+const logs = [];
 let response;
-vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../lib/ai/broker-assistant.ts'),'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText, { module:mod, exports:mod.exports, require: name => { assert.equal(name,'server-only'); return {}; },
-  process:{env:{OPENAI_API_KEY:'sk-private-synthetic-key'}}, AbortSignal, console:{warn:(...args)=>logs.push(args)}, fetch:async()=>response });
+const mod = { exports: loadLocalAI('broker-assistant.ts', {
+  process:{env:{OPENAI_API_KEY:'sk-private-synthetic-key'}}, console:{warn:(...args)=>logs.push(args)}, fetch:async()=>response }) };
 const input = { sector:'Geral', profile:{}, messages:[{id:'synthetic',side:'incoming',text:'Olá!'}] };
 (async()=>{
   for (const test of [

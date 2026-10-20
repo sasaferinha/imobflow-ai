@@ -87,7 +87,11 @@ async function run() {
           }
         }
         const selected = url.searchParams.get('select') || '*';
-        const columns = selected === '*' ? '*' : selected.split(',').map(identifier).join(',');
+        const columns = selected === '*' ? '*' : selected.split(',').map(column => {
+          if (resource === 'crm_evolution_workspaces' && column === 'document_company_id:document->>companyId') return `document->>'companyId' AS document_company_id`;
+          if (resource === 'crm_evolution_workspaces' && column === 'settings:document->settings') return `document->'settings' AS settings`;
+          return identifier(column);
+        }).join(',');
         const order = (url.searchParams.get('order') || (resource === 'crm_evolution_workspaces' ? 'company_id.asc' : 'id.asc')).split(',').map(item => {
           const [key, direction = 'asc'] = item.split('.'); assert.ok(['asc', 'desc'].includes(direction)); return `${identifier(key)} ${direction}`;
         }).join(',');

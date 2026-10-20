@@ -7,6 +7,7 @@ const ts = require('typescript');
 
 const plain = value => JSON.parse(JSON.stringify(value));
 function load(relative, overrides) {
+  overrides = { './ai/tenant-settings-server': require('./helpers/tenant-ai-fixture.cjs').legacyTenantAIReader, ...overrides };
   const module = { exports: {} };
   const source = fs.readFileSync(path.join(__dirname, '..', relative), 'utf8');
   const code = ts.transpileModule(source, {

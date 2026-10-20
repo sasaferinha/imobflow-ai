@@ -7,7 +7,7 @@ const ts = require('typescript');
 const { singleMessageTurns } = require('./attendance-turn-fixture.cjs');
 
 function load(relative, overrides = {}) {
-  overrides = { 'node:timers/promises': { setTimeout: async () => {} }, ...overrides };
+  overrides = { 'node:timers/promises': { setTimeout: async () => {} }, './ai/tenant-settings-server': require('./helpers/tenant-ai-fixture.cjs').legacyTenantAIReader, ...overrides };
   const source = fs.readFileSync(path.join(__dirname, '..', relative), 'utf8');
   const module = { exports: {} };
   const code = ts.transpileModule(source, {
