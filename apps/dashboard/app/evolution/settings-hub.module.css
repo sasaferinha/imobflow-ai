@@ -12,6 +12,9 @@
 .step { color:#9bb0c7; font-weight:700; font-size:13px; }
 .card h3 { margin:0 0 9px; font-size:18px; color:#123352; }
 .card p { flex:1; }
+.accessCard { gap:16px; }
+.accessCard h3 { margin:0; }
+.accessCard .secondary { align-self:flex-start; }
 .status { align-self:flex-start; font-size:11px; font-weight:700; background:#eff5fc; color:#526c87; border-radius:5px; padding:5px 8px; margin:20px 0 14px; }
 .pending { color:#89571a; background:#fff6e8; }
 .primary,.secondary { display:flex; justify-content:center; align-items:center; gap:12px; border-radius:8px; min-height:42px; padding:10px 14px; font:inherit; font-size:13px; font-weight:700; cursor:pointer; text-decoration:none; }

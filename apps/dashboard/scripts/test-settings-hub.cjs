@@ -207,9 +207,28 @@ async function run() {
   assert(!/\b(?:Site conectado|Sincronização ativa|IA funcionando|WhatsApp conectado)\b/i.test(hubHtml));
   const savedHubHtml = renderToStaticMarkup(React.createElement(Hub, { ...hubProps, state: stateWith(configured) }));
   assert(savedHubHtml.includes('Aguardando integração') && savedHubHtml.includes('Ver preparação do site'));
-  const brokerHub = renderToStaticMarkup(React.createElement(Hub, { ...hubProps, isAdmin: false }));
+  const privateSettingsState = stateWith({ ...configured, provider: 'PRIVATE_PROVIDER_SENTINEL' });
+  privateSettingsState.settings.sources = ['PRIVATE_SOURCE_SENTINEL'];
+  privateSettingsState.settings.ai = { assistantName: 'PRIVATE_AI_SENTINEL' };
+  const accountActions = [];
+  const accountButton = tree => find(tree, node => node.type === 'button' && /^Minha conta(?:\s*→)?$/.test(text(node).trim()));
+  const brokerHubProps = { ...hubProps, state: privateSettingsState, isAdmin: false, onAccount: () => accountActions.push('account') };
+  const brokerHub = renderToStaticMarkup(React.createElement(Hub, brokerHubProps));
   assert(brokerHub.includes('Acesso exclusivo do administrador'));
-  assert(!brokerHub.includes('INTERNAL_ADVANCED_OPTIONS') && !brokerHub.includes('Configurar WhatsApp') && !brokerHub.includes(configured.url));
+  assert(brokerHub.includes('conta de corretor'), 'The informative page explains the current account role');
+  assert(/nome/i.test(brokerHub) && /(?:sair|saia)/i.test(brokerHub) && /(?:outra conta|trocar.*conta|conta de administrador)/i.test(brokerHub),
+    'The broker is told how to leave the current account through the name menu and use another account');
+  assert(!/<(?:form|input|select|textarea|iframe)\b/.test(brokerHub), 'The broker settings page has no administrative forms or connection widgets');
+  for (const forbidden of ['INTERNAL_ADVANCED_OPTIONS', 'Configurar WhatsApp', 'Configurar IA', 'Preparar conexão do site',
+    'Corretores e acessos', 'PRIVATE_PROVIDER_SENTINEL', 'PRIVATE_SOURCE_SENTINEL', 'PRIVATE_AI_SENTINEL', configured.url, 'Editar perfil']) {
+    assert(!brokerHub.includes(forbidden), `Broker settings must not expose or open ${forbidden}`);
+  }
+  assert(accountButton(Hub(brokerHubProps)), 'The integrated informational page offers an explicit account action');
+  assert.deepEqual(accountActions, [], 'Rendering the broker page never opens account/profile automatically');
+  accountButton(Hub(brokerHubProps)).props.onClick();
+  assert.deepEqual(accountActions, ['account'], 'Only the explicit Minha conta action opens the account');
+  assert(!accountButton(Hub({ ...brokerHubProps, integrated: false })), 'Preview/non-integrated settings cannot open the live account');
+  assert(!accountButton(Hub({ ...brokerHubProps, onAccount: undefined })), 'No inert account action is shown without a callback');
   assert.deepEqual(actions, [], 'Rendering must not activate any connection or callback');
   const hubTree = Hub(hubProps);
   for (const label of ['Configurar WhatsApp →', 'Configurar IA →', 'Preparar conexão do site →', 'Corretores e acessos →']) {
@@ -228,8 +247,19 @@ async function run() {
   const initiallyVisibleHub = fullHub.replace(/<details\b[\s\S]*?<\/details>/g, '');
   assert(!initiallyVisibleHub.includes('<form') && !initiallyVisibleHub.includes('Salvar prazos'), 'All old forms remain below the closed advanced disclosure');
   assert(initiallyVisibleHub.includes('Configurar WhatsApp') && initiallyVisibleHub.includes('Configurar IA') && initiallyVisibleHub.includes('Preparar conexão do site'));
-  const fullBrokerHub = renderToStaticMarkup(React.createElement(SettingsView, { ...settingsProps, isAdmin: false }));
-  assert(fullBrokerHub.includes('Acesso exclusivo do administrador') && !fullBrokerHub.includes('<form'));
+  const fullBrokerProps = { ...settingsProps, state: privateSettingsState, isAdmin: false, onAccount: () => accountActions.push('settings-account') };
+  const fullBrokerHub = renderToStaticMarkup(React.createElement(SettingsView, fullBrokerProps));
+  assert(fullBrokerHub.includes('Acesso exclusivo do administrador') && fullBrokerHub.includes('conta de corretor') && !fullBrokerHub.includes('<form'));
+  for (const forbidden of ['PRIVATE_PROVIDER_SENTINEL', 'PRIVATE_SOURCE_SENTINEL', 'PRIVATE_AI_SENTINEL', configured.url, 'Editar perfil']) {
+    assert(!fullBrokerHub.includes(forbidden), `The real SettingsView does not expose ${forbidden} to brokers`);
+  }
+  const brokerView = hooksHarness(clientFile, 'SettingsView', fullBrokerProps);
+  const forwardedHub = find(brokerView.tree, node => node.type?.name === 'SettingsHub');
+  assert(forwardedHub && typeof forwardedHub.props.onAccount === 'function', 'SettingsView forwards the optional explicit account callback');
+  assert.deepEqual(accountActions, ['account'], 'Neither SSR nor hook rendering navigates to the account');
+  accountButton(Hub(forwardedHub.props)).props.onClick();
+  assert.deepEqual(accountActions, ['account', 'settings-account']);
+  brokerView.unmount();
 
   const websiteProps = { state: stateWith(), isAdmin: true, busy: false, execute: async () => { throw Error('SSR must not save'); }, onDirtyChange() {} };
   const websiteHtml = renderToStaticMarkup(React.createElement(Website, websiteProps));
@@ -390,7 +420,54 @@ async function run() {
   teamNav.component('SettingsView').props.onTeam(); teamNav.render();
   assert.equal(teamNav.location.hash, '#brokers');
 
-  for (const protectedHash of ['#settings', '#website-settings', '#ai-settings']) {
+  // Regression: the main Configurações button used to route brokers to
+  // #account, whose legacy panel immediately opened Editar perfil.
+  for (const actor of [owner, broker]) {
+    const mainClick = navigationHarness({ actor, hash: '#dashboard', settings: configured });
+    assert.equal(mainClick.renderedOperational.length, 0);
+    mainClick.click('Configurações');
+    assert.equal(mainClick.location.hash, '#settings', `${actor.role}: the visible settings label has a settings destination`);
+    assert(mainClick.component('SettingsView'));
+    assert.equal(mainClick.component('SettingsView').props.isAdmin, actor.role === 'owner');
+    assert.equal(text(find(mainClick.tree, node => node.type === 'h1')), 'Configurações');
+    assert.equal(mainClick.renderedOperational.length, 0, 'Opening settings must not mount a legacy account/profile panel');
+    assert.equal(mainClick.requests.length, 0, 'Opening settings makes no read or mutation request');
+    mainClick.click('Relatórios');
+    mainClick.hash('#settings', 'popstate');
+    assert(mainClick.component('SettingsView') && mainClick.location.hash === '#settings', 'Browser Back returns to settings without a profile fallback');
+    mainClick.hash('#dashboard');
+    mainClick.hash('#settings');
+    assert(mainClick.component('SettingsView') && mainClick.location.hash === '#settings', 'Direct hash navigation keeps the settings page');
+    assert.equal(mainClick.renderedOperational.length, 0);
+    assert.equal(mainClick.requests.length, 0, 'Settings/hash/history navigation never saves or probes an integration');
+    mainClick.unmount();
+
+    const reloaded = navigationHarness({ actor, hash: '#settings', settings: configured });
+    assert(reloaded.component('SettingsView') && reloaded.location.hash === '#settings', 'A fresh load of #settings works for both roles');
+    assert.equal(reloaded.renderedOperational.length, 0, 'Reloading settings does not open the account');
+    assert.equal(reloaded.requests.length, 0);
+    if (actor.role === 'broker') {
+      const viewProps = reloaded.component('SettingsView').props;
+      const accountView = hooksHarness(clientFile, 'SettingsView', viewProps);
+      const hub = find(accountView.tree, node => node.type?.name === 'SettingsHub');
+      assert(hub && hub.props.isAdmin === false);
+      const restrictedHtml = renderToStaticMarkup(React.createElement(Hub, hub.props));
+      assert(restrictedHtml.includes('conta de corretor') && !restrictedHtml.includes('<form'));
+      assert(!restrictedHtml.includes(configured.url) && !restrictedHtml.includes('Editar perfil'));
+      const openAccount = accountButton(Hub(hub.props));
+      assert(openAccount, 'The broker can explicitly choose Minha conta from settings');
+      assert.equal(reloaded.renderedOperational.length, 0, 'Even rendering the full broker hub does not mount the account');
+      assert.equal(reloaded.requests.length, 0);
+      openAccount.props.onClick(); reloaded.render();
+      assert.equal(reloaded.location.hash, '#account');
+      assert(reloaded.renderedOperational.includes('account'), 'The account panel mounts only after the explicit account action');
+      assert.equal(reloaded.requests.length, 0, 'Explicit local account navigation itself performs no settings mutation');
+      accountView.unmount();
+    }
+    reloaded.unmount();
+  }
+
+  for (const protectedHash of ['#website-settings', '#ai-settings']) {
     const denied = navigationHarness({ actor: broker, hash: protectedHash, settings: configured });
     assert.equal(denied.location.hash, '#dashboard', protectedHash);
     assert(!denied.component('SettingsView') && !denied.component('WebsiteSettings') && !denied.component('AISettings'));
@@ -439,7 +516,7 @@ async function run() {
   assert.equal(savingNav.component('WebsiteSettings').props.state.version, 2);
   assert.equal(savingNav.requests.length, 1);
   assert.equal(unexpectedNetworkCalls, 0, 'No swallowed provider/site request may be hidden by a catch');
-  console.log('PASS settings hub UI: admin/broker SSR, closed advanced/supplier disclosures, truthful pending status, existing WhatsApp navigation, owner hash/menu guards, no automatic I/O, isolated drafts, optional supplier, local clipboard success/failure, URL validation, save failure/success/clear, duplicate suppression, CAS conflict review and navigation/unload protection. Synthetic data/transports only; no supplier, Meta or paid AI calls.');
+  console.log('PASS settings hub UI: admin/broker SSR, truthful settings navigation and explicit account action, broker explanation without private settings/forms, direct hash/back/reload, protected AI/site routes, closed advanced/supplier disclosures, truthful pending status, existing WhatsApp navigation, no automatic I/O, isolated drafts, optional supplier, local clipboard success/failure, URL validation, save failure/success/clear, duplicate suppression, CAS conflict review and navigation/unload protection. Synthetic data/transports only; no supplier, Meta or paid AI calls.');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });

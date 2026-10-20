@@ -11,7 +11,7 @@ Transformar as configurações em uma entrada simples para o administrador prepa
 - IA: reutiliza as preferências isoladas por imobiliária e os controles separados do automático e do assistente do corretor. Ter preferências salvas não comprova resposta real do provedor.
 - `#website-settings`: salva somente endereço HTTPS público, fornecedor opcional e escopo solicitado `full`. Tem validação, descarte, proteção de rascunho ao sair, reconciliação de conflito e mensagem pronta para copiar e encaminhar ao fornecedor.
 - URL do rascunho só entra no texto para copiar depois de validada; links com usuário/senha, parâmetros ou fragmentos não entram. Nenhum texto é enviado automaticamente.
-- Apenas administradores acessam central e preparação do site, inclusive por hash direto. O servidor exige o papel e empresa autenticados para salvar. `settings.website` é removido das respostas para corretores, assim como `settings.ai`.
+- Apenas administradores acessam os controles da central e a preparação do site, inclusive por hash direto. Em `#settings`, corretores veem apenas uma explicação sobre o acesso restrito. O servidor exige o papel e empresa autenticados para salvar. `settings.website` é removido das respostas para corretores, assim como `settings.ai`.
 - Auditoria `updatedAt/updatedBy` é gerada no servidor. O cliente não pode enviar status de conexão, token, chave ou campos extras. Persistência usa o workspace e controle de versão existentes, sem migration.
 
 ## Limite essencial: não há sincronização de sites nesta revisão
@@ -30,3 +30,9 @@ Obter endereço e contato/documentação de um fornecedor piloto. Confirmar API/
 - `pnpm run test:evolution`, `pnpm run test:tenant-ai`, TypeScript e build de produção.
 - QA visual local com dados fictícios: central, formulário de site, URL inválida, fornecedor em branco, salvamento, retorno à central e responsividade.
 - Nenhuma verificação desta revisão comprova entrega WhatsApp, resposta real de IA ou publicação em site externo. Não houve alteração de credenciais, cobrança, envio a clientes ou contato com fornecedores.
+
+## Correção do atalho para corretores
+
+O botão principal “Configurações” encaminhava corretores para `#account`; o painel operacional abria automaticamente “Editar perfil” sobre a página de resultados. O atalho agora aponta para `#settings` nos dois perfis. Administradores continuam com a central completa; corretores recebem uma página explicativa, sem formulário, dados privados de configuração ou alteração de permissão. “Minha conta” permanece uma ação separada e explícita.
+
+Regressão em `scripts/test-settings-hub.cjs`: clique principal, endereço direto, voltar/recarregar, ausência de montagem automática de `account`, ausência de requisições/mutações ao navegar, ocultação de dados administrativos e bloqueio contínuo de `#ai-settings`/`#website-settings`. QA no navegador com contas fictícias de ambos os perfis e largura de 390 px. Não houve mudança de banco, credenciais ou perfil de usuário.

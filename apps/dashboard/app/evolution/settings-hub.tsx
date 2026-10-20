@@ -7,6 +7,7 @@ import s from './settings-hub.module.css';
 type Props = {
   state: CrmState; isAdmin: boolean; integrated: boolean; children: ReactNode;
   onWhatsApp: () => void; onAI: () => void; onWebsite: () => void; onTeam: () => void;
+  onAccount?: () => void;
 };
 
 function Symbol({ kind }: { kind: 'chat' | 'ai' | 'site' }) {
@@ -15,8 +16,16 @@ function Symbol({ kind }: { kind: 'chat' | 'ai' | 'site' }) {
   </svg>;
 }
 
-export default function SettingsHub({ state, isAdmin, integrated, children, onWhatsApp, onAI, onWebsite, onTeam }: Props) {
-  if (!isAdmin) return <section role="alert"><h2>Acesso exclusivo do administrador</h2><p>Somente o administrador pode configurar a imobiliária.</p></section>;
+export default function SettingsHub({ state, isAdmin, integrated, children, onWhatsApp, onAI, onWebsite, onTeam, onAccount }: Props) {
+  if (!isAdmin) return <section className={s.root} aria-labelledby="settings-access-title">
+    <header className={s.intro}><div><span className={s.eyebrow}>CONFIGURAÇÕES DA IMOBILIÁRIA</span><h2 id="settings-access-title">Acesso exclusivo do administrador</h2><p>Você está usando uma conta de corretor.</p></div><span className={s.badge}>Perfil de corretor</span></header>
+    <div className={`${s.card} ${s.accessCard}`}>
+      <h3>As configurações da empresa ficam com o administrador</h3>
+      <p>Conexões dos canais, preferências da IA e regras de atendimento só podem ser alteradas pelo administrador da imobiliária.</p>
+      <p>Se você também possui uma conta de administrador, abra o menu do seu nome no canto superior direito, saia da conta atual e entre com esse acesso. Caso contrário, peça ao administrador para fazer os ajustes.</p>
+      {integrated && onAccount && <button type="button" className={s.secondary} onClick={onAccount}>Minha conta <span aria-hidden="true">→</span></button>}
+    </div>
+  </section>;
   return <div className={s.root}>
     <header className={s.intro}><div><span className={s.eyebrow}>COMECE POR AQUI</span><h2>Prepare sua imobiliária para trabalhar</h2><p>Conecte seus canais e defina como a ImobFlow deve ajudar sua equipe.</p></div><span className={s.badge}>Somente administrador</span></header>
     <div className={s.cards}>
