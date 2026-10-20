@@ -36,6 +36,9 @@ function runtime(react = React, environment = {}) {
         if (id.endsWith('.css')) return css;
         if (id === './account-menu') return load('app/evolution/account-menu.tsx');
         if (id === './ai-settings') return load('app/evolution/ai-settings.tsx');
+        if (id === './settings-hub') return load('app/evolution/settings-hub.tsx');
+        if (id === './website-settings' && relative.startsWith('app/')) return load('app/evolution/website-settings.tsx');
+        if (id === './website-settings' || id === '@/lib/evolution/website-settings') return load('lib/evolution/website-settings.ts');
         if (id === '../ai/tenant-settings' || id === '@/lib/ai/tenant-settings') return load('lib/ai/tenant-settings.ts');
         if (id === '../lead-source-picker') return load('app/lead-source-picker.tsx');
         if (id === '../guided-record-field') return load('app/guided-record-field.tsx');

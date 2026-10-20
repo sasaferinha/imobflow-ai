@@ -13,9 +13,11 @@ import { historicalFunnel } from '@/lib/evolution/historical-funnel';
 import GuidedRecordField from '../guided-record-field';
 import { locationSuggestions, NEW_PROPERTY_FORM_ESSENTIALS, PROPERTY_FEATURE_CHOICES, PROPERTY_TYPE_CHOICES } from '@/lib/guided-record-fields';
 import AISettings from './ai-settings';
+import SettingsHub from './settings-hub';
+import WebsiteSettings from './website-settings';
 
 export type OperationalPage = 'conversations' | 'opportunities' | 'appointments' | 'imports' | 'integrations' | 'account' | 'brokers' | 'results' | 'operational-goals' | 'portfolio' | 'customer-base';
-type Page = Kind | 'dashboard' | 'reports' | 'members' | 'settings' | 'ai-settings' | 'operations' | 'leads/new' | OperationalPage;
+type Page = Kind | 'dashboard' | 'reports' | 'members' | 'settings' | 'ai-settings' | 'website-settings' | 'operations' | 'leads/new' | OperationalPage;
 const OPERATIONAL_TITLES: Record<OperationalPage, string> = {
   conversations: 'Conversas', opportunities: 'Oportunidades', appointments: 'Agenda de visitas', imports: 'Importar clientes', integrations: 'Integrações', account: 'Minha conta', brokers: 'Corretores e acessos', results: 'Resultados da operação', 'operational-goals': 'Metas da operação', portfolio: 'Catálogo e fotos', 'customer-base': 'Carteira de clientes',
 };
@@ -169,8 +171,9 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const isAdmin = actor.role === 'owner';
   const selected = state.records.find(record => record.id === selectedId);
   const member = state.members.find(item => item.id === memberId);
-  const pageTitle = (item: Page) => item === 'ai-settings' ? 'Configurar IA' : item in MODULES ? MODULES[item as Kind].title : isOperationalPage(item) ? OPERATIONAL_TITLES[item] : { dashboard: 'Dashboard', reports: 'Relatórios', members: 'Usuários e permissões', settings: 'Configurações', operations: 'Central de gestão' }[item as 'dashboard' | 'reports' | 'members' | 'settings' | 'operations'];
+  const pageTitle = (item: Page) => item === 'ai-settings' ? 'Configurar IA' : item === 'website-settings' ? 'Site da imobiliária' : item in MODULES ? MODULES[item as Kind].title : isOperationalPage(item) ? OPERATIONAL_TITLES[item] : { dashboard: 'Dashboard', reports: 'Relatórios', members: 'Usuários e permissões', settings: 'Configurações', operations: 'Central de gestão' }[item as 'dashboard' | 'reports' | 'members' | 'settings' | 'operations'];
   const aiDraftRef = useRef({ active: false, dirty: false, busy: false });
+  const websiteDraftRef = useRef({ active: false, dirty: false, busy: false });
   const creatingLeadPage = page === 'leads/new';
   const title = creatingLeadPage ? 'Cadastrar lead' : pageTitle(page);
 
@@ -210,19 +213,25 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     const draft = leadDraftRef.current;
     const ai = aiDraftRef.current;
     if (ai.active && (ai.busy || ai.dirty && !window.confirm('Sair da configuração de IA e descartar os ajustes não salvos?'))) return false;
+    const website = websiteDraftRef.current;
+    if (website.active && (website.busy || website.dirty && !window.confirm('Sair da preparação do site e descartar os dados não salvos?'))) return false;
     return !draft.active || (!draft.busy && (!draft.dirty || window.confirm('Sair do cadastro e descartar os dados não salvos?')));
   }
 
-  useEffect(() => { leadDraftRef.current.busy = busy; aiDraftRef.current.busy = busy; }, [busy]);
+  useEffect(() => { leadDraftRef.current.busy = busy; aiDraftRef.current.busy = busy; websiteDraftRef.current.busy = busy; }, [busy]);
 
   useEffect(() => {
     const syncHash = () => {
       const hash = (window.location.hash.slice(1) || 'dashboard') as Page;
-      if (hash === 'ai-settings' && !isAdmin) { setPage('dashboard'); window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#dashboard`); return; }
-      if (!(hash in MODULES || ['dashboard', 'reports', 'members', 'settings', 'ai-settings', 'operations', 'leads/new'].includes(hash) || (hasLiveOperation && isOperationalPage(hash) && (isAdmin || !['imports', 'brokers', 'operational-goals'].includes(hash))))) return;
+      if (['settings', 'ai-settings', 'website-settings'].includes(hash) && !isAdmin) { setPage('dashboard'); window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#dashboard`); return; }
+      if (!(hash in MODULES || ['dashboard', 'reports', 'members', 'settings', 'ai-settings', 'website-settings', 'operations', 'leads/new'].includes(hash) || (hasLiveOperation && isOperationalPage(hash) && (isAdmin || !['imports', 'brokers', 'operational-goals'].includes(hash))))) return;
       if (aiDraftRef.current.active && hash !== 'ai-settings') {
         if (!canLeaveLeadPage()) { window.history.pushState(null, '', `${window.location.pathname}${window.location.search}#ai-settings`); return; }
         aiDraftRef.current = { active: false, dirty: false, busy: false };
+      }
+      if (websiteDraftRef.current.active && hash !== 'website-settings') {
+        if (!canLeaveLeadPage()) { window.history.pushState(null, '', `${window.location.pathname}${window.location.search}#website-settings`); return; }
+        websiteDraftRef.current = { active: false, dirty: false, busy: false };
       }
       if (leadDraftRef.current.active && hash !== 'leads/new') {
         if (!canLeaveLeadPage()) {
@@ -237,12 +246,14 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
         setEditor({ kind: 'leads' }); setSelectedId(null); setError('');
       }
       aiDraftRef.current.active = hash === 'ai-settings';
+      websiteDraftRef.current.active = hash === 'website-settings';
       setPage(hash);
     };
     const beforeUnload = (event: BeforeUnloadEvent) => {
       const draft = leadDraftRef.current;
       const ai = aiDraftRef.current;
-      if (draft.active && (draft.dirty || draft.busy) || ai.active && (ai.dirty || ai.busy)) { event.preventDefault(); event.returnValue = ''; }
+      const website = websiteDraftRef.current;
+      if (draft.active && (draft.dirty || draft.busy) || ai.active && (ai.dirty || ai.busy) || website.active && (website.dirty || website.busy)) { event.preventDefault(); event.returnValue = ''; }
     };
     syncHash();
     window.addEventListener?.('popstate', syncHash);
@@ -276,10 +287,11 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   }, [mode, page, busy, editor, selectedId, memberId, actor.companyId]);
 
   function navigate(next: Page, nextFilters: Partial<Filters> = {}) {
-    if (next === 'ai-settings' && !isAdmin) return;
+    if (['settings', 'ai-settings', 'website-settings'].includes(next) && !isAdmin) return;
     if (isOperationalPage(next) && (!hasLiveOperation || (!isAdmin && ['imports', 'brokers', 'operational-goals'].includes(next)))) return;
     if (!canLeaveLeadPage()) return;
     aiDraftRef.current = { active: next === 'ai-settings', dirty: next === 'ai-settings' && aiDraftRef.current.dirty, busy: false };
+    websiteDraftRef.current = { active: next === 'website-settings', dirty: next === 'website-settings' && websiteDraftRef.current.dirty, busy: false };
     if (leadDraftRef.current.active) {
       leadDraftRef.current = { active: false, dirty: false, busy: false };
       setEditor(null); setError('');
@@ -345,6 +357,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const create = (kind: Kind, defaults?: Values) => {
     if (!canCreate(kind) || !canLeaveLeadPage()) return;
     aiDraftRef.current = { active: false, dirty: false, busy: false };
+    websiteDraftRef.current = { active: false, dirty: false, busy: false };
     setError(''); setEditor({ kind, defaults });
     if (kind === 'leads') {
       leadDraftRef.current = { active: true, dirty: false, busy: false };
@@ -547,7 +560,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     { title: 'Agenda', icon: 'calendar', target: hasLiveOperation ? 'appointments' : 'tasks', items: [...(hasLiveOperation ? ['appointments'] as Page[] : []), 'tasks', 'notes'] },
     { title: 'Equipe', icon: 'people', target: isAdmin ? 'members' : 'shifts', items: [...(isAdmin ? ['members', 'teams', ...(hasLiveOperation ? ['brokers'] : [])] as Page[] : []), 'shifts', 'followups', 'captureGoals', 'messages', 'notices'] },
     { title: 'Relatórios', icon: 'chart', target: 'reports', items: ['reports', ...(hasLiveOperation ? ['results'] as Page[] : []), ...(isAdmin ? ['goals', ...(hasLiveOperation ? ['operational-goals'] : [])] as Page[] : [])] },
-    { title: 'Configurações', icon: 'settings', target: isAdmin ? 'settings' : hasLiveOperation ? 'account' : 'links', items: [...(isAdmin ? ['settings', 'ai-settings', 'content', 'channels'] as Page[] : []), ...(hasLiveOperation ? ['account', 'integrations'] as Page[] : []), 'links'] },
+    { title: 'Configurações', icon: 'settings', target: isAdmin ? 'settings' : hasLiveOperation ? 'account' : 'links', items: [...(isAdmin ? ['settings', 'ai-settings', 'website-settings', 'content', 'channels'] as Page[] : []), ...(hasLiveOperation ? ['account', 'integrations'] as Page[] : []), 'links'] },
   ];
 
   return <div className={s.app} data-design="linha" data-operational-page={operationalPage || undefined}>
@@ -575,15 +588,16 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
       {mode === 'preview' && <div className={s.previewStrip}><Icon name="shield" size={14} /><strong>Prévia privada</strong><span>Dados fictícios · integrações desligadas · painel clássico preservado.</span></div>}
       {hasLiveOperation && page === 'dashboard' && <details className={s.integrationNote}><summary><Icon name="shield" size={13} />Sua operação real, no novo painel <Icon name="chevron" size={12} /></summary><div><p>Clientes, imóveis e visitas conectados à carteira. Conversas, oportunidades e resultados mantêm as mesmas permissões.</p><button className={s.textButton} onClick={() => navigate('conversations')}>Abrir conversas <Icon name="arrow" size={14} /></button></div></details>}
       {creatingLeadPage && editor && <RecordEditor editor={editor} state={state} actor={actor} busy={busy} error={error} fullPage onDirtyChange={dirty => { leadDraftRef.current.dirty = dirty; }} onClose={() => closeLeadPage()} onSave={saveEditor} />}
-      {page === 'settings' && isAdmin && <button className={s.aiSettingsShortcut} onClick={() => navigate('ai-settings')}><span><Icon name="settings" size={23} /></span><div><strong>Configurar a IA da sua imobiliária</strong><small>Serviços oferecidos, mensagens e orientações de atendimento em um só lugar.</small></div><Icon name="arrow" size={20} /></button>}
+      {(page === 'ai-settings' || page === 'website-settings') && isAdmin && <button className={s.secondaryButton} onClick={() => navigate('settings')} style={{ marginBottom: 20 }}>← Voltar às configurações</button>}
       {page === 'ai-settings' && <>{error && <div className={s.error} role="alert">{error}</div>}<AISettings key={actor.companyId} state={state} isAdmin={isAdmin} busy={busy} preview={mode !== 'live'} execute={execute} onDirtyChange={dirty => { aiDraftRef.current.dirty = dirty; }} /></>}
-      {!operationalPage && !creatingLeadPage && page !== 'ai-settings' && <>
+      {page === 'website-settings' && <>{error && <div className={s.error} role="alert">{error}</div>}<WebsiteSettings key={actor.companyId} state={state} isAdmin={isAdmin} busy={busy} execute={execute} onDirtyChange={dirty => { websiteDraftRef.current.dirty = dirty; }} /></>}
+      {!operationalPage && !creatingLeadPage && page !== 'ai-settings' && page !== 'website-settings' && <>
       {page in MODULES && canCreate(page as Kind) && <div className={s.moduleActions}><button className={s.primaryButton} onClick={() => create(page as Kind)}><Icon name="plus" size={17} />{MODULES[page as Kind].singular}</button></div>}
       {error && !editor && !memberId && <div className={s.error} role="alert"><Icon name="alert" />{error}<button onClick={() => setError('')} aria-label="Fechar aviso"><Icon name="close" size={15} /></button></div>}
       {notice && !editor && !selected && !memberId && <div className={s.success} role="status"><Icon name="check" size={15} />{notice}<button onClick={() => setNotice('')} aria-label="Fechar confirmação"><Icon name="close" size={15} /></button></div>}
       {!['dashboard', 'settings', 'members', 'notes', 'links', 'content', 'channels', 'messages', 'notices', 'teams', 'operations'].includes(page) && <div className={s.filterBar}><span className={s.filterLabel}><Icon name="filter" size={15} />Filtros</span><label>De<input type="date" aria-label="Data inicial" value={filters.from} onChange={event => setFilters(current => ({ ...current, from: event.target.value }))} /></label><label>Até<input type="date" aria-label="Data final" min={filters.from || undefined} value={filters.to} onChange={event => setFilters(current => ({ ...current, to: event.target.value }))} /></label><select aria-label="Responsável" value={filters.assignedTo} onChange={event => setFilters(current => ({ ...current, assignedTo: event.target.value }))}><option value="">Todos os responsáveis</option>{state.members.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select><select aria-label="Finalidade" value={filters.purpose} onChange={event => setFilters(current => ({ ...current, purpose: event.target.value }))}><option value="">Venda e aluguel</option><option>Venda</option><option>Aluguel</option></select><button className={s.textButton} onClick={clearFilters}>Limpar</button><span className={s.filterHint}>{filters.from || filters.to ? 'Por data de criação' : 'Todo o período'}</span></div>}
       {page === 'operations' ? <OperationsCenter preview={mode === 'preview'} state={state} actor={actor} busy={busy} execute={execute} onOpenConversations={hasLiveOperation ? () => navigate('conversations') : undefined} onCreate={create} onSelect={setSelectedId} onEdit={record => { setError(''); setEditor({ kind: record.kind, record }); }} /> : <>
-      {page === 'dashboard' ? dashboard() : page === 'reports' ? reports() : page === 'members' ? <section className={s.panel}><div className={s.infoStrip}><Icon name="shield" size={17} />A especialidade não oculta nem redistribui atendimentos enquanto a regra de separação estiver desligada.</div><div className={s.tableWrap}><table className={s.table}><thead><tr><th>Usuário</th><th>Perfil</th><th>Especialidade</th><th>Equipe</th><th>Ações</th></tr></thead><tbody>{state.members.map(item => <tr key={item.id}><td><span className={s.personCell}><i>{initials(item.name)}</i>{item.name}</span></td><td>{item.role === 'owner' ? 'Administrador' : 'Corretor'}</td><td><Pill>{item.specialization || 'Ambos'}</Pill></td><td>{item.teamId ? String(refName(item.teamId)) : 'Sem equipe'}</td><td>{isAdmin && <button className={s.textButton} onClick={() => { setError(''); setMemberId(item.id); }}><Icon name="edit" size={14} />Editar acesso</button>}</td></tr>)}</tbody></table></div><div className={s.panelFoot}>{hasLiveOperation ? <>Cadastre corretores e gerencie credenciais em <button className={s.textButton} onClick={() => navigate('brokers')}>Corretores e acessos</button>. As permissões desta tela aplicam-se aos módulos adicionais do CRM.</> : 'Novos usuários e credenciais continuam sendo gerenciados no painel clássico. Nenhuma senha é exibida nesta tela.'}</div></section> : page === 'settings' ? <SettingsView state={state} busy={busy} execute={execute} isAdmin={isAdmin} integrated={hasLiveOperation} onIntegrations={() => navigate('integrations')} /> : moduleView(page as Kind)}
+      {page === 'dashboard' ? dashboard() : page === 'reports' ? reports() : page === 'members' ? <section className={s.panel}><div className={s.infoStrip}><Icon name="shield" size={17} />A especialidade não oculta nem redistribui atendimentos enquanto a regra de separação estiver desligada.</div><div className={s.tableWrap}><table className={s.table}><thead><tr><th>Usuário</th><th>Perfil</th><th>Especialidade</th><th>Equipe</th><th>Ações</th></tr></thead><tbody>{state.members.map(item => <tr key={item.id}><td><span className={s.personCell}><i>{initials(item.name)}</i>{item.name}</span></td><td>{item.role === 'owner' ? 'Administrador' : 'Corretor'}</td><td><Pill>{item.specialization || 'Ambos'}</Pill></td><td>{item.teamId ? String(refName(item.teamId)) : 'Sem equipe'}</td><td>{isAdmin && <button className={s.textButton} onClick={() => { setError(''); setMemberId(item.id); }}><Icon name="edit" size={14} />Editar acesso</button>}</td></tr>)}</tbody></table></div><div className={s.panelFoot}>{hasLiveOperation ? <>Cadastre corretores e gerencie credenciais em <button className={s.textButton} onClick={() => navigate('brokers')}>Corretores e acessos</button>. As permissões desta tela aplicam-se aos módulos adicionais do CRM.</> : 'Novos usuários e credenciais continuam sendo gerenciados no painel clássico. Nenhuma senha é exibida nesta tela.'}</div></section> : page === 'settings' ? <SettingsView state={state} busy={busy} execute={execute} isAdmin={isAdmin} integrated={hasLiveOperation} onIntegrations={() => navigate('integrations')} onAI={() => navigate('ai-settings')} onWebsite={() => navigate('website-settings')} onTeam={() => navigate('brokers')} /> : moduleView(page as Kind)}
       </>}
       </>}
       {hasLiveOperation && mountedOperationalPage && renderOperationalPanel && <div className={s.operationalPanel} hidden={!operationalPage} inert={!operationalPage} aria-hidden={!operationalPage}>{renderOperationalPanel(mountedOperationalPage, operationalRefresh, next => navigate(next))}</div>}
@@ -731,13 +745,13 @@ function RecordDetail({ record, state, actor, busy, error, onClose, onEdit, onCr
   return <Dialog title={label(record)} subtitle={`${definition.singular} · criado em ${date(record.createdAt, true)}`} onClose={onClose} wide>{record.legacy && <div className={s.sourceNotice}><Icon name="shield" size={18} /><div><strong>Cadastro da operação ImobFlow</strong><span>Dados vinculados ao registro original. {canEdit ? "As alterações permitidas nesta ficha atualizam o cadastro real." : "Seu acesso a esta ficha é de consulta."}{record.legacy.missingPurpose ? " A finalidade ainda não foi informada no cadastro de origem." : ""}</span></div>{onOpenOperational && <button className={s.secondaryButton} onClick={() => onOpenOperational(record.kind === 'properties' ? 'portfolio' : record.kind === 'tasks' ? 'appointments' : 'conversations')}>{record.kind === 'properties' ? 'Fotos e catálogo' : record.kind === 'tasks' ? 'Abrir agenda' : 'Abrir conversas'}<Icon name="arrow" size={14} /></button>}</div>}{['people', 'leads', 'properties'].includes(record.kind) && <div className={s.detailCatalog}><CatalogHealth state={state} record={record} /></div>}<div className={s.detailActions}>{v(record, 'status') && <Pill>{v(record, 'status')}</Pill>}{v(record, 'purpose') && <Pill tone="blue">{v(record, 'purpose')}</Pill>}{record.kind === 'cases' && canEdit && v(record, 'status') === 'Aberto' && <><button className={s.secondaryButton} onClick={() => onCreate('tasks', { caseId: record.id, assignedTo: record.data.assignedTo, propertyId: record.data.propertyId || '', type: 'Visita' })}><Icon name="calendar" size={15} />Agendar</button><button className={s.secondaryButton} onClick={() => onCreate('proposals', { caseId: record.id, propertyId: record.data.propertyId || '' })}><Icon name="tool" size={15} />Proposta</button></>}{record.kind === 'leads' && canEdit && <button className={s.secondaryButton} onClick={() => onCreate('cases', { name: `Atendimento · ${label(record)}`, personId: record.data.personId, leadId: record.id, assignedTo: record.data.assignedTo, source: record.data.source, purpose: record.data.purpose, propertyId: record.data.propertyId || '', journey: 'Negociação', stage: 'Atendimento', status: 'Aberto' })}><Icon name="cases" size={15} />Iniciar atendimento</button>}{canCorrectClosure && closureCase && <ConversationRegistration caseId={closureCase.id} customerName={String(state.records.find(item => item.id === closureCase.data.personId)?.data.name || closureCase.data.name)} triggerAction="correct_close" demonstration={demonstration} demoSnapshot={{ state, actor }} onDemoSaved={onDemoSaved} onSaved={onSaved} notify={notify} disabled={busy} />}{canEdit && !resultLocked && <button className={s.primaryButton} onClick={onEdit}><Icon name="edit" size={15} />Editar</button>}</div>{record.kind === 'cases' && v(record, 'status') !== 'Aberto' && <div className={s.infoStrip}><Icon name="shield" size={15} />{v(record, 'status') === 'Ganho' ? 'Atendimento concluído. Para corrigir um erro neste registro, use Editar fechamento. O histórico será preservado.' : 'Este atendimento não está aberto. Para agendar atividades ou criar propostas, reabra-o em Editar e registre o motivo.'}</div>}<div className={s.tabs}>{([['details', 'Informações'], ['history', `Histórico (${events.length})`], ['related', `Relacionados (${related.length})`]] as const).map(([key, text]) => <button key={key} onClick={() => setTab(key)} className={tab === key ? s.tabActive : ''}>{text}</button>)}</div><div className={s.detailBody}>{error && <div className={s.error} role="alert">{error}</div>}{tab === 'details' ? <dl className={s.detailGrid}>{definition.fields.map(field => { const value = v(record, field.key); let text: ReactNode = value || 'Não informado'; if (field.ref === 'members') text = state.members.find(item => item.id === value)?.name || 'Não informado'; else if (field.ref && value) text = <button className={s.textButton} onClick={() => onSelect(value)}>{state.records.find(item => item.id === value)?.data.name || 'Abrir registro'}<Icon name="arrow" size={13} /></button>; else if (field.type === 'date' || field.type === 'datetime-local') text = date(value, field.type === 'datetime-local'); else if (['price', 'amount', 'budgetMin', 'budgetMax'].includes(field.key)) text = value ? money.format(Number(value)) : 'Não informado'; else if (field.type === 'url' && /^https?:\/\//i.test(value)) text = <a className={s.textButton} href={value} target="_blank" rel="noreferrer">Abrir link <Icon name="external" size={13} /></a>; return <div key={field.key} className={field.type === 'textarea' ? s.fullField : ''}><dt>{field.label}</dt><dd>{text}</dd></div>; })}</dl> : tab === 'history' ? <><div className={s.history}>{events.map(event => <article key={event.id}><span className={s.historyDot}><Icon name={event.type.includes('stage') ? 'arrow' : 'check'} size={12} /></span><header><strong>{event.summary}</strong><time>{date(event.at, true)}</time></header><p>{event.actorName}</p>{event.changes && <dl>{Object.entries(event.changes).map(([key, change]) => <div key={key}><dt>{definition.fields.find(field => field.key === key)?.label || key}</dt><dd>{typeof change === 'object' ? `${String(change.from || '—')} → ${String(change.to || '—')}` : String(change)}</dd></div>)}</dl>}</article>)}{events.length === 0 && <Empty title="Sem eventos anteriores" text="Não criamos históricos fictícios de períodos anteriores ao cadastro." />}</div>{canEdit && <form className={s.commentForm} onSubmit={async event => { event.preventDefault(); if (await execute({ type: 'comment', id: record.id, text: comment })) setComment(''); }}><label htmlFor="history-note">Registrar observação interna</label><textarea id="history-note" required maxLength={4000} rows={3} value={comment} onChange={event => setComment(event.target.value)} placeholder="Descreva o contato, o retorno ou o próximo passo…" /><button className={s.primaryButton} disabled={busy || !comment.trim()}>{busy ? 'Salvando…' : 'Adicionar ao histórico'}</button></form>}</> : related.length ? <div className={s.relatedList}>{related.map(item => <button key={item.id} onClick={() => onSelect(item.id)}><span><small>{MODULES[item.kind].singular}</small><strong>{label(item)}</strong></span>{v(item, 'status') && <Pill>{v(item, 'status')}</Pill>}<Icon name="arrow" size={16} /></button>)}</div> : <Empty title="Nenhum vínculo registrado" text="Atendimentos, imóveis e atividades vinculados a este registro aparecerão aqui." />}</div><footer className={s.detailFooter}><Icon name="shield" size={13} />Registro preservado. Última atualização: {date(record.updatedAt, true)}.</footer></Dialog>;
 }
 
-function SettingsView({ state, busy, execute, isAdmin, integrated, onIntegrations }: { state: CrmState; busy: boolean; execute: (command: Command) => Promise<boolean>; isAdmin: boolean; integrated: boolean; onIntegrations: () => void }) {
+function SettingsView({ state, busy, execute, isAdmin, integrated, onIntegrations, onAI, onWebsite, onTeam }: { state: CrmState; busy: boolean; execute: (command: Command) => Promise<boolean>; isAdmin: boolean; integrated: boolean; onIntegrations: () => void; onAI: () => void; onWebsite: () => void; onTeam: () => void }) {
   const [days, setDays] = useState<Record<string, number>>(state.settings.inactivityDays);
   const [sources, setSources] = useState(state.settings.sources.join('\n'));
   const [categories, setCategories] = useState(state.settings.categories.join('\n'));
   const [reasons, setReasons] = useState(state.settings.lossReasons.join('\n'));
   const toList = (value: string) => value.split('\n').map(item => item.trim()).filter(Boolean);
-  return <div className={s.settingsGrid}>
+  return <SettingsHub state={state} isAdmin={isAdmin} integrated={integrated} onWhatsApp={onIntegrations} onAI={onAI} onWebsite={onWebsite} onTeam={onTeam}><div className={s.settingsGrid}>
     <OperationsSettings state={state} isAdmin={isAdmin} busy={busy} execute={execute} />
     <section className={s.panel}>
       <div className={s.panelHead}><div><h2>Distribuição por especialidade</h2><p>Preferências de venda e aluguel</p></div><Icon name="people" /></div>
@@ -772,7 +786,7 @@ function SettingsView({ state, busy, execute, isAdmin, integrated, onIntegration
       <div className={s.panelHead}><div><h2>Integrações e segurança</h2><p>Operação externa preservada</p></div><Icon name="shield" /></div>
       <div className={s.settingsBody}>{integrated ? <><Pill tone="blue">Operação real conectada</Pill><p>Clientes, imóveis e visitas são consultados a partir dos cadastros existentes. Os módulos operacionais preservam as mensagens, conexões, fotos, credenciais e permissões atuais.</p><p>Os módulos adicionais do CRM não enviam mensagens automaticamente nem publicam conteúdo em portais. Envio pelo WhatsApp continua sujeito às ações explícitas e verificações da central de conversas.</p><button onClick={onIntegrations} className={s.secondaryButton}>Gerenciar integrações <Icon name="arrow" size={14} /></button></> : <><Pill tone="amber">Nenhum disparo nesta prévia</Pill><p>WhatsApp, email e publicação em portais não são acionados por esta nova experiência. As conexões da plataforma atual não são alteradas.</p><p>A nova base é independente. Os dados da operação clássica não são importados, migrados nem substituídos por estes cadastros.</p><a href="/painel?experiencia=classica" className={s.secondaryButton}>Acessar experiência clássica <Icon name="external" size={14} /></a></>}</div>
     </section>
-  </div>;
+  </div></SettingsHub>;
 }
 
 function MemberEditor({ member, state, busy, error, onClose, onSave }: { member: CrmState['members'][number]; state: CrmState; busy: boolean; error: string; onClose: () => void; onSave: (command: Command) => Promise<void> }) {
