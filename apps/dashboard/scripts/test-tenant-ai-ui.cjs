@@ -64,6 +64,24 @@ const find = (tree, predicate) => nodes(tree).find(predicate);
 const text = tree => tree == null || typeof tree === 'boolean' ? '' : Array.isArray(tree) ? tree.map(text).join('') : typeof tree === 'object' ? text(tree.props?.children) : String(tree);
 const button = (tree, label) => find(tree, node => node.type === 'button' && text(node) === label);
 const control = (tree, label) => find(find(tree, node => node.type === 'label' && text(node).startsWith(label)), node => ['input', 'select', 'textarea'].includes(node.type));
+// Native details retain their children in the DOM while closed. Model that
+// disclosure rule instead of mistaking mere DOM presence for initial visibility.
+function visibleNodes(tree) {
+  if (!tree || typeof tree !== 'object') return [];
+  if (Array.isArray(tree)) return tree.flatMap(visibleNodes);
+  if (tree.type === 'details' && !tree.props.open) {
+    return [tree, ...visibleNodes(React.Children.toArray(tree.props.children).find(child => child.type === 'summary'))];
+  }
+  return [tree, ...visibleNodes(tree.props?.children)];
+}
+const visibleControl = (tree, label) => {
+  const parent = visibleNodes(tree).find(node => node.type === 'label' && text(node).startsWith(label));
+  return parent && find(parent, node => ['input', 'select', 'textarea'].includes(node.type));
+};
+const disclosure = (tree, label) => find(tree, node => node.type === 'details'
+  && text(React.Children.toArray(node.props.children).find(child => child.type === 'summary')).startsWith(label));
+const advancedLabel = 'Personalizar mensagens e orientações';
+const previewLabel = 'Ver exemplo de atendimento';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function hooksHarness(file, exportName, initialProps, environment = {}) {
@@ -122,8 +140,10 @@ function formHarness({ settings = initial, execute, preview = true, dashboardFet
   return Object.assign(instance, {
     commands, dirty, confirmations,
     confirm(value) { confirmation = value; },
-    change(label, value) { const input = control(instance.tree, label); assert(input, label); input.props.onChange({ target: { value } }); instance.render(); },
-    click(label) { const target = button(instance.tree, label); assert(target, label); target.props.onClick(); instance.render(); },
+    advanced(open = true) { const section = disclosure(instance.tree, advancedLabel); assert(section, advancedLabel); section.props.onToggle({ currentTarget: { open } }); instance.render(); },
+    change(label, value) { const input = visibleControl(instance.tree, label); assert(input, `Visible field: ${label}`); input.props.onChange({ target: { value } }); instance.render(); },
+    toggle(label, checked) { const input = visibleControl(instance.tree, label); assert(input?.props.type === 'checkbox', `Visible checkbox: ${label}`); input.props.onChange({ target: { checked } }); instance.render(); },
+    click(label) { const target = visibleNodes(instance.tree).find(node => node.type === 'button' && text(node) === label); assert(target, `Visible button: ${label}`); target.props.onClick(); instance.render(); },
     async submit() { find(instance.tree, node => node.type === 'form').props.onSubmit({ preventDefault() {} }); await tick(); instance.render(); },
     saved(settings, version = 2) { instance.render({ initial: structuredClone(settings), state: stateWith(settings, version) }); },
   });
@@ -165,9 +185,13 @@ async function run() {
   const Component = pure.load(formFile).default;
   const props = { state: stateWith(initial), isAdmin: true, busy: false, preview: true, execute: async () => { throw Error('SSR must not save'); }, onDirtyChange() {} };
   const html = renderToStaticMarkup(React.createElement(Component, props));
-  assert(html.includes('Um assistente com o jeito da sua imobiliária.'));
+  assert(html.includes('Defina o essencial para a IA da sua imobiliária.'));
   assert(html.includes('Venda de imóveis') && html.includes('Locação de imóveis'));
   assert(html.includes('Sem envio') && html.includes('sem consultar a IA ou consumir créditos'));
+  assert(!html.includes('<aside') && !html.includes('<nav'), 'Compact settings do not restore a sidebar or section-navigation shell');
+  const renderedDisclosures = [...html.matchAll(/<details\b[^>]*>/g)];
+  assert.equal(renderedDisclosures.length, 2, 'Personalization and the example have independent native disclosures');
+  assert(renderedDisclosures.every(([tag]) => !/\sopen(?:=|\s|>)/.test(tag)), 'Both disclosures are closed on first render');
   assert(!html.includes('type="password"') && !html.includes('OPENAI_API_KEY'));
   const privateConfig = { ...initial, businessSummary: 'INTERNAL_SYNTHETIC_CONTEXT' };
   const brokerHtml = renderToStaticMarkup(React.createElement(Component, { ...props, isAdmin: false, state: stateWith(privateConfig) }));
@@ -176,10 +200,67 @@ async function run() {
   const malformed = renderToStaticMarkup(React.createElement(Component, { ...props, state: { ...baseState, settings: { ...baseState.settings, ai: null } } }));
   assert(malformed.includes('Não foi possível validar') && !malformed.includes('<form'));
 
+  const compact = formHarness();
+  assert.equal(find(compact.tree, node => node.type === 'form').props.noValidate, true,
+    'Hidden required fields cannot intercept submit before complete validation reveals them');
+  for (const label of ['Venda de imóveis', 'Locação de imóveis', 'Atendimento automático no WhatsApp', 'Permitir sugestões ao corretor']) {
+    assert(visibleControl(compact.tree, label), `Essential control is visible: ${label}`);
+  }
+  for (const label of ['Nome do assistente', 'Tom das sugestões', 'Mensagem de boas-vindas', 'Se o cliente pedir um serviço não oferecido', 'Situação de exemplo']) {
+    assert(control(compact.tree, label), `Optional control is preserved: ${label}`);
+    assert(!visibleControl(compact.tree, label), `Optional control starts folded: ${label}`);
+  }
+  assert.equal(disclosure(compact.tree, advancedLabel).props.open, false);
+  assert(!disclosure(compact.tree, previewLabel).props.open);
+  assert(visibleNodes(compact.tree).some(node => node.type === 'p' && text(node).startsWith('Pedidos fora dos serviços:')),
+    'The existing out-of-scope policy remains explained without requiring another decision');
+  compact.advanced();
+  assert(visibleControl(compact.tree, 'Nome do assistente'));
+  assert(!visibleControl(compact.tree, 'Situação de exemplo'), 'Opening personalization does not open the optional preview');
+  compact.advanced(false);
+  assert.equal(compact.dirty.at(-1), false, 'Opening/closing a disclosure is not an unsaved configuration change');
+  assert.equal(compact.commands.length, 0);
+
+  const custom = { ...initial, services: ['Venda'], assistantName: 'Clara sintética', tone: 'formal', replyLength: 'curta', emojis: false,
+    businessSummary: 'Informações comerciais sintéticas.', serviceRegions: 'Cidade sintética', greeting: 'Olá, seja bem-vindo.',
+    handoffMessage: 'Nossa equipe continuará seu atendimento.', saleGuidance: 'Confira orçamento de compra.', rentalGuidance: 'Confira orçamento mensal.',
+    unsupportedService: 'explain_close', faq: [{ question: 'Qual o endereço?', answer: 'Endereço sintético de teste.' }] };
+  const essentialOnly = formHarness({ settings: custom, execute: async () => true });
+  essentialOnly.toggle('Locação de imóveis', true);
+  essentialOnly.change('Atendimento automático no WhatsApp', 'human');
+  essentialOnly.toggle('Permitir sugestões ao corretor', false);
+  assert.equal(disclosure(essentialOnly.tree, advancedLabel).props.open, false, 'Editing essentials never opens personalization');
+  await essentialOnly.submit();
+  assert.equal(essentialOnly.commands.length, 1);
+  assert.deepEqual(essentialOnly.commands[0].settings.ai,
+    { ...custom, services: ['Venda', 'Aluguel'], automaticMode: 'human', brokerAssistantEnabled: false },
+    'Saving essentials preserves every untouched stored optional value, including FAQ and out-of-scope behavior');
+  assert.deepEqual(config.getTenantAISettings(), initial, 'UI simplification never changes shared defaults');
+
+  const noService = formHarness();
+  noService.toggle('Venda de imóveis', false); noService.toggle('Locação de imóveis', false);
+  await noService.submit();
+  assert.equal(noService.commands.length, 0);
+  assert(visibleNodes(noService.tree).some(node => node.props?.role === 'alert' && text(node).includes('Selecione venda, locação ou as duas opções.')));
+  assert.equal(disclosure(noService.tree, advancedLabel).props.open, false, 'An essential error does not expand unrelated optional fields');
+
+  const incompleteFaq = formHarness();
+  incompleteFaq.advanced(); incompleteFaq.click('+ Adicionar pergunta'); incompleteFaq.advanced(false);
+  assert(!visibleControl(incompleteFaq.tree, 'Pergunta'));
+  await incompleteFaq.submit();
+  assert.equal(incompleteFaq.commands.length, 0);
+  assert.equal(disclosure(incompleteFaq.tree, advancedLabel).props.open, true);
+  assert(visibleControl(incompleteFaq.tree, 'Pergunta') && visibleControl(incompleteFaq.tree, 'Resposta aprovada'));
+  assert(visibleNodes(incompleteFaq.tree).some(node => node.props?.role === 'alert' && text(node).includes('Preencha a pergunta e a resposta')));
+
   const draft = formHarness({ settings: { ...initial, assistantName: 'Assistente salvo' } });
+  draft.advanced();
   draft.change('Nome do assistente', 'Rascunho local');
   assert.equal(draft.dirty.at(-1), true);
   assert.equal(draft.props.state.settings.ai.assistantName, 'Assistente salvo');
+  draft.advanced(false); draft.advanced();
+  assert.equal(control(draft.tree, 'Nome do assistente').props.value, 'Rascunho local', 'Folding options preserves unsaved optional edits');
+  assert.equal(draft.dirty.at(-1), true);
   draft.click('Descartar ajustes');
   assert.equal(control(draft.tree, 'Nome do assistente').props.value, 'Rascunho local', 'Declined discard preserves draft');
   draft.confirm(true); draft.click('Descartar ajustes');
@@ -192,16 +273,21 @@ async function run() {
   assert.equal(control(draft.tree, 'Nome do assistente').props.value, 'Assistente salvo');
 
   const failed = formHarness();
+  failed.advanced();
   failed.change('Nome do assistente', 'Preservado após falha'); await failed.submit();
   assert.equal(failed.commands.length, 1);
   assert.equal(control(failed.tree, 'Nome do assistente').props.value, 'Preservado após falha');
   assert.equal(failed.dirty.at(-1), true);
   assert(!text(failed.tree).includes('Configuração salva para esta imobiliária'));
-  failed.change('Nome do assistente', ''); await failed.submit();
+  failed.change('Nome do assistente', ''); failed.advanced(false); await failed.submit();
   assert.equal(failed.commands.length, 1, 'Invalid settings never reach execute');
+  assert.equal(disclosure(failed.tree, advancedLabel).props.open, true, 'An invalid folded name reveals the field to correct');
+  assert(visibleControl(failed.tree, 'Nome do assistente'));
+  assert(visibleNodes(failed.tree).some(node => node.props?.role === 'alert' && text(node).includes('Preencha o nome do assistente')));
 
   let complete;
   const success = formHarness({ execute: () => new Promise(resolve => { complete = resolve; }) });
+  success.advanced();
   success.change('Nome do assistente', ' Nome normalizado ');
   await success.submit(); await success.submit();
   assert.equal(success.commands.length, 1, 'In-flight save is guarded even before parent busy propagates');
@@ -215,6 +301,7 @@ async function run() {
   assert(text(success.tree).includes('Configuração salva para esta imobiliária'));
 
   const conflict = formHarness();
+  conflict.advanced();
   conflict.change('Nome do assistente', 'Meu rascunho');
   const concurrent = { ...initial, assistantName: 'Outra versão salva', services: ['Venda'] };
   conflict.saved(concurrent);
@@ -265,7 +352,7 @@ async function run() {
   assert(text(status.tree).includes('Provedor configurado · não testado'));
   assert.equal(status.commands.length, 0);
   status.unmount();
-  console.log('PASS tenant AI UI: owner SSR, broker redaction/hash/menu, no-send preview/provider status, isolated drafts, discard/defaults, validation, failed/in-flight/successful save, conflict reconciliation/CAS and navigation/unload guards. No network or provider calls.');
+  console.log('PASS tenant AI UI: compact essential controls, closed optional/preview disclosures, preserved hidden custom settings, revealed invalid optional fields, owner SSR, broker redaction/hash/menu, no-send preview/provider status, isolated drafts, discard/defaults, failed/in-flight/successful save, conflict reconciliation/CAS and navigation/unload guards. No network or provider calls.');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });

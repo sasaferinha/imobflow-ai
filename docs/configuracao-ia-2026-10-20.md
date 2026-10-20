@@ -6,6 +6,12 @@ No painel, o administrador acessa **Configurações > Configurar IA** (`/painel#
 
 A página permite escolher venda, locação ou ambas; nome da assistente; mensagem inicial e encaminhamento; triagem automática ou encaminhamento humano; habilitação do assistente do corretor; conduta para pedidos fora dos serviços; contexto comercial e regiões; tom, tamanho das respostas e emojis; orientações de venda/locação e até seis perguntas frequentes.
 
+### Interface simplificada
+
+Após pedido do usuário, a abertura mostra somente três controles: serviços, modo do atendimento automático e sugestões ao corretor. A regra atual de pedidos fora do escopo aparece como um resumo. Nome, mensagens, estilo e conhecimento foram mantidos em **Personalizar mensagens e orientações**, fechado inicialmente. A prévia fica em **Ver exemplo de atendimento**, também fechado. Foram removidos o banner grande, os atalhos por seção e a coluna lateral redundante; os valores salvos não foram removidos ou redefinidos.
+
+Validação completa continua no salvamento, mesmo com opções recolhidas. Um campo opcional inválido abre a seção e leva foco ao aviso; alterar apenas um controle essencial preserva todos os valores personalizados ocultos. Os testes de interface cobrem esses casos além dos controles anteriores de acesso, rascunho, concorrência e descarte. Esta simplificação não muda a política, o modelo de dados nem as integrações.
+
 **Escopo real:** serviços, modo automático, nome, abertura e encaminhamento afetam a triagem automática elegível. Contexto comercial, regiões, orientações, FAQ e estilo são referências para as sugestões do assistente do corretor. Não alteram o catálogo nem limitam geograficamente os clientes. A página identifica essa distinção. Não houve reescrita do motor de extração automática de preferências.
 
 ## Segurança e aplicação
