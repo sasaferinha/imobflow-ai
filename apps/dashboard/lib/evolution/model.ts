@@ -44,6 +44,12 @@ export function canAccess(state: CrmState, actor: Actor, record: CrmRecord, acti
   // Canonical portfolio ownership cannot be expanded by workspace preferences.
   // Inactive or ambiguous historical assignments remain visible to the owner.
   if (record.legacy) {
+    if (record.kind === 'properties') {
+      // Inventory stays visible to the whole brokerage; edits belong to the
+      // assigned broker. Unassigned legacy properties remain owner-managed.
+      if (action === 'read') return record.legacy.access === 'shared' || record.legacy.assignedTo === actor.brokerId || record.data.assignedTo === actor.brokerId;
+      return record.legacy.assignedTo === actor.brokerId || record.data.assignedTo === actor.brokerId;
+    }
     if (record.legacy.access === 'owner') return false;
     if (record.legacy.access === 'shared') return action === 'read';
     return record.legacy.assignedTo === actor.brokerId;
@@ -109,6 +115,7 @@ function validateData(state: CrmState, actor: Actor, kind: Kind, raw: Record<str
   if (!Object.hasOwn(MODULES, kind)) throw new CrmError('Tipo de cadastro inválido.');
   const definition = MODULES[kind];
   if (!definition || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new CrmError('Cadastro inválido.');
+  if (kind === 'properties' && actor.role !== 'owner' && !existing) raw = { ...raw, assignedTo: actor.brokerId };
   if (definition.admin && actor.role !== 'owner') deny();
   if (actor.role !== 'owner' && (['captureGoals','shifts'].includes(kind) || kind === 'followups' && !existing)) deny();
   if (kind === 'followups' && actor.role !== 'owner' && existing && Object.entries(raw).some(([key,value])=>!['response','status'].includes(key) && value !== existing.data[key])) deny();
