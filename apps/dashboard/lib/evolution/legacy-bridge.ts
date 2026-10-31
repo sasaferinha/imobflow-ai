@@ -9,7 +9,7 @@ import { CrmError, normalize, type Actor, type CrmCommand, type CrmMember, type 
 /** No network writes live here. The caller commits this plan and workspace CAS in ONE SQL transaction. */
 export type LegacyTable = 'leads' | 'properties' | 'appointments';
 export type LegacyRow = Record<string, unknown> & { id: string; company_id: string };
-export type LegacySource = { table: LegacyTable; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; missingPurpose?: boolean };
+export type LegacySource = { table: LegacyTable; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; lastContactAt?: string; missingPurpose?: boolean };
 type MappedRecord = CrmRecord & { legacy?: LegacySource };
 export type LegacyBridge = { companyId: string; members: CrmMember[]; leads: LegacyRow[]; properties: LegacyRow[]; appointments: LegacyRow[]; conversations: LegacyRow[]; automaticStages: Record<string, AutomaticConversationStage>; sourceRevision: string };
 export type LegacyWrite = { table: LegacyTable; id: string; operation: 'insert' | 'update'; expected: Record<string, unknown> | null; data: Record<string, unknown> };
@@ -97,7 +97,7 @@ export function mapLegacyRecords(bridge: LegacyBridge): MappedRecord[] {
   const records: MappedRecord[] = [];
   for (const row of bridge.leads) {
     const owner = leadOwner(bridge, row), p = purpose(row.goal), profile = object(row.interest_profile), lifecycle = str(row.lifecycle_status) || 'Novo';
-    const legacy: LegacySource = { table: 'leads', id: row.id, ...owner, lifecycleStatus: lifecycle, missingPurpose: !p };
+    const legacy: LegacySource = { table: 'leads', id: row.id, ...owner, lifecycleStatus: lifecycle, lastContactAt: date(row.last_contact_at), missingPurpose: !p };
     const assignedTo = owner.assignedTo || '', personId = canonicalId('person', row.id), leadId = canonicalId('lead', row.id), source = str(row.source);
     records.push(makeRecord(personId, 'people', row, { name: str(row.name), phone: str(row.phone), email: str(row.email), assignedTo, personType: 'Pessoa física', category: 'Cliente', address: '', notes: '' }, legacy));
     records.push(makeRecord(leadId, 'leads', row, { name: str(row.name), personId, assignedTo, source, purpose: p, propertyId: '', temperature: /muito quente|quente/i.test(str(row.temperature)) ? 'Quente' : ['Morno','Frio'].includes(str(row.temperature)) ? str(row.temperature) : '', propertyType: str(row.property_type), region: str(row.region), budgetMin: numeric(row.budget_min), budgetMax: numeric(row.budget_max), features: Array.isArray(profile.features) ? profile.features.map(str).join(', ') : '', status: lifecycle === 'Perdido' ? 'Descartado' : lifecycle === 'Novo' ? 'Pendente' : 'Em atendimento', notes: str(row.details) }, legacy));

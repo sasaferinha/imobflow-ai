@@ -12,6 +12,7 @@ export type OperationsSettings = {
   weeklyReportsEnabled: boolean;
   captureRemindersEnabled: boolean;
   captureReminderDays: number;
+  contactLimitHours: number;
   inactivePoolEnabled: boolean;
   requireCompleteClassification: boolean;
   dutyPriorityEnabled: boolean;
@@ -21,11 +22,22 @@ export const DEFAULT_OPERATIONS_SETTINGS: Readonly<OperationsSettings> = Object.
   requireVisitBeforeProposal: false, reassignmentEnabled: false, reassignmentDays: 30,
   includeIncomplete: true, preferOnDuty: true, weeklyReportsEnabled: false,
   captureRemindersEnabled: false, captureReminderDays: 1,
+  contactLimitHours: 48,
   inactivePoolEnabled: false, requireCompleteClassification: false,
   dutyPriorityEnabled: false,
 });
 export function operationsSettings(state: Pick<CrmState, 'settings'>): OperationsSettings {
   return { ...DEFAULT_OPERATIONS_SETTINGS, ...state.settings.operations };
+}
+/** Use the recorded contact date, or creation when no contact is recorded. */
+export function overdueContacts(state: CrmState, now = new Date().toISOString()): CrmRecord[] {
+  const time = Date.parse(now), limit = operationsSettings(state).contactLimitHours * 3600000;
+  if (!Number.isFinite(time)) return [];
+  return state.records.filter(record => {
+    if (record.kind !== 'leads' || record.legacy?.table !== 'leads' || ['Convertido', 'Perdido'].includes(String(record.legacy.lifecycleStatus))) return false;
+    const last = String(record.legacy.lastContactAt || record.createdAt), base = Date.parse(last);
+    return Number.isFinite(base) && base <= time && time - base >= limit;
+  });
 }
 const placeholders = new Set(['nao informado','nao informada','nao definido','nao definida','a definir','desconhecido','desconhecida','nao identificado','nao identificada']);
 const present = (value: Value | undefined) => typeof value === 'number' ? Number.isFinite(value) : typeof value === 'string' && Boolean(value.trim()) && !placeholders.has(value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase());

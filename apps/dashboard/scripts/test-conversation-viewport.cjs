@@ -22,7 +22,7 @@ assert.match(css, /overflow-y:\s*auto/);
 assert.doesNotMatch(css, /scrollbar-width:\s*none|::-webkit-scrollbar|overflow(?:-y)?:\s*hidden/);
 assert.match(css, /conversation-settings\[open\]/);
 assert.match(css, /conversation-sync-notice/);
-assert.match(css, /min-height:\s*96px/);
+assert.match(css, /flex:\s*1 0 320px;\s*min-height:\s*320px/);
 assert.match(css, /max-height:\s*599px/);
 assert.match(read('dashboard-client.tsx'), /data-panel-view=\{view\}/);
 assert.match(read('evolution/evolution-client.tsx'), /data-operational-page=\{operationalPage \|\| undefined\}/);

@@ -8,7 +8,7 @@ import { validateWebsiteSettings, WebsiteSettingsValidationError, type StoredWeb
 export type Value = string | number | boolean;
 export type Actor = { companyId: string; brokerId: string; name: string; role: 'owner' | 'broker' };
 export type CrmMember = { id: string; name: string; role: 'owner' | 'broker'; specialization: 'Venda' | 'Aluguel' | 'Ambos'; teamId?: string; permissions?: Partial<Record<Kind, { readOthers: boolean; editOthers: boolean }>> };
-export type LegacyRecordSource = { table: 'leads' | 'properties' | 'appointments'; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; missingPurpose?: boolean };
+export type LegacyRecordSource = { table: 'leads' | 'properties' | 'appointments'; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; lastContactAt?: string; missingPurpose?: boolean };
 export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; createdAt: string; updatedAt: string; createdBy: string; legacy?: LegacyRecordSource; manualNegotiation?: true; negotiationCaseId?: string };
 export type CrmEvent = { id: string; recordId: string; caseId?: string; at: string; actorId: string; actorName: string; type: string; summary: string; changes?: Record<string, { from: Value; to: Value }>; registration?: { requestId: string; fingerprint: string; action: RegistrationAction; resultCaseId?: string } };
 export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings; ai?: StoredTenantAISettings; website?: StoredWebsiteSettings };
@@ -540,6 +540,7 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
       for (const [key,value] of Object.entries(operations)) {
         if (key==='reassignmentDays') { if (!Number.isInteger(value) || Number(value)<1 || Number(value)>365) throw new CrmError('O prazo de redistribuição deve ser de 1 a 365 dias.'); }
         else if (key==='captureReminderDays') { if (!Number.isInteger(value) || Number(value)<1 || Number(value)>30) throw new CrmError('O intervalo de lembretes de captação deve ser de 1 a 30 dias.'); }
+        else if (key==='contactLimitHours') { if (!Number.isInteger(value) || Number(value)<1 || Number(value)>8760) throw new CrmError('O prazo de contato deve ser de 1 a 8760 horas.'); }
         else if (typeof value!=='boolean') throw new CrmError('As regras operacionais devem ser ativadas ou desativadas.');
       }
       state.settings.operations={...DEFAULT_OPERATIONS_SETTINGS,...state.settings.operations,...operations};

@@ -15,6 +15,15 @@ function load(name) {
 }
 const m=load('model'), ops=load('operations');
 const now='2026-10-09T15:00:00.000Z';
+{
+  const fixture = m.emptyState('tenant');
+  fixture.settings.operations = { ...ops.DEFAULT_OPERATIONS_SETTINGS, contactLimitHours: 24 };
+  const lead = (id, contact, status='Novo') => ({ id, kind:'leads', data:{}, createdAt:'2026-10-07T12:00:00Z', updatedAt:now, createdBy:'', legacy:{ table:'leads', id, lifecycleStatus:status, lastContactAt:contact } });
+  fixture.records = [lead('old','2026-10-08T14:00:00Z'), lead('recent','2026-10-09T14:00:00Z'), lead('none',''), lead('closed','','Convertido')];
+  assert.deepEqual(Array.from(ops.overdueContacts(fixture,now), item=>item.id), ['old','none']);
+  fixture.settings.operations.contactLimitHours = 72;
+  assert.deepEqual(Array.from(ops.overdueContacts(fixture,now), item=>item.id), []);
+}
 const owner={companyId:'ops-tenant-a',brokerId:'owner',name:'Owner example',role:'owner'};
 const b1={...owner,brokerId:'broker1',name:'Broker one',role:'broker'};
 const b2={...b1,brokerId:'broker2',name:'Broker two'};

@@ -8,6 +8,7 @@ type Props = {
   state: CrmState; isAdmin: boolean; integrated: boolean; children: ReactNode;
   onWhatsApp: () => void; onAI: () => void; onWebsite: () => void; onTeam: () => void;
   onAccount?: () => void;
+  onCaptureGoal: () => void;
 };
 
 function Symbol({ kind }: { kind: 'chat' | 'ai' | 'site' }) {
@@ -16,7 +17,7 @@ function Symbol({ kind }: { kind: 'chat' | 'ai' | 'site' }) {
   </svg>;
 }
 
-export default function SettingsHub({ state, isAdmin, integrated, children, onWhatsApp, onAI, onWebsite, onTeam, onAccount }: Props) {
+export default function SettingsHub({ state, isAdmin, integrated, children, onWhatsApp, onAI, onWebsite, onTeam, onAccount, onCaptureGoal }: Props) {
   if (!isAdmin) return <section className={s.root} aria-labelledby="settings-access-title">
     <header className={s.intro}><div><span className={s.eyebrow}>CONFIGURAÇÕES DA IMOBILIÁRIA</span><h2 id="settings-access-title">Acesso exclusivo do administrador</h2><p>Você está usando uma conta de corretor.</p></div><span className={s.badge}>Perfil de corretor</span></header>
     <div className={`${s.card} ${s.accessCard}`}>
@@ -52,6 +53,7 @@ export default function SettingsHub({ state, isAdmin, integrated, children, onWh
       </section>
     </div>
     {integrated && <div className={s.team}><div><strong>Quem vai atender seus clientes?</strong><p>Cadastre os corretores e ajuste os acessos da equipe.</p></div><button type="button" className={s.secondary} onClick={onTeam}>Corretores e acessos <span aria-hidden="true">→</span></button></div>}
+    <div className={s.team}><div><strong>Metas de captação de imóveis</strong><p>Defina quantos imóveis cada corretor deve captar por mês e finalidade.</p></div><button type="button" className={s.secondary} onClick={onCaptureGoal}>Criar meta de captação <span aria-hidden="true">→</span></button></div>
     <details className={s.advanced}><summary><span><strong>Regras e opções da operação</strong><small>Prazos, preenchimento de cadastros, origens e motivos de perda.</small></span><span aria-hidden="true">⌄</span></summary><div className={s.advancedBody}>{children}</div></details>
   </div>;
 }
