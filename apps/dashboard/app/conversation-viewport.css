@@ -14,7 +14,7 @@
     display: flex; flex-direction: column; flex: 1; min-height: 0;
   }
   .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .inbox-layout {
-    flex: 1; min-height: 0; height: 100% !important;
+    flex: 1 0 auto; min-height: 820px; height: max(820px, calc(100dvh - 150px)) !important;
     grid-template-columns: minmax(190px, 25%) minmax(0, 1fr) !important;
   }
   .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])):not(:has(.conversation-sync-notice)) .conversation-clean .inbox-layout.has-profile {

@@ -1299,3 +1299,13 @@
   .historicalJourney .funnelRow { grid-template-columns: 30px minmax(100px, 1fr) 54px 15px; gap: 5px; }
   .historicalJourney .funnelBlock { max-width: 100%; }
 }
+
+/* Expand the entire conversations page, including contacts and composer. */
+.app[data-operational-page="conversations"] { height: auto; min-height: 100dvh; }
+.app[data-operational-page="conversations"] > .workspace { height: auto; min-height: 100dvh; }
+.app[data-operational-page="conversations"] > .workspace > .main { width: 100%; max-width: none; padding-inline: 12px; box-sizing: border-box; }
+.app[data-operational-page="conversations"] > .workspace > .pageHead { padding-inline: 12px; }
+@media (min-width: 761px) and (min-height: 600px) {
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))):not(:has(:global(.conversation-sync-notice))) { height: auto; min-height: 100dvh; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))):not(:has(:global(.conversation-sync-notice))) > .workspace { height: auto; min-height: 100dvh; }
+}
