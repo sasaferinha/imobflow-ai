@@ -187,6 +187,7 @@ export function serializeLegacyWorkspace(next: CrmState, stored: CrmState): CrmS
 }
 function assertScope(actor: Actor, record: MappedRecord) {
   if (actor.role === 'owner') return;
+  if (record.kind === 'properties' && record.legacy?.table === 'properties' && record.data.assignedTo === actor.brokerId) return;
   if (!record.legacy || record.legacy.access !== 'assigned' || record.legacy.assignedTo !== actor.brokerId) throw new CrmError('Este cadastro está fora da sua carteira.', 403);
 }
 function memberName(bridge: LegacyBridge, id: Value | undefined) {
@@ -304,7 +305,7 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
       }
     }
     if (record.kind === 'properties' && (record.legacy?.table === 'properties' || !previous)) {
-      if (actor.role !== 'owner') throw new CrmError('Somente o administrador pode alterar o catálogo de imóveis.',403);
+      if (actor.role !== 'owner' && record.data.assignedTo !== actor.brokerId) throw new CrmError('Corretor só pode cadastrar e editar os imóveis da própria carteira.',403);
       const id = record.legacy?.id || record.id, row = bridge.properties.find(r => r.id === id), target = write('properties',id,row);
       if (!row) Object.assign(target.data,{ images:[], bedrooms:0,parking_spaces:0, key_in_office:false,occupied:false,cataloged_on_instagram:false,cataloged_on_site:false });
       for (const [key,column] of Object.entries({ name:'title',code:'code',purpose:'purpose',price:'price',status:'status',district:'district',address:'address',city:'city',propertyType:'property_type',bedrooms:'bedrooms',parkingSpaces:'parking_spaces',area:'area',description:'description',publicUrl:'public_url' })) if (changed(previous,record,key)) {
