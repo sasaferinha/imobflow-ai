@@ -13,9 +13,9 @@ export function announceDashboardChange(entity: string) {
 }
 
 // A slow response must not overlap a newer read or overwrite a completed write.
-export function subscribeDashboardSync<T>({ entities, load, apply, onError, interval = 3000 }: {
+export function subscribeDashboardSync<T>({ entities, load, apply, onError, interval = 3000, timeout = 20000 }: {
   entities: string[]; load: (signal: AbortSignal) => Promise<T>; apply: (data: T) => void;
-  onError?: (error: unknown) => void; interval?: number;
+  onError?: (error: unknown) => void; interval?: number; timeout?: number;
 }) {
   let stopped = false;
   let running = false;
@@ -30,12 +30,24 @@ export function subscribeDashboardSync<T>({ entities, load, apply, onError, inte
     queued = false;
     const started = generation;
     controller = new AbortController();
+    const requestController = controller;
+    let deadline: number | undefined;
     try {
-      const result = await load(controller.signal);
+      // A stalled request must not permanently lock all later refreshes.
+      const result = await Promise.race([
+        load(requestController.signal),
+        new Promise<never>((_, reject) => {
+          deadline = window.setTimeout(() => {
+            requestController.abort();
+            reject(new Error('dashboard_sync_timeout'));
+          }, timeout);
+        }),
+      ]);
       if (!stopped && started === generation) apply(result);
     } catch (error) {
       if (!stopped && started === generation) onError?.(error);
     } finally {
+      window.clearTimeout(deadline);
       running = false;
       if (queued && !stopped) void refresh();
     }

@@ -367,7 +367,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
     catch(e){notify(e instanceof Error?e.message:'Não foi possível devolver o atendimento.');}finally{savingRef.current = false; setSaving(false);}
   }
   return <div id="conversation-channel-content" className="conversation-demo conversation-clean">
-    {!ready&&<p className="conversation-sync-notice" role="status">A sincronização está indisponível. Aguarde a atualização antes de enviar.</p>}
+    {!ready&&<p className="conversation-sync-notice" role="status">Não foi possível atualizar a conversa. Tentaremos novamente automaticamente. <button type="button" onClick={() => { announceDashboardChange('leads'); announceDashboardChange('conversations'); }}>Tentar novamente</button></p>}
     <div className={`inbox-layout${profileOpen ? ' has-profile' : ''}`}>
       <aside className="inbox-list panel" aria-label="Conversas">
         <div className="conversation-inbox-heading"><h2>Caixa de entrada</h2><span aria-label={`${contacts.length} conversas`}>{contacts.length}</span></div>

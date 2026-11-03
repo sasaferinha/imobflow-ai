@@ -22,8 +22,8 @@ assert.match(css, /overflow-y:\s*auto/);
 assert.doesNotMatch(css, /scrollbar-width:\s*none|::-webkit-scrollbar|overflow(?:-y)?:\s*hidden/);
 assert.match(css, /conversation-settings\[open\]/);
 assert.match(css, /conversation-sync-notice/);
-assert.match(css, /flex:\s*1 0 500px;\s*min-height:\s*500px/);
-assert.match(css, /flex:\s*1 0 420px;\s*min-height:\s*420px/);
+assert.match(css, /flex:\s*1;\s*min-height:\s*100px/);
+assert.match(css, /flex:\s*1;\s*min-height:\s*160px/);
 assert.match(css, /max-height:\s*599px/);
 assert.match(read('dashboard-client.tsx'), /data-panel-view=\{view\}/);
 assert.match(read('evolution/evolution-client.tsx'), /data-operational-page=\{operationalPage \|\| undefined\}/);
@@ -35,3 +35,7 @@ assert.match(center, /historyPage,profileOpen\]/);
 assert.match(center, /removeEventListener\('resize',onVisible\)/);
 assert.match(center, /aria-controls="conversation-client-profile"/);
 console.log('PASS conversation viewport: parsed scoped CSS, import order, internal scroll, short-screen/settings fallback, explicit profile/focus/read guards. No production or rendered geometry tested.');
+
+assert.doesNotMatch(css, /:not\(:has\(\.conversation-sync-notice/);
+assert.doesNotMatch(css, /min-height: 820px|height: max\(820px/);
+assert.doesNotMatch(read("evolution/evolution.module.css"), /:not\(:has\(:global\(\.conversation-sync-notice/);
