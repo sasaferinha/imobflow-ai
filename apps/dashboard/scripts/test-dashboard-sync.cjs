@@ -7,6 +7,7 @@ const ts = require('typescript');
 const windowEvents = new EventTarget();
 const documentEvents = new EventTarget();
 const timers = new Map();
+const deadlines = new Map();
 let timerId = 0;
 const channels = [];
 class BroadcastChannel {
@@ -14,7 +15,7 @@ class BroadcastChannel {
   postMessage(data) { for (const channel of channels) if (channel !== this && !channel.closed) channel.onmessage?.({data}); }
   close() { this.closed = true; }
 }
-const browser = Object.assign(windowEvents, { location: { pathname: '/painel' }, BroadcastChannel, setInterval: fn => { timers.set(++timerId, fn); return timerId; }, clearInterval: id => timers.delete(id) });
+const browser = Object.assign(windowEvents, { location: { pathname: '/painel' }, BroadcastChannel, setTimeout: fn => { deadlines.set(++timerId, fn); return timerId; }, clearTimeout: id => deadlines.delete(id), setInterval: fn => { timers.set(++timerId, fn); return timerId; }, clearInterval: id => timers.delete(id) });
 const doc = Object.assign(documentEvents, { visibilityState:'visible' });
 const transportModule = { exports: {} };
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../lib/dashboard-transport.ts'),'utf8'), {
@@ -72,4 +73,18 @@ const tick = () => { for(const fn of timers.values()) fn(); };
   stopDemo();
   browser.location.pathname = '/painel';
   console.log('PASS public demo keeps local updates without cross-tab account communication');
+  const stalled = [], recovered = [], failures = [];
+  const stopStalled = subscribeDashboardSync({entities:['conversations'], load: signal => new Promise(resolve => stalled.push({signal,resolve})), apply: value => recovered.push(value), onError: error => failures.push(error.message)});
+  for (const fn of [...deadlines.values()]) fn();
+  await flush();
+  assert.equal(failures.at(-1), 'dashboard_sync_timeout');
+  assert.ok(stalled[0].signal.aborted);
+  tick();
+  assert.equal(stalled.length, 2, 'a stalled request must release the polling lock');
+  stalled[1].resolve('recovered'); await flush();
+  stalled[0].resolve('late stale response'); await flush();
+  assert.deepEqual(recovered,['recovered']);
+  stopStalled();
+  assert.equal(deadlines.size,0);
+  console.log('PASS stalled request abort, recovery, stale response rejection and timer cleanup');
 })().catch(error => { console.error(error); process.exitCode=1; });
