@@ -25,7 +25,7 @@ async function run() {
       { field: 'propertyType', value: 'Apartamento', messageId: id(702), evidence: 'comprar um apartamento' },
       { field: 'region', value: 'Vila Nova', messageId: id(702), evidence: 'na Vila Nova' },
       { field: 'budgetMax', value: 450000, messageId: id(702), evidence: 'Meu orçamento máximo é 450 mil.' },
-    ], missing: ['features'],
+    ], missing: ['features'], summary: [{ text: 'Procura apartamento na Vila Nova até 450 mil.', messageId: id(702), evidence: incoming }],
   });
   try {
     await seedCompanies(db);
@@ -44,6 +44,7 @@ async function run() {
     await db.query("INSERT INTO messages(id,company_id,conversation_id,direction,sender_type,content,created_at) VALUES($1,$2,$3,'outgoing','human','Tenho uma casa de 700 mil em outro bairro.',now()-interval '1 minute')", [id(703), id(1), id(502)]);
     await db.exec(migration('20261007190000_crm_evolution_workspace.sql'));
     await db.exec(migration('20261007210000_crm_evolution_legacy_bridge.sql'));
+    await db.exec(migration('20261102121000_property_capture_ownership.sql'));
     const sessions = { owner: ['a'.repeat(64), 11], broker: ['b'.repeat(64), 12], otherBroker: ['c'.repeat(64), 13], otherCompany: ['d'.repeat(64), 21] };
     for (const [token, actor] of Object.values(sessions)) {
       await db.query("INSERT INTO account_sessions(token_hash,broker_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [crypto.createHash('sha256').update(token).digest('hex'), id(actor)]);
@@ -129,7 +130,7 @@ async function run() {
     const canonical = async () => (await db.query('SELECT to_jsonb(l) data FROM leads l WHERE id=$1', [id(102)])).rows[0].data;
     const saveReviewed = (actor, result) => evolution.POST(request('evolution', 'POST', actor, {
       expectedVersion: result.review.expectedVersion, expectedSourceRevision: result.review.expectedSourceRevision,
-      command: { type: 'save', kind: 'leads', id: result.review.record.id, data: { ...result.review.record.data, ...Object.fromEntries(result.assistance.changes.map(change => [change.field, change.value])) } },
+      command: { type: 'save', kind: 'leads', id: result.review.record.id, data: { ...Object.fromEntries(result.assistance.changes.map(change => [change.field, change.value])), qualificationNotes: result.assistance.summary.map(item => item.text).join('\n') } },
     }));
     assert.equal((await analyze('')).status, 401); assert.equal((await analyze('otherBroker')).status, 403);
     assert.equal((await analyze('otherCompany')).status, 403); assert.equal((await analyze('broker', id(102), 'https://foreign.example.test')).status, 403);
@@ -150,6 +151,7 @@ async function run() {
     assert.equal(row.assigned_to, 'Broker 12'); assert.equal(row.lifecycle_status, 'Novo', 'Catalog review does not advance the funnel');
     const reopened = await snapshot('broker'), lead = reopened.records.find(record => record.id === `lead:${id(102)}`);
     assert.equal(lead.data.propertyType, 'Apartamento'); assert.equal(lead.data.region, 'Vila Nova'); assert.equal(lead.data.budgetMax, 450000);
+    assert.match(lead.data.qualificationNotes, /Procura apartamento na Vila Nova/, 'Reviewed summary survives canonical workspace reload');
     assert.equal(reopened.records.find(record => record.id === `case:${id(102)}`).data.stage, 'Lead');
     assert.ok(reopened.events.length > 0, 'Reviewed save has real CRM audit history');
     assert.equal((await saveReviewed('broker', result)).status, 409, 'Stale review cannot overwrite a later saved version');

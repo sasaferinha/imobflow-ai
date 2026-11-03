@@ -187,7 +187,11 @@ function announcePropertyChange() {
 export default function DashboardClient({ account, publicDemo = false, initialView = 'overview', initialDarkMode = false, embedded = false, initialUtility = null, onViewChange }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View; initialDarkMode?: boolean; embedded?: boolean; initialUtility?: DashboardUtility | null; onViewChange?: (view: DashboardView) => void }) {
   const [view, setViewState] = useState<View>(initialView);
   function setView(next: View) { setViewState(next); if (embedded) onViewChange?.(next); }
-  useEffect(() => { if (embedded) setViewState(initialView); }, [embedded, initialView]);
+  const [viewInput, setViewInput] = useState({ embedded, initialView });
+  if (viewInput.embedded !== embedded || viewInput.initialView !== initialView) {
+    setViewInput({ embedded, initialView });
+    if (embedded) setViewState(initialView);
+  }
   const [conversationState, conversationDispatch] = useReducer(demoConversationReducer, undefined, createLiveConversationState);
   const [leadSearch, setLeadSearch] = useState('');
   const [leadFilters, setLeadFilters] = useState<LeadFilter[]>([]);
@@ -207,7 +211,11 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [utilityModal, setUtilityModal] = useState<DashboardUtility | null>(initialUtility);
-  useEffect(() => { if (embedded) setUtilityModal(initialUtility); }, [embedded, initialUtility]);
+  const [utilityInput, setUtilityInput] = useState({ embedded, initialUtility });
+  if (utilityInput.embedded !== embedded || utilityInput.initialUtility !== initialUtility) {
+    setUtilityInput({ embedded, initialUtility });
+    if (embedded) setUtilityModal(initialUtility);
+  }
   const [profile, setProfile] = useState({ name: account?.name || 'Corretor', company: account?.company || 'Imobiliária' });
   const [settings, setSettings] = useState<DashboardSettings>({ alerts: true, compact: false, dark: publicDemo && initialDarkMode });
   const [notifications, setNotifications] = useState<Opportunity[]>([]);

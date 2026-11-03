@@ -6,6 +6,7 @@ const {createDatabase,seedCompanies,id,migration,isolationMigration}=require('./
   for(const file of fs.readdirSync(path.resolve(__dirname,'../../../supabase/migrations')).filter(file=>file.endsWith('.sql')&&file>isolationMigration).sort())await db.exec(migration(file));
   await seedCompanies(db);
   for(const n of [12,13])await db.query("INSERT INTO broker_accounts(id,company_id,name,name_key,password_hash,role,active,email,email_key) VALUES($1,$2,$3,$3,'fixture','broker',true,$4,$4)",[id(n),id(1),'Plantonista fictício '+n,n+'@example.test']);
+  await db.query('SELECT touch_broker_presence($1,$2)',[id(1),id(12)]);
   const start=new Date(Date.now()-3600000).toISOString(),end=new Date(Date.now()+3600000).toISOString();
   const document={companyId:id(1),version:1,records:[{id:'shift-sale',kind:'shifts',data:{assignedTo:id(12),purpose:'Venda',startsAt:start,endsAt:end,status:'Ativo'}}],events:[],members:[],settings:{operations:{dutyPriorityEnabled:false}}};
   await db.query('INSERT INTO crm_evolution_workspaces(company_id,version,document,updated_by) VALUES($1,1,$2::jsonb,$3)',[id(1),JSON.stringify(document),id(11)]);

@@ -39,6 +39,7 @@ assert(repeatSql.indexOf('LOCK TABLE public.web_push_attempts IN SHARE ROW EXCLU
   const priorityBefore=(await db.query('SELECT * FROM lead_duty_priorities WHERE lead_id=$1',[id(101)])).rows[0];
   // Apply the additive migration with an existing receipt, not only empty tables.
   for(const file of files.filter(file=>file>=repeatMigration))await db.exec(migration(file));
+  await db.query('SELECT touch_broker_presence($1,$2)',[id(1),id(11)]);
   assert.equal((await db.query('SELECT urgent_alert_policy_version() version')).rows[0].version,3);
   const priorityAfter=(await db.query('SELECT * FROM lead_duty_priorities WHERE lead_id=$1',[id(101)])).rows[0];
   assert.equal(priorityAfter.preferred_until.getTime(),Date.parse(first.waiting_since)+300000,'backfill aligns old reservation with first valid incoming');

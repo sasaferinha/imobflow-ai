@@ -16,7 +16,7 @@ const options: { action: RegistrationAction; label: string; description: string;
   { action: 'schedule', label: 'Agendar visita', description: 'Adicionar ou ajustar uma visita na agenda', number: '03' },
   { action: 'visit', label: 'Visita realizada', description: 'Confirmar uma visita que já aconteceu', number: '04' },
   { action: 'proposal', label: 'Proposta', description: 'Registrar os detalhes da negociação', number: '05' },
-  { action: 'close', label: 'Negociado', description: 'Confirmar o fechamento de uma proposta', number: '06' },
+  { action: 'close', label: 'Imóvel vendido / alugado', description: 'Confirmar o fechamento e retirar o imóvel das ofertas disponíveis', number: '06' },
 ];
 const correctionOption = { action: 'correct_close' as const, label: 'Editar fechamento', description: 'Corrigir os dados ou desfazer um fechamento', number: '07' };
 const newNegotiationOption = { action: 'new_negotiation' as const, label: 'Nova negociação', description: 'Outro objetivo do mesmo cliente', number: '+' };

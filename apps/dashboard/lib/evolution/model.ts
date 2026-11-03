@@ -4,16 +4,18 @@ import { DEFAULT_OPERATIONS_SETTINGS, captureReminderCandidates, captureGoalProg
 import { validLeadSource } from '../lead-sources';
 import { validateTenantAISettings, TenantAISettingsValidationError, type StoredTenantAISettings, type TenantAISettings } from '../ai/tenant-settings';
 import { validateWebsiteSettings, WebsiteSettingsValidationError, type StoredWebsiteSettings, type WebsiteSettings } from './website-settings';
+import { validatePropertyWorkflow, visitProgressData, type VisitProgressCommand } from './property-workflows';
+import { brokerComplianceIssues, commissionForClosing, validateManagementSettings, type CommissionSnapshot, type ManagementSettings } from './management';
 
 export type Value = string | number | boolean;
 export type Actor = { companyId: string; brokerId: string; name: string; role: 'owner' | 'broker' };
 export type CrmMember = { id: string; name: string; role: 'owner' | 'broker'; specialization: 'Venda' | 'Aluguel' | 'Ambos'; teamId?: string; permissions?: Partial<Record<Kind, { readOthers: boolean; editOthers: boolean }>> };
 export type LegacyRecordSource = { table: 'leads' | 'properties' | 'appointments'; id: string; access: 'assigned' | 'owner' | 'shared'; assignedTo?: string; label?: string; lifecycleStatus?: string; lastContactAt?: string; missingPurpose?: boolean };
-export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; createdAt: string; updatedAt: string; createdBy: string; legacy?: LegacyRecordSource; manualNegotiation?: true; negotiationCaseId?: string };
+export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; createdAt: string; updatedAt: string; createdBy: string; legacy?: LegacyRecordSource; manualNegotiation?: true; negotiationCaseId?: string; commission?: CommissionSnapshot };
 export type CrmEvent = { id: string; recordId: string; caseId?: string; at: string; actorId: string; actorName: string; type: string; summary: string; changes?: Record<string, { from: Value; to: Value }>; registration?: { requestId: string; fingerprint: string; action: RegistrationAction; resultCaseId?: string } };
-export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings; ai?: StoredTenantAISettings; website?: StoredWebsiteSettings };
+export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings; ai?: StoredTenantAISettings; website?: StoredWebsiteSettings; management?: ManagementSettings; buyerReportFrequency?: 'weekly' | 'monthly' };
 export type CrmState = { companyId: string; version: number; records: CrmRecord[]; events: CrmEvent[]; members: CrmMember[]; settings: CrmSettings; sourceRevision?: string };
-export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<Omit<CrmSettings, 'ai' | 'website'>> & { ai?: TenantAISettings; website?: WebsiteSettings } } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | { type: 'capture-reminders' } | RegistrationCommand;
+export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<Omit<CrmSettings, 'ai' | 'website'>> & { ai?: TenantAISettings; website?: WebsiteSettings } } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | { type: 'capture-reminders' } | RegistrationCommand | VisitProgressCommand;
 export type CaseFilter = { purpose?: string; assignedTo?: string; from?: string; to?: string; stage?: string; freshness?: string; journey?: string; status?: string; query?: string };
 export class CrmError extends Error { constructor(message: string, public status = 400) { super(message); this.name = 'CrmError'; } }
 const deny = () => { throw new CrmError('Você não tem permissão para acessar ou alterar este registro.', 403); };
@@ -45,7 +47,7 @@ export function canAccess(state: CrmState, actor: Actor, record: CrmRecord, acti
   // Inactive or ambiguous historical assignments remain visible to the owner.
   if (record.legacy) {
     if (record.legacy.access === 'owner') return false;
-    if (record.legacy.access === 'shared') return action === 'read';
+    if (record.legacy.access === 'shared') return action === 'read' || record.kind === 'properties' && record.legacy.assignedTo === actor.brokerId;
     return record.legacy.assignedTo === actor.brokerId;
   }
   if (['proposals', 'tasks'].includes(record.kind)) {
@@ -67,10 +69,10 @@ export function canAccess(state: CrmState, actor: Actor, record: CrmRecord, acti
 }
 export function visibleState(state: CrmState, actor: Actor): CrmState {
   checkActor(state, actor);
-  const records = state.records.filter(r => canAccess(state, actor, r));
+  const records = state.records.filter(r => canAccess(state, actor, r)).map(record => { if (actor.role === 'owner' || record.commission?.brokerId === actor.brokerId) return record; const copy = { ...record }; delete copy.commission; return copy; });
   const ids = new Set(records.map(r => r.id));
   const settings = { ...state.settings };
-  if (actor.role !== 'owner') { delete settings.ai; delete settings.website; }
+  if (actor.role !== 'owner') { delete settings.ai; delete settings.website; if (settings.management) settings.management = { ...settings.management, commissions: settings.management.commissions.filter(rule => rule.brokerId === actor.brokerId) }; }
   return { ...state, settings, records, events: state.events.filter(e => ids.has(e.recordId) && (!e.caseId || ids.has(e.caseId))), members: state.members.map(m => actor.role === 'owner' || m.id === actor.brokerId ? { ...m } : { id: m.id, name: m.name, role: m.role, specialization: m.specialization }) };
 }
 function text(value: unknown, max = 500): string {
@@ -214,6 +216,7 @@ function validateBusiness(state: CrmState, actor: Actor, record: CrmRecord, prev
     const names = [d.name, ...String(d.aliases || '').split(',')].map(normalize).filter(Boolean);
     if (state.records.some(r => r.kind === record.kind && r.id !== record.id && normalize(r.data.city) === normalize(d.city) && [r.data.name, ...String(r.data.aliases || '').split(',')].map(normalize).some(n => names.includes(n)))) throw new CrmError('Nome ou apelido já cadastrado nesta cidade.', 409);
   }
+  if (record.kind === 'properties' && actor.role !== 'owner' && previous && d.assignedTo !== previous.data.assignedTo) deny();
   if (record.kind === 'properties' && state.records.some(r => r.kind === 'properties' && r.id !== record.id && normalize(r.data.code) === normalize(d.code))) throw new CrmError('Código do imóvel já cadastrado.', 409);
   if (record.kind === 'keys') {
     if (previous?.data.status === 'Devolvida') throw new CrmError('Devolução registrada é preservada. Crie uma nova retirada.', 409);
@@ -309,6 +312,7 @@ function applyClosingCorrection(original: CrmState, actor: Actor, command: Extra
   if (d.mode === 'edit') {
     if (typeof d.amount !== 'number' || !Number.isFinite(d.amount) || d.amount < 0.01 || d.amount > 1e12 || !text(d.conditions, 2000)) throw new CrmError('Informe um valor válido e as condições corrigidas.');
     change(state, actor, find(state, proposal!.id, 'proposals'), { amount: d.amount, conditions: text(d.conditions, 2000) }, now, `Dados do fechamento corrigidos · Motivo: ${reason}`);
+    if (parent.commission) parent.commission = { ...parent.commission, dealAmount: d.amount, amount: Math.round((d.amount * parent.commission.ratePercent / 100 + parent.commission.fixedAmount) * 100) / 100 };
     summary = `Dados do fechamento corrigidos. Data original, cliente e imóvel preservados · Motivo: ${reason}`;
   } else {
     const linked = initial.data.leadId ? editable(original, actor, String(initial.data.leadId), 'leads') : undefined;
@@ -331,6 +335,7 @@ function applyClosingCorrection(original: CrmState, actor: Actor, command: Extra
       change(state, actor, find(state, property.id, 'properties'), { status: propertyStatus.changes!.status.from }, now, `Disponibilidade anterior restaurada após correção · Motivo: ${reason}`);
     }
     change(state, actor, parent, { status: 'Aberto', stage: proposal ? 'Proposta' : 'Atendimento', closedAt: '', stageEnteredAt: now, reason }, now, `Fechamento desfeito · Motivo: ${reason}`);
+    delete parent.commission;
     if (linked && !initial.manualNegotiation) change(state, actor, find(state, linked.id, 'leads'), { status: 'Em atendimento' }, now, `Atendimento reaberto após correção · Motivo: ${reason}`);
     summary = proposal ? `Fechamento desfeito; atendimento reaberto em Proposta · Motivo: ${reason}` : `Fechamento importado desfeito; somente o atendimento foi reaberto. Nenhum imóvel foi alterado · Motivo: ${reason}`;
   }
@@ -497,12 +502,25 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
     return { ...structuredClone(next), version: original.version + 1 };
   }
   const state: CrmState = structuredClone(original);
-  if (command.type === 'save') {
+  if (command.type === 'visit-progress') {
+    const task = editable(state, actor, text(command.id), 'tasks');
+    let updates: Record<string, Value>;
+    try { updates = visitProgressData(task, command, now); } catch (error) { throw new CrmError(error instanceof Error ? error.message : 'Não foi possível registrar a visita.'); }
+    validateBusiness(state, actor, { ...task, data: { ...task.data, ...updates } }, task);
+    change(state, actor, task, updates, now, command.action === 'start' ? 'Visita iniciada' : 'Visita encerrada com relatório');
+  } else if (command.type === 'save') {
     const previous = command.id ? editable(state, actor, text(command.id), command.kind) : undefined;
     const data = validateData(state, actor, command.kind, command.data, previous);
-    const record: CrmRecord = { id: previous?.id || crypto.randomUUID(), kind: command.kind, data: { ...previous?.data, ...data }, createdBy: previous?.createdBy || actor.brokerId, createdAt: previous?.createdAt || now, updatedAt: now, ...(previous?.legacy ? { legacy: previous.legacy } : {}), ...(previous?.manualNegotiation ? { manualNegotiation: true } : {}), ...(previous?.negotiationCaseId ? { negotiationCaseId: previous.negotiationCaseId } : {}) };
+    if (['leads', 'cases'].includes(command.kind) && data.assignedTo && data.assignedTo !== previous?.data.assignedTo) {
+      const blocked = brokerComplianceIssues(state, String(data.assignedTo), now);
+      if (blocked.length) throw new CrmError(`Este corretor precisa regularizar ${blocked.length} pendência(s) antes de receber novos leads. ${blocked[0].message}`, 409);
+      data.assignedAt = now;
+    }
+    const record: CrmRecord = { id: previous?.id || crypto.randomUUID(), kind: command.kind, data: { ...previous?.data, ...data }, createdBy: previous?.createdBy || actor.brokerId, createdAt: previous?.createdAt || now, updatedAt: now, ...(previous?.legacy ? { legacy: previous.legacy } : {}), ...(previous?.manualNegotiation ? { manualNegotiation: true } : {}), ...(previous?.negotiationCaseId ? { negotiationCaseId: previous.negotiationCaseId } : {}), ...(previous?.commission ? { commission: previous.commission } : {}) };
     if (!canAccess(state, actor, record, 'write')) deny();
     validateBusiness(state, actor, record, previous);
+    const workflowError = validatePropertyWorkflow(record, previous);
+    if (workflowError) throw new CrmError(workflowError);
     if (record.kind === 'keys') { record.data.checkedOutAt = previous?.data.checkedOutAt || now; if (record.data.status === 'Devolvida') record.data.returnedAt = now; }
     if (record.kind === 'cases' && record.data.stage !== previous?.data.stage) record.data.stageEnteredAt = now;
     if (record.kind === 'proposals' && record.data.status === 'Aceita') record.data.acceptedAt = now;
@@ -514,6 +532,7 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
     if (saved.kind === 'proposals' && saved.data.status === 'Aceita') {
       const parent = find(state, String(saved.data.caseId), 'cases'), prop = find(state, String(saved.data.propertyId), 'properties');
       change(state, actor, parent, { stage: 'Negociado', status: 'Ganho', stageEnteredAt: now, closedAt: now, reason: 'Proposta aceita', propertyId: prop.id }, now, 'Negociação concluída por proposta aceita');
+      parent.commission = commissionForClosing(state, parent, Number(saved.data.amount), now);
       change(state, actor, prop, { status: parent.data.purpose === 'Aluguel' ? 'Alugado' : 'Vendido' }, now, 'Situação atualizada por proposta aceita');
     }
   } else if (command.type === 'comment') {
@@ -524,7 +543,9 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
     if (actor.role !== 'owner') deny();
     const settings = command.settings;
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new CrmError('Configuração inválida.');
-    if (Object.keys(settings).some(k => !['inactivityDays','sources','categories','lossReasons','distributionEnabled','operations','ai','website'].includes(k))) throw new CrmError('Configuração não permitida.');
+    if (Object.keys(settings).some(k => !['inactivityDays','sources','categories','lossReasons','distributionEnabled','operations','ai','website','management','buyerReportFrequency'].includes(k))) throw new CrmError('Configuração não permitida.');
+    if (Object.hasOwn(settings, 'management')) { try { state.settings.management = validateManagementSettings(settings.management, state); } catch (error) { throw new CrmError(error instanceof Error ? error.message : 'Configuração de gestão inválida.'); } }
+    if (Object.hasOwn(settings, 'buyerReportFrequency')) { if (!['weekly','monthly'].includes(String(settings.buyerReportFrequency))) throw new CrmError('Período de relatório inválido.'); state.settings.buyerReportFrequency = settings.buyerReportFrequency; }
     if (Object.hasOwn(settings, 'ai')) {
       try { state.settings.ai = { ...validateTenantAISettings(settings.ai), updatedAt: now, updatedBy: actor.brokerId }; }
       catch (error) { if (error instanceof TenantAISettingsValidationError) throw new CrmError(error.message); throw error; }

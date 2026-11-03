@@ -3,7 +3,7 @@ const root = path.resolve(__dirname, '..'), cache = new Map();
 function load(name) {
   if (cache.has(name)) return cache.get(name);
   const module = { exports: {} };
-  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root, 'lib/evolution', name + '.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module, exports: module.exports, require: id => { assert.equal(id, './schema'); return load('schema'); } });
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root, 'lib/evolution', name + '.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module, exports: module.exports, require: id => { assert(['./schema','./property-workflows'].includes(id), `Unexpected local dependency: ${id}`); return load(id.slice(2)); } });
   cache.set(name, module.exports); return module.exports;
 }
 const { historicalFunnel } = load('historical-funnel');

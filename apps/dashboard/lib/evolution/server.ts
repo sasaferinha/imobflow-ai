@@ -81,6 +81,11 @@ export async function executeEvolutionCommand(actor: Actor, command: CrmCommand,
     catch { throw new EvolutionServerError(503, 'As migrations das regras de carteira e plantão precisam ser instaladas antes da ativação. Nenhuma regra foi alterada.'); }
     if ((command.settings.operations.dutyPriorityEnabled && ready?.dutyPriority !== true) || (command.settings.operations.inactivePoolEnabled && (ready?.inactivePool !== true || ready?.verifiedInactiveContacts !== true))) throw new EvolutionServerError(503, 'A estrutura destas regras ainda não está disponível no banco. Instale também a verificação de contatos do Instagram antes de liberar carteiras. Nenhuma regra foi alterada.');
   }
+  if (command.type === 'settings' && command.settings.management?.blockNewLeads) {
+    if (actor.role !== 'owner') throw new EvolutionServerError(403, 'Somente o gestor pode ativar o bloqueio de novos leads.');
+    try { if (await supabaseRequest<boolean>('rpc/team_management_ready', { method: 'POST', body: {} }) !== true) throw new Error('not_ready'); }
+    catch { throw new EvolutionServerError(503, 'Instale a atualização de gestão da equipe no banco antes de ativar o bloqueio. Nenhuma regra foi alterada.'); }
+  }
   const applied = applyCommand(state, actor, bridge ? prepareLegacyCommand(state, bridge, command) : command);
   const plan = bridge ? planLegacyWrites(state, applied, bridge, actor) : undefined;
   if (plan && bridge && command.type === 'register') {
@@ -111,7 +116,7 @@ export async function executeEvolutionCommand(actor: Actor, command: CrmCommand,
     },
   });
   if (accepted !== true) throw new EvolutionServerError(409, 'Outra alteração foi salva ao mesmo tempo. Recarregue antes de tentar novamente.');
-  const properties = plan?.writes.filter(write => write.table === 'properties').map(write => write.id) || [];
+  const properties = plan?.writes.filter(write => write.table === 'properties' && Object.keys(write.data).length > 0).map(write => write.id) || [];
   if (properties.length && onCommittedProperties) {
     try { onCommittedProperties(properties); } catch { console.error('crm_evolution_matching_schedule_failed'); }
   }

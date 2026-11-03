@@ -1,0 +1,25 @@
+.panel { border: 1px solid #dbe4ec; border-radius: 12px; background: #fff; padding: 18px; margin: 14px 0; color: #172b4d; }
+.panel h3 { margin: 0 0 8px; font-size: 17px; }
+.panel p { margin: 8px 0 14px; font-size: 13px; color: #52667e; line-height: 1.55; }
+.panel label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
+.panel input,.panel textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #cbd6e2; border-radius: 7px; padding: 9px; background: #fff; color: #172b4d; font: inherit; }
+.panel textarea { resize: vertical; }
+.panel button { border: 1px solid #d4deea; border-radius: 7px; padding: 9px 13px; background: #f5f8fb; color: #214263; font: inherit; font-size: 12px; cursor: pointer; }
+.panel button:disabled { opacity: .55; cursor: default; }
+.panel .primary { background: #146eb8; color: #fff; border-color: #146eb8; }
+.grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.wide { grid-column: 1/-1; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 13px; }
+.reference { padding: 12px; background: #f6f9fc; border-radius: 9px; margin: 10px 0; }
+.reference legend { padding: 0 5px; color: #52667e; font-size: 12px; }
+.reference fieldset { border: 0; padding: 0; margin: 0; }
+.estimate { padding: 15px; background: #eef8f3; border-radius: 8px; margin-top: 15px; }
+.estimate strong { display: block; font-size: 21px; margin: 5px 0; }
+.estimate small { display: block; line-height: 1.5; color: #3e6052; }
+.alert { border: 1px solid #e9cd85; background: #fff8e6; border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.5; margin: 12px 0; }
+.error { color: #a22f36; font-size: 13px; margin: 10px 0; }
+.success { color: #24684b; font-size: 12px; }
+.times { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; margin: 12px 0; }
+.times span { display: grid; gap: 4px; }
+.readOnly { white-space: pre-wrap; }
+@media(max-width:640px) { .grid { grid-template-columns: 1fr; } .panel { padding: 13px; } }

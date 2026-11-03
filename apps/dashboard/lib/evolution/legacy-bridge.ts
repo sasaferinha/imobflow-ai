@@ -16,7 +16,7 @@ export type LegacyWrite = { table: LegacyTable; id: string; operation: 'insert' 
 export type LegacyPlan = { state: CrmState; writes: LegacyWrite[] };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LEAD_COLUMNS = 'id,company_id,name,phone,email,goal,property_type,region,budget_min,budget_max,bedrooms,parking_spaces,details,summary,score,temperature,lifecycle_status,assigned_to,source,last_contact_at,interest_profile,created_at,updated_at';
-const PROPERTY_COLUMNS = 'id,company_id,code,title,description,purpose,price,district,city,address,property_type,bedrooms,parking_spaces,area,images,public_url,status,key_in_office,occupied,cataloged_on_instagram,cataloged_on_site,created_at,updated_at';
+const PROPERTY_COLUMNS = 'id,company_id,code,title,description,purpose,price,district,city,address,property_type,bedrooms,parking_spaces,area,images,public_url,status,key_in_office,occupied,cataloged_on_instagram,cataloged_on_site,captured_by,created_at,updated_at';
 const APPOINTMENT_COLUMNS = 'id,company_id,lead_id,property_id,scheduled_at,assigned_to,status,notes,created_at';
 const CONVERSATION_COLUMNS = 'id,company_id,lead_id,assigned_broker_id,assigned_to';
 const str = (value: unknown) => value == null ? '' : String(value);
@@ -55,7 +55,7 @@ export async function readLegacyBridge(actor: Actor, members: CrmMember[], store
   if (!members.some(m => m.id === actor.brokerId && m.role === actor.role)) throw new CrmError('Seu acesso mudou. Entre novamente.', 403);
   const company = encodeURIComponent(actor.companyId);
   const query = <T>(table: string, columns: string) => supabaseRequest<T>(`${table}?company_id=eq.${company}&select=${columns}&order=id.asc`, { allRows: true });
-  const [leads, properties, appointments, conversations] = await Promise.all([query<LegacyRow[]>('leads', LEAD_COLUMNS), query<LegacyRow[]>('properties', PROPERTY_COLUMNS), query<LegacyRow[]>('appointments', APPOINTMENT_COLUMNS), query<LegacyRow[]>('conversations', CONVERSATION_COLUMNS)]);
+  const [leads, properties, appointments, conversations] = await Promise.all([query<LegacyRow[]>('leads', LEAD_COLUMNS + (stored?.settings.management?.blockNewLeads ? ',management_assigned_at' : '')), query<LegacyRow[]>('properties', PROPERTY_COLUMNS), query<LegacyRow[]>('appointments', APPOINTMENT_COLUMNS), query<LegacyRow[]>('conversations', CONVERSATION_COLUMNS)]);
   const bridge = legacyBridgeFromRows(actor.companyId, members, { leads, properties, appointments, conversations });
   const manual = manualCaseIds(stored);
   const candidates = new Set(leads.filter(lead => ['Novo', 'Em atendimento'].includes(str(lead.lifecycle_status)) && !manual.has(canonicalId('case', lead.id))).map(lead => lead.id));
@@ -100,13 +100,14 @@ export function mapLegacyRecords(bridge: LegacyBridge): MappedRecord[] {
     const legacy: LegacySource = { table: 'leads', id: row.id, ...owner, lifecycleStatus: lifecycle, lastContactAt: date(row.last_contact_at), missingPurpose: !p };
     const assignedTo = owner.assignedTo || '', personId = canonicalId('person', row.id), leadId = canonicalId('lead', row.id), source = str(row.source);
     records.push(makeRecord(personId, 'people', row, { name: str(row.name), phone: str(row.phone), email: str(row.email), assignedTo, personType: 'Pessoa física', category: 'Cliente', address: '', notes: '' }, legacy));
-    records.push(makeRecord(leadId, 'leads', row, { name: str(row.name), personId, assignedTo, source, purpose: p, propertyId: '', temperature: /muito quente|quente/i.test(str(row.temperature)) ? 'Quente' : ['Morno','Frio'].includes(str(row.temperature)) ? str(row.temperature) : '', propertyType: str(row.property_type), region: str(row.region), budgetMin: numeric(row.budget_min), budgetMax: numeric(row.budget_max), features: Array.isArray(profile.features) ? profile.features.map(str).join(', ') : '', status: lifecycle === 'Perdido' ? 'Descartado' : lifecycle === 'Novo' ? 'Pendente' : 'Em atendimento', notes: str(row.details) }, legacy));
+    records.push(makeRecord(leadId, 'leads', row, { name: str(row.name), personId, assignedTo, assignedAt: date(row.management_assigned_at || row.created_at), source, purpose: p, propertyId: '', temperature: /muito quente|quente/i.test(str(row.temperature)) ? 'Quente' : ['Morno','Frio'].includes(str(row.temperature)) ? str(row.temperature) : '', propertyType: str(row.property_type), region: str(row.region), budgetMin: numeric(row.budget_min), budgetMax: numeric(row.budget_max), features: Array.isArray(profile.features) ? profile.features.map(str).join(', ') : '', status: lifecycle === 'Perdido' ? 'Descartado' : lifecycle === 'Novo' ? 'Pendente' : 'Em atendimento', notes: str(row.details) }, legacy));
     const stage = ({ Novo: 'Lead', 'Em atendimento': 'Atendimento', Visita: 'Visita', Proposta: 'Proposta', Convertido: 'Negociado', Perdido: 'Atendimento' } as Record<string,string>)[lifecycle] || 'Lead';
-    records.push(makeRecord(canonicalId('case', row.id), 'cases', row, { name: `${p || 'Atendimento'} · ${str(row.name)}`, personId, leadId, source, assignedTo, purpose: p, journey: 'Negociação', stage, status: lifecycle === 'Convertido' ? 'Ganho' : lifecycle === 'Perdido' ? 'Perdido' : 'Aberto', propertyId: '', nextActivityAt: '', reason: '', notes: '' }, legacy));
+    records.push(makeRecord(canonicalId('case', row.id), 'cases', row, { name: `${p || 'Atendimento'} · ${str(row.name)}`, personId, leadId, source, assignedTo, assignedAt: date(row.management_assigned_at || row.created_at), purpose: p, journey: 'Negociação', stage, status: lifecycle === 'Convertido' ? 'Ganho' : lifecycle === 'Perdido' ? 'Perdido' : 'Aberto', propertyId: '', nextActivityAt: '', reason: '', notes: '' }, legacy));
   }
   for (const row of bridge.properties) {
     const images = Array.isArray(row.images) ? row.images : [];
-    records.push(makeRecord(canonicalId('property', row.id), 'properties', row, { name: str(row.title), code: str(row.code), purpose: purpose(row.purpose), price: numeric(row.price), status: str(row.status), assignedTo: '', ownerId: '', condominiumId: '', neighborhoodId: '', district: str(row.district), address: str(row.address), city: str(row.city), propertyType: str(row.property_type), bedrooms: numeric(row.bedrooms), parkingSpaces:numeric(row.parking_spaces), area: numeric(row.area), description: str(row.description), photoUrl: str(images[0]), publicUrl: str(row.public_url), notes: '' }, { table: 'properties', id: row.id, access: 'shared' }));
+    const assignedTo = bridge.members.some(member => member.id === row.captured_by) ? str(row.captured_by) : '';
+    records.push(makeRecord(canonicalId('property', row.id), 'properties', row, { name: str(row.title), code: str(row.code), purpose: purpose(row.purpose), price: numeric(row.price), status: str(row.status), assignedTo, ownerId: '', condominiumId: '', neighborhoodId: '', district: str(row.district), address: str(row.address), city: str(row.city), propertyType: str(row.property_type), bedrooms: numeric(row.bedrooms), parkingSpaces:numeric(row.parking_spaces), area: numeric(row.area), description: str(row.description), photoUrl: str(images[0]), publicUrl: str(row.public_url), notes: '' }, { table: 'properties', id: row.id, access: 'shared', ...(assignedTo ? { assignedTo } : {}) }));
   }
   for (const row of bridge.appointments) {
     const lead = bridge.leads.find(l => l.id === row.lead_id);
@@ -118,8 +119,8 @@ export function mapLegacyRecords(bridge: LegacyBridge): MappedRecord[] {
   return records;
 }
 const canonicalFields: Partial<Record<CrmRecord['kind'], string[]>> = {
-  people: ['name','phone','email','assignedTo'], leads: ['name','personId','assignedTo','source','purpose','temperature','propertyType','region','budgetMin','budgetMax','features','status','notes'],
-  cases: ['personId','leadId','source','assignedTo','purpose','journey'], properties: ['name','code','purpose','price','status','district','address','city','propertyType','bedrooms','parkingSpaces','area','description','photoUrl','publicUrl'],
+  people: ['name','phone','email','assignedTo'], leads: ['name','personId','assignedTo','assignedAt','source','purpose','temperature','propertyType','region','budgetMin','budgetMax','features','status','notes'],
+  cases: ['personId','leadId','source','assignedTo','assignedAt','purpose','journey'], properties: ['name','code','purpose','price','status','assignedTo','district','address','city','propertyType','bedrooms','parkingSpaces','area','description','photoUrl','publicUrl'],
   tasks: ['caseId','dueAt','status','notes','propertyId','assignedTo','type'],
 };
 /** Only new-only fields are durable overlays. Canonical fields always reflect the database, including edits from WhatsApp/classic. */
@@ -187,6 +188,7 @@ export function serializeLegacyWorkspace(next: CrmState, stored: CrmState): CrmS
 }
 function assertScope(actor: Actor, record: MappedRecord) {
   if (actor.role === 'owner') return;
+  if (record.kind === 'properties' && record.legacy?.table === 'properties' && record.legacy.assignedTo === actor.brokerId) return;
   if (!record.legacy || record.legacy.access !== 'assigned' || record.legacy.assignedTo !== actor.brokerId) throw new CrmError('Este cadastro está fora da sua carteira.', 403);
 }
 function memberName(bridge: LegacyBridge, id: Value | undefined) {
@@ -304,9 +306,10 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
       }
     }
     if (record.kind === 'properties' && (record.legacy?.table === 'properties' || !previous)) {
-      if (actor.role !== 'owner') throw new CrmError('Somente o administrador pode alterar o catálogo de imóveis.',403);
       const id = record.legacy?.id || record.id, row = bridge.properties.find(r => r.id === id), target = write('properties',id,row);
+      if (actor.role !== 'owner' && (row ? row.captured_by !== actor.brokerId || changed(previous,record,'assignedTo') : d.assignedTo !== actor.brokerId)) throw new CrmError('Você só pode alterar imóveis da sua captação. A transferência cabe ao administrador.',403);
       if (!row) Object.assign(target.data,{ images:[], bedrooms:0,parking_spaces:0, key_in_office:false,occupied:false,cataloged_on_instagram:false,cataloged_on_site:false });
+      if (!row || changed(previous,record,'assignedTo')) target.data.captured_by = nullable(d.assignedTo);
       for (const [key,column] of Object.entries({ name:'title',code:'code',purpose:'purpose',price:'price',status:'status',district:'district',address:'address',city:'city',propertyType:'property_type',bedrooms:'bedrooms',parkingSpaces:'parking_spaces',area:'area',description:'description',publicUrl:'public_url' })) if (changed(previous,record,key)) {
         if (['bedrooms','parking_spaces'].includes(column) && !row && nullable(d[key]) === null) continue;
         if (['bedrooms','parking_spaces'].includes(column) && nullable(d[key]) === null) throw new CrmError('Quartos e vagas não podem ficar vazios. Informe zero quando não houver.',400);
@@ -367,7 +370,9 @@ export function planLegacyWrites(before: CrmState, after: CrmState, bridge: Lega
       if (!Object.hasOwn(target.data,'temperature')) target.data.temperature = analysis.temperature;
     }
   }
-  const writes = [...plans.values()].filter(w => w.operation === 'insert' || Object.entries(w.data).some(([key,value]) => stable(w.expected?.[key]) !== stable(value))).sort((a,b) => ['leads','properties','appointments'].indexOf(a.table)-['leads','properties','appointments'].indexOf(b.table));
+  // Property reports live in the workspace, but still lock and recheck their
+  // canonical capture owner before committing even when no catalog field changes.
+  const writes = [...plans.values()].filter(w => w.operation === 'insert' || w.table === 'properties' || Object.entries(w.data).some(([key,value]) => stable(w.expected?.[key]) !== stable(value))).sort((a,b) => ['leads','properties','appointments'].indexOf(a.table)-['leads','properties','appointments'].indexOf(b.table));
   // Even a workspace-only comment or generic edit must lock/recheck the real
   // contact and live conversation portfolio in the existing atomic SQL RPC.
   for (const [id, row] of guardedContacts) if (!writes.some(write => write.table === 'leads' && write.id === id)) writes.unshift({ table: 'leads', id, operation: 'update', expected: { ...row }, data: {} });

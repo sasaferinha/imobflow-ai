@@ -4,6 +4,7 @@ import { evolutionEnabled } from './feature';
 import { evolutionIntegrated, executeEvolutionCommand, readEvolutionState } from './server';
 import { weeklyReport } from './weekly-report';
 import { captureReminderCandidates } from './operations';
+import { generateScheduledBuyerReport } from './buyer-report-store';
 
 /** Opt-in internal routines. Inactive portfolios become unassigned; no external messages. */
 export async function runEvolutionScheduler(companyId: string, company: string, deadline = Date.now() + 45000) {
@@ -81,13 +82,15 @@ export async function runEvolutionScheduler(companyId: string, company: string, 
     }
     const captureReminders = candidates.length;
     if (Date.now() + 12000 > deadline) return { report: 'deferred', captureReminders, released, inactivePool };
-    if (!state.settings.operations?.weeklyReportsEnabled) return { report: 'disabled', captureReminders, released, inactivePool };
+    // Private buyer snapshots never go into the notices visible to brokers.
+    const buyerReport = await generateScheduledBuyerReport(state).catch(() => ({ status: 'unavailable' as const }));
+    if (!state.settings.operations?.weeklyReportsEnabled) return { report: 'disabled', buyerReport, captureReminders, released, inactivePool };
     const report = weeklyReport(state);
     const notices = new Set(state.records.filter(r=>r.kind==='notices').map(r=>r.id));
     if (state.records.some(r => r.kind === 'notices' && r.data.name === report.title)
-      || state.events.some(e=>notices.has(e.recordId) && e.type==='created' && e.changes?.name?.to===report.title)) return { report: 'already-generated', captureReminders, released, inactivePool };
+      || state.events.some(e=>notices.has(e.recordId) && e.type==='created' && e.changes?.name?.to===report.title)) return { report: 'already-generated', buyerReport, captureReminders, released, inactivePool };
     // Same workspace CAS means overlapping cron executions cannot duplicate this notice.
     await executeEvolutionCommand(actor, { type: 'save', kind: 'notices', data: { name: report.title, text: report.text } }, state.version, state.sourceRevision);
-    return { report: 'generated', captureReminders, released, inactivePool };
+    return { report: 'generated', buyerReport, captureReminders, released, inactivePool };
   });
 }

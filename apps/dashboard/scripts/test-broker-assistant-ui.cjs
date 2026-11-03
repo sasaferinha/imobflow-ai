@@ -64,12 +64,22 @@ function harness(file, input, { demo = false, response, globals = {} } = {}) {
   assert.equal(saved.length, 1); assert.equal(ui.calls.at(-1).url, '/api/evolution');
   const command = JSON.parse(ui.calls.at(-1).options.body);
   assert.equal(command.expectedVersion, 8); assert.equal(command.expectedSourceRevision, 'source-eight');
-  assert.deepEqual(command.command.data, { region: 'Centro', purpose: 'Venda', notes: 'Preserve existing field' });
+  assert.deepEqual(command.command.data, { region: 'Centro' }, 'Only reviewed changes are sent; the server preserves unrelated fields and immutable metadata');
   assert.equal(command.command.type, 'save'); assert.equal(button(ui.tree, 'Ficha atualizada').props.disabled, true);
   ui.change(find(ui.tree, node => node.type === 'textarea'), 'Resposta editada'); await ui.click('Adicionar ao rascunho');
   assert.deepEqual(uses, ['Resposta editada']); assert.equal(find(ui.tree, node => node.type === 'dialog'), undefined);
   assert.ok(ui.calls.every(call => call.url !== '/api/conversations'), 'No send endpoint');
   ui.unmount();
+
+  const summaryResult = () => ({ ...result(), assistance: { ...result().assistance, changes: [], summary: [{ text: 'Procura imóvel no Centro.', messageId: uuid(40), evidence: 'Procuro no Centro.' }] }, review: { ...result().review, record: { ...result().review.record, data: { ...result().review.record.data, qualificationNotes: 'Observação anterior preservada.' } } } });
+  const summaryUi = harness('app/conversation-assistant.tsx', props, { response: async (url, options) => url === '/api/evolution'
+    ? Response.json({ state: { records: [{ ...summaryResult().review.record, data: JSON.parse(options.body).command.data }] } }) : Response.json(summaryResult()) });
+  await summaryUi.click('Assistente'); await summaryUi.click('Analisar conversa');
+  assert.match(text(summaryUi.tree), /Resumo e intenção do cliente/); assert.equal(button(summaryUi.tree, 'Salvar dados revisados').props.disabled, true);
+  summaryUi.change(find(summaryUi.tree, node => node.props.type === 'checkbox'), true); await summaryUi.click('Salvar dados revisados');
+  const summarySave = JSON.parse(summaryUi.calls.at(-1).options.body).command.data;
+  assert.match(summarySave.qualificationNotes, /^Observação anterior preservada\./); assert.match(summarySave.qualificationNotes, /Procura imóvel no Centro\./);
+  summaryUi.unmount(); saved.pop();
 
   for (const options of [{ demo: true }, {}]) {
     const sim = harness('app/conversation-assistant.tsx', { ...props, demonstration: !options.demo }, options);

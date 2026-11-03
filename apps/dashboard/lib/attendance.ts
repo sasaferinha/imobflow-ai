@@ -13,6 +13,7 @@ import { ATTENDANCE_DEBOUNCE_MS, claimAttendanceTurn, enqueueAttendanceTurn, rel
 import { readTenantAISettings } from './ai/tenant-settings-server';
 import type { TenantAISettings } from './ai/tenant-settings';
 import { handoffCopy, mentionsUnsupportedService, serviceAllowed, tenantCopy, tenantQualificationQuestion, unsupportedServiceReply } from './ai/tenant-runtime';
+import { audioNeedsTranscription, audioTranscriptText, transcribeConversationAudio } from './ai/audio-transcription';
 
 const FALLBACK_MESSAGE = 'Recebemos sua mensagem. Um corretor dará continuidade ao seu atendimento.';
 const AFTER_HOURS_COMPLETE_MESSAGE = 'Muito obrigado pelas informações! Seu cadastro foi concluído. No momento não há corretores disponíveis. Nossa equipe dará continuidade ao seu atendimento no próximo horário comercial.';
@@ -123,7 +124,7 @@ export async function buildAttendanceReply(input: AttendanceInput, onHandoff?: (
     return unsupportedServiceReply(aiSettings);
   };
   if (!serviceAllowed(aiSettings, localPatch.purpose ?? current.purpose)) return outsideScope(localPatch.purpose ?? current.purpose);
-  if (input.hasAudio) return 'Recebemos seu áudio. Para continuar o atendimento automático, envie também sua solicitação por texto.';
+  if (input.hasAudio || audioNeedsTranscription(input.message)) return 'Recebemos seu áudio, mas não conseguimos transcrevê-lo com segurança. Pode enviar sua solicitação por texto ou pedir atendimento de um corretor?';
   if (isSimpleGreeting(input.message) && !localPatch.summaryConfirmed) {
     const question = tenantQualificationQuestion(current, aiSettings, qualificationQuestion(current));
     if (question === QUALIFICATION_COMPLETE_MESSAGE) {
@@ -247,6 +248,16 @@ export async function respondToIncomingMessage(input: AttendanceInput, outerDead
       let simulator: string | undefined;
       for (const [index, message] of turn.messages.entries()) {
         if (humanRequested) break;
+        // The database lease prevents a second bot worker interpreting this turn
+        // concurrently. Cached transcripts remain useful on a recovered turn.
+        const cachedAudio = audioTranscriptText(message.message);
+        if (cachedAudio) { message.message = cachedAudio; message.hasAudio = false; }
+        else if (message.hasAudio || audioNeedsTranscription(message.message)) {
+          const transcript = await transcribeConversationAudio({ companyId: input.companyId, conversationId: input.conversationId,
+            externalMessageId: message.externalMessageId, deadline: Math.min(deadline - 20000, Date.now() + 14000) });
+          if (transcript) { message.message = transcript; message.hasAudio = false; }
+          else message.hasAudio = true;
+        }
         if (requestsHuman(message.message)) { humanRequested = true; scopeHandoff = false; scopeClosed = false; content = handoffCopy(aiSettings, FALLBACK_MESSAGE); break; }
         // Interpret short consecutive answers in order, then send only the final reply.
         // Only the last item may call the model; earlier items use the local parser.

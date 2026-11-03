@@ -283,7 +283,9 @@ function load(file, overrides = {}, extra = {}) {
     assert.equal(query, `leads?company_id=eq.${tenantA}&id=eq.${tenantA}&select=interest_profile,goal,property_type,region,budget_max,updated_at&limit=1`);
     return [{ interest_profile: {}, goal: '', property_type: '', region: '', budget_max: 0, updated_at: 'synthetic' }];
   } } });
-  assert.match(await audioAttendance.buildAttendanceReply({ hasAudio: true, message: '', companyId: tenantA, leadId: tenantA }), /envie também.*texto/);
+  const unavailableAudio = await audioAttendance.buildAttendanceReply({ hasAudio: true, message: '', companyId: tenantA, leadId: tenantA });
+  assert.match(unavailableAudio, /não conseguimos transcrevê-lo com segurança/);
+  assert.match(unavailableAudio, /por texto ou pedir atendimento de um corretor/);
   let signedReadCalls=0;
   const signedReader=load('lib/whatsapp-media.ts',{'./supabase':{supabaseServiceRequest:async()=>[{expires_at:new Date(Date.now()+60000).toISOString()}]}},{process:{env:{SUPABASE_URL:'https://storage.test',SUPABASE_SECRET_KEY:'fake'}},fetch:async(url,options)=>{
     signedReadCalls++;

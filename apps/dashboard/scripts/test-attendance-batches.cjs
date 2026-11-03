@@ -24,7 +24,7 @@ function load(relative, overrides) {
 }
 
 function worker({ initialProfile = {}, batches, superseded = 0, conflict = false,
-  enqueueFailure = false, overflow = false, model = false, modelData, ignored = false, lastReply } = {}) {
+  enqueueFailure = false, overflow = false, model = false, modelData, ignored = false, lastReply, transcript = null } = {}) {
   let profile = plain(initialProfile), paused = false, consumed = ignored, active = null;
   const claims = [], attempts = [], replies = [], deliveries = [], released = [], reconciled = [], reads = [], ai = [], waits = [];
   const input = {
@@ -38,6 +38,8 @@ function worker({ initialProfile = {}, batches, superseded = 0, conflict = false
     assert.equal(event.conversationId, input.conversationId);
   };
   const api = load('lib/attendance.ts', {
+    './ai/audio-transcription': { audioNeedsTranscription: text => text === 'Áudio recebido', audioTranscriptText: () => null,
+      transcribeConversationAudio: async request => { assertScope(request); assert.match(request.externalMessageId, /^wamid\.batch\./); assert.ok(request.deadline > Date.now()); return transcript; } },
     'node:timers/promises': { setTimeout: async ms => { waits.push(ms); } },
     './attendance-turns': {
       ATTENDANCE_DEBOUNCE_MS: 3000,
@@ -121,6 +123,12 @@ const completeProfile = {
 };
 
 (async () => {
+  const spoken = worker({ batches: [['Áudio recebido']], transcript: 'Quero comprar uma casa' });
+  await spoken.run(); assert.equal(spoken.profile.purpose, 'Venda'); assert.equal(spoken.profile.propertyType, 'Casa');
+  assert.equal(spoken.replies.length, 1); assert.doesNotMatch(spoken.replies[0], /não conseguimos transcrever/);
+  const failedAudio = worker({ batches: [['Áudio recebido']] });
+  await failedAudio.run(); assert.match(failedAudio.replies[0], /não conseguimos transcrevê-lo/); assert.deepEqual(failedAudio.profile, {});
+  console.log('PASS audio turn: leased transcription enters qualification; unavailable audio does not invent preferences.');
   const burst = worker({ batches: [['Comprar', 'Casa', 'Lavras']], model: true });
   await burst.run();
   assert.deepEqual(burst.profile, { purpose: 'Venda', propertyType: 'Casa', city: 'Lavras' });

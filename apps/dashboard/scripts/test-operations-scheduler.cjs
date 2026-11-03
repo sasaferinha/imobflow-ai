@@ -14,6 +14,7 @@ function load(file){
     if(file.endsWith('scheduler.ts')&&specifier==='../supabase')return{async supabaseServiceRequest(url,options){queries++;if(url==='rpc/crm_operational_rules_ready'){assert.deepEqual(JSON.parse(JSON.stringify(options.body)),{p_company_id:company,p_actor_id:'owner'});assert.equal(options.timeoutMs,3000);assert.ok(activeActor);readinessCalls++;if(readinessFailure)throw Error('Synthetic schema readiness unavailable');return structuredClone(readiness);}if(url==='rpc/release_inactive_lead_pool'){assert.deepEqual(JSON.parse(JSON.stringify(options.body)),{p_company_id:company,p_actor_id:'owner'});assert.equal(options.timeoutMs,5000);assert.equal(readiness?.inactivePool,true);assert.equal(readiness?.verifiedInactiveContacts,true);assert.equal(readinessFailure,false);poolCalls++;return structuredClone(pool);}assert.match(url,new RegExp(`company_id=eq.${company}`));assert.match(url,/active=eq.true&role=eq.owner/);return hasOwner?[{id:'owner',name:'Manager example'}]:[];}};
     if(file.endsWith('scheduler.ts')&&specifier==='../tenant-context')return{withAccount:async(actor,callback)=>{assert.equal(actor.companyId,company);assert.equal(actor.role,'owner');activeActor=actor;try{return await callback();}finally{activeActor=null;}}};
     if(file.endsWith('scheduler.ts')&&specifier==='./feature')return{evolutionEnabled:id=>enabled&&id===company};
+    if(file.endsWith('scheduler.ts')&&specifier==='./buyer-report-store')return{generateScheduledBuyerReport:async snapshot=>{assert.equal(snapshot.companyId,company);return{status:'already-generated'};}};
     if(file.endsWith('scheduler.ts')&&specifier==='./server')return{
       evolutionIntegrated:()=>integrated,
       readEvolutionState:async actor=>{reads++;assert.equal(actor.companyId,company);assert.ok(activeActor);return structuredClone(state);},
@@ -108,4 +109,26 @@ function load(file){
   assert.equal((await scheduler.runEvolutionScheduler(company,'Company example',Clock.now()+1000)).report,'deferred');
   assert.equal(poolCalls,priorPoolCalls,'deadline reserve prevents starting another release');
   console.log('PASS operations scheduler: legacy opt-in fails closed for missing/false/failed readiness, independent capture/report routines continue, ready pool still executes, active owner/tenant context, deadline, CAS and review deduplication. Synthetic only.');
+  // Exercise the real cron handler: a swallowed snapshot storage error must
+  // surface to monitoring even when opportunity/outbox processing succeeded.
+  let buyerStatus='unavailable';const cronRuns=[];const cronModule={exports:{}};
+  const cronDependencies={
+    'node:crypto':require('node:crypto'),
+    'next/server':{NextResponse:{json:Response.json}},
+    '@/lib/automations':{runAutomations:async()=>({failed:0})},
+    '@/lib/tenant-context':{withAccount:(_actor,callback)=>callback()},
+    '@/lib/supabase':{supabaseRequest:async(resource)=>resource.startsWith('account_companies?')?[{company_id:company,name:'Synthetic first'},{company_id:'22222222-2222-4222-a222-222222222222',name:'Synthetic second'}]:undefined},
+    '@/lib/opportunities':{sweepOpportunities:async()=>({complete:true,generated:0,processed:0,busy:false})},
+    '@/lib/message-outbox':{sweepMessageOutbox:async()=>{}},
+    '@/lib/whatsapp-media':{removeExpiredConversationMedia:async()=>{}},
+    '@/lib/evolution/scheduler':{runEvolutionScheduler:async companyId=>{cronRuns.push(companyId);return{report:'disabled',...(buyerStatus?{buyerReport:{status:companyId===company?buyerStatus:'already-generated'}}:{})};}},
+  };
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../app/api/automations/cron/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,
+    {module:cronModule,exports:cronModule.exports,require:name=>cronDependencies[name],process:{env:{CRON_SECRET:'synthetic-cron-secret'}},Date:Clock,Buffer,console});
+  const cronRequest=()=>new Request('https://app.example.test/api/automations/cron',{headers:{authorization:'Bearer synthetic-cron-secret'}});
+  const unavailable=await cronModule.exports.GET(cronRequest());const unavailableBody=await unavailable.json();
+  assert.equal(unavailable.status,500,'Snapshot failure must not report a healthy cron');assert.equal(unavailableBody.executions[0].failed,true);
+  assert.equal(unavailableBody.executions[0].crm.buyerReport.status,'unavailable');assert.equal(unavailableBody.executions[1].failed,false);assert.equal(cronRuns.length,2,'Other tenants continue after snapshot failure');
+  for(const status of ['generated','already-generated',null]){buyerStatus=status;const healthy=await cronModule.exports.GET(cronRequest());assert.equal(healthy.status,200);assert((await healthy.json()).executions.every(item=>item.failed===false));}
+  console.log('PASS cron report monitoring: unavailable snapshot returns 500 with tenant detail; other tenants continue; generated, already-generated and disabled remain healthy.');
 })().catch(error=>{console.error(error);process.exit(1);});

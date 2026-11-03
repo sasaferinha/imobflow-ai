@@ -6,7 +6,7 @@ import type { BrokerAssistance, AssistantField, AssistantSector } from '@/lib/ai
 import type { CrmRecord } from '@/lib/evolution/model';
 import s from './conversation-assistant.module.css';
 
-type Result = { assistance: BrokerAssistance; review: { record: CrmRecord; expectedVersion: number; expectedSourceRevision?: string }; messageCount: number };
+type Result = { assistance: BrokerAssistance; review: { record: CrmRecord; expectedVersion: number; expectedSourceRevision?: string }; messageCount: number; audioUnavailable?: number };
 type Props = { leadId: string; customerName: string; demonstration?: boolean; disabled?: boolean; onUseReply: (text: string) => void; onSaved?: () => void; notify?: (message: string) => void };
 const labels: Record<AssistantField, string> = { purpose: 'Finalidade', propertyType: 'Tipo de imóvel', region: 'Região desejada', budgetMin: 'Orçamento mínimo', budgetMax: 'Orçamento máximo', features: 'Preferências' };
 const showValue = (value: unknown, field: AssistantField) => value === '' || value == null ? 'Não informado' : field === 'budgetMin' || field === 'budgetMax' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value)) : String(value);
@@ -16,6 +16,7 @@ function demoResult(leadId: string): Result {
     explanation: 'Exemplo simulado: nenhuma conversa real foi analisada. Na operação real, cada sugestão de cadastro vem acompanhada do trecho informado pelo cliente.',
     changes: [{ field: 'region', value: 'Centro', messageId: 'demo-evidence', evidence: 'Procuro um apartamento no Centro.' }],
     missing: ['budgetMax'],
+    summary: [{ text: 'Procura apartamento no Centro; orçamento ainda não informado.', messageId: 'demo-evidence', evidence: 'Procuro um apartamento no Centro.' }],
   }, review: { expectedVersion: 0, record: { id: `lead:${leadId}`, kind: 'leads', data: { region: '' }, createdAt: '', updatedAt: '', createdBy: '' } } };
 }
 function isResult(value: unknown): value is Result {
@@ -32,6 +33,7 @@ export default function ConversationAssistant({ leadId, customerName, demonstrat
   const [open, setOpen] = useState(false), [loading, setLoading] = useState(false), [saving, setSaving] = useState(false);
   const [sector, setSector] = useState<AssistantSector>('automatic'), [result, setResult] = useState<Result | null>(null);
   const [reply, setReply] = useState(''), [selected, setSelected] = useState<AssistantField[]>([]), [error, setError] = useState(''), [saved, setSaved] = useState(false), [refreshRequired, setRefreshRequired] = useState(false);
+  const [summarySelected, setSummarySelected] = useState(false);
   const demo = demonstration || isProductDemo();
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current?.abort(); }; }, []);
   useEffect(() => { if (open && dialog.current && !dialog.current.open) dialog.current.showModal(); }, [open]);
@@ -43,7 +45,7 @@ export default function ConversationAssistant({ leadId, customerName, demonstrat
   async function analyze() {
     if (busy.current) return;
     busy.current = true; const current = ++sequence.current;
-    setLoading(true); setError(''); setResult(null); setSelected([]); setSaved(false); setRefreshRequired(false);
+    setLoading(true); setError(''); setResult(null); setSelected([]); setSummarySelected(false); setSaved(false); setRefreshRequired(false);
     const controller = new AbortController(); request.current = controller;
     try {
       let data: unknown;
@@ -59,15 +61,21 @@ export default function ConversationAssistant({ leadId, customerName, demonstrat
     finally { if (mounted.current && current === sequence.current) { setLoading(false); busy.current = false; } }
   }
   async function saveProfile() {
-    if (!result || !selected.length || busy.current || saved || refreshRequired) return;
+    if (!result || (!selected.length && !summarySelected) || busy.current || saved || refreshRequired) return;
     busy.current = true; setSaving(true); setError('');
     const current = ++sequence.current, controller = new AbortController(); request.current = controller;
     const changes = Object.fromEntries(result.assistance.changes.filter(change => selected.includes(change.field)).map(change => [change.field, change.value]));
+    if (summarySelected && result.assistance.summary?.length) {
+      const summary = result.assistance.summary.map(item => `• ${item.text}`).join('\n');
+      const previous = String(result.review.record.data.qualificationNotes || '').trim();
+      changes.qualificationNotes = [previous, `Resumo da conversa revisado em ${new Date().toLocaleDateString('pt-BR')}:\n${summary}`].filter(Boolean).join('\n\n');
+      if (String(changes.qualificationNotes).length > 6000) { busy.current = false; setSaving(false); setError('Os detalhes da qualificação chegaram ao limite. Revise o campo na ficha antes de acrescentar o resumo.'); return; }
+    }
     try {
       if (!demo) {
         const response = await dashboardFetch('/api/evolution', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
           body: JSON.stringify({ expectedVersion: result.review.expectedVersion, expectedSourceRevision: result.review.expectedSourceRevision,
-            command: { type: 'save', kind: 'leads', id: result.review.record.id, data: { ...result.review.record.data, ...changes } } }),
+            command: { type: 'save', kind: 'leads', id: result.review.record.id, data: changes } }),
         });
         const data = await response.json() as { state?: { records?: CrmRecord[] }; error?: string };
         if (!response.ok) throw new Error(data.error || 'Não foi possível confirmar a atualização.');
@@ -89,11 +97,16 @@ export default function ConversationAssistant({ leadId, customerName, demonstrat
     {open && <dialog ref={dialog} className={s.dialog} aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} onCancel={event => { event.preventDefault(); close(); }}>
       <div className={s.heading}><div><span>APOIO AO ATENDIMENTO</span><h2 id={`${id}-title`}>Assistente da conversa</h2><p>{customerName}</p></div><button type="button" className={s.close} aria-label="Fechar assistente" disabled={saving} onClick={close}>×</button></div>
       <div className={s.body}>
-        <p id={`${id}-description`} className={s.intro}>{demo ? 'Demonstração simulada e isolada. Nenhum dado real é enviado à IA.' : 'Analisa até 40 mensagens de texto recentes. Ao solicitar, esse texto e as preferências comerciais são enviados ao provedor de IA configurado.'} A IA pode errar. Revise tudo antes de usar; nada é enviado ao cliente automaticamente.</p>
+        <p id={`${id}-description`} className={s.intro}>{demo ? 'Demonstração simulada e isolada. Nenhum dado real é enviado à IA.' : 'Analisa até 40 mensagens recentes, incluindo áudios transcritos. Ao solicitar, os textos, áudios disponíveis e preferências comerciais são enviados ao provedor de IA configurado.'} A IA pode errar. Revise tudo antes de usar; nada é enviado ao cliente automaticamente.</p>
         <div className={s.controls}><label htmlFor={`${id}-sector`}>Foco do atendimento<select id={`${id}-sector`} value={sector} disabled={loading || saving} onChange={event => setSector(event.target.value as AssistantSector)}><option value="automatic">Usar finalidade da ficha</option><option value="Venda">Compra e venda</option><option value="Aluguel">Locação</option><option value="Geral">Esclarecer necessidade</option></select></label><button type="button" className={s.primary} disabled={loading || saving} onClick={() => void analyze()}>{loading ? 'Analisando…' : result ? 'Analisar novamente' : 'Analisar conversa'}</button></div>
         {error && <p role="alert" className={s.error}>{error}</p>}
         {loading && <p role="status" className={s.loading}>Lendo o contexto e separando sugestões para sua revisão…</p>}
         {result && <>
+          {Boolean(result.audioUnavailable) && <p className={s.hint}>{result.audioUnavailable} áudio(s) não puderam ser transcritos nesta análise. Escute os originais ou tente novamente; eles não foram usados no resumo.</p>}
+          {Boolean(result.assistance.summary?.length) && <section className={s.section} aria-labelledby={`${id}-summary`}><h3 id={`${id}-summary`}>Resumo e intenção do cliente</h3>
+            <div className={s.changes}>{result.assistance.summary!.map((item, index) => <div key={`${item.messageId}-${index}`} className={s.change}><span><strong>{item.text}</strong><span className={s.evidence}>Cliente: “{item.evidence}”</span></span></div>)}</div>
+            <label className={s.change}><input type="checkbox" checked={summarySelected} disabled={saving || saved || refreshRequired} onChange={event => setSummarySelected(event.target.checked)} /><span>Revisei o resumo e quero acrescentá-lo aos detalhes da qualificação na ficha.</span></label>
+          </section>}
           <section className={s.section} aria-labelledby={`${id}-reply`}><div className={s.sectionHeading}><h3 id={`${id}-reply`}>Sugestão de resposta</h3><span>{demo ? 'Exemplo' : `${result.messageCount} textos analisados`}</span></div>
             <textarea aria-label="Editar resposta sugerida" rows={4} value={reply} maxLength={1600} onChange={event => setReply(event.target.value)} />
             <p className={s.hint}>A mensagem vai para o rascunho. Você decide quando enviar.</p><button type="button" className={s.secondary} disabled={!reply.trim() || saving} onClick={() => { close(); onUseReply(reply.trim()); }}>Adicionar ao rascunho</button>
@@ -104,7 +117,7 @@ export default function ConversationAssistant({ leadId, customerName, demonstrat
               <span><strong>{labels[change.field]}</strong><span className={s.old}>Atual: {showValue(result.review.record.data[change.field], change.field)}</span><span className={s.proposed}>Sugerido: {showValue(change.value, change.field)}</span><span className={s.evidence}>Cliente: “{change.evidence}”</span></span>
             </label>)}</div> : <p className={s.empty}>Nenhuma nova preferência explícita foi encontrada. A ficha permanece como está.</p>}
             {result.assistance.missing.length > 0 && <p className={s.hint}>Ainda vale confirmar: {result.assistance.missing.map(field => labels[field as AssistantField] || field).join(', ')}.</p>}
-            {result.assistance.changes.length > 0 && <button type="button" className={s.primary} disabled={saving || !selected.length || saved || refreshRequired} onClick={() => void saveProfile()}>{saving ? 'Salvando…' : saved ? demo ? 'Revisão simulada' : 'Ficha atualizada' : demo ? 'Simular atualização da ficha' : 'Salvar dados revisados'}</button>}
+            {(result.assistance.changes.length > 0 || Boolean(result.assistance.summary?.length)) && <button type="button" className={s.primary} disabled={saving || (!selected.length && !summarySelected) || saved || refreshRequired} onClick={() => void saveProfile()}>{saving ? 'Salvando…' : saved ? demo ? 'Revisão simulada' : 'Ficha atualizada' : demo ? 'Simular atualização da ficha' : 'Salvar dados revisados'}</button>}
           </section>
           {result.assistance.explanation && <p className={s.explanation}>{result.assistance.explanation}</p>}
         </>}

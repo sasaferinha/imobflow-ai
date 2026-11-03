@@ -34,6 +34,7 @@ async function run() {
     await db.query("INSERT INTO conversations(id,company_id,lead_id,channel,status,assigned_broker_id,assigned_to) VALUES($1,$2,$3,'WhatsApp','Aberta',$4,'Broker 12')", [id(502), id(1), id(102), id(12)]);
     await db.exec(migration('20261007190000_crm_evolution_workspace.sql'));
     await db.exec(migration('20261007210000_crm_evolution_legacy_bridge.sql'));
+    await db.exec(migration('20261102121000_property_capture_ownership.sql'));
     const sessions = { owner: ['a'.repeat(64),11], broker: ['b'.repeat(64),12], otherBroker: ['c'.repeat(64),13], otherCompany: ['d'.repeat(64),21] };
     for (const [token, actor] of Object.values(sessions)) await db.query("INSERT INTO account_sessions(token_hash,broker_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [crypto.createHash('sha256').update(token).digest('hex'),id(actor)]);
     await db.exec('SET ROLE service_role');
@@ -212,6 +213,23 @@ async function run() {
     for(const callback of afterCallbacks)await callback();
     assert.ok(matchingCalls.length>=3,'matching runs only after committed property create/update/closure');
     assert.ok(matchingCalls.every(args=>args[0]===id(1)&&args[1]===realPropertyId));
+    // A broker can capture an actual canonical property and retain the report
+    // and appraisal after a fresh bridge read. Shared catalog access stays read-only.
+    let brokerCaptureState=await snapshot('broker');
+    brokerCaptureState=await save('broker',{type:'save',kind:'properties',data:{name:'Captação própria fictícia',code:'CAPTURE-BROKER',purpose:'Venda',price:450000,status:'Disponível',assignedTo:id(12),district:'Centro',city:'Lavras',propertyType:'Apartamento',area:80,capturedAt:'2026-10-01',captureReport:'Vistoria realizada; autorização conferida.',captureCondition:'Bom estado.'}},brokerCaptureState);
+    const captured=brokerCaptureState.records.find(record=>record.kind==='properties'&&record.data.code==='CAPTURE-BROKER');
+    assert(captured?.legacy);assert.equal((await queryRow('properties',captured.legacy.id)).captured_by,id(12));
+    const references=[420000,450000,480000].map(price=>({source:'Referência sintética '+price,area:80,price,observedOn:'2026-10-01'}));
+    brokerCaptureState=await save('broker',{type:'save',kind:'properties',id:captured.id,data:{valuationComparables:JSON.stringify(references),valuationAdjustment:0,captureDocumentation:'Matrícula conferida.'}},brokerCaptureState);
+    const persistedCapture=(await snapshot('broker')).records.find(record=>record.id===captured.id);
+    assert.equal(persistedCapture.data.captureReport,'Vistoria realizada; autorização conferida.');
+    assert.equal(persistedCapture.data.captureDocumentation,'Matrícula conferida.');assert.equal(JSON.parse(persistedCapture.data.valuationComparables).length,3);
+    assert((await snapshot('otherBroker')).records.some(record=>record.id===captured.id),'other broker can read shared inventory');
+    assert.equal((await post('otherBroker',{type:'save',kind:'properties',id:captured.id,data:{captureReport:'Foreign overwrite'}},await snapshot('otherBroker'))).status,403);
+    assert.equal((await post('broker',{type:'save',kind:'properties',id:captured.id,data:{assignedTo:id(13)}},await snapshot('broker'))).status,403,'only admin may reassign capture owner');
+    beforeCommit=async()=>{await db.exec('RESET ROLE');await db.query('UPDATE properties SET captured_by=$1 WHERE id=$2',[id(13),captured.legacy.id]);await db.exec('SET ROLE service_role');};
+    assert.equal((await post('broker',{type:'save',kind:'properties',id:captured.id,data:{captureReport:'Stale owner overwrite'}},await snapshot('broker'))).status,409,'canonical owner changes invalidate overlay writes too');
+    assert.equal((await snapshot('owner')).records.find(record=>record.id===captured.id).data.captureReport,'Vistoria realizada; autorização conferida.');
     console.log('PASS integrated CRM API: real session/route/model/bridge/SQL, canonical CRUD and closure, true text[] images, timezone, no seeds, portfolio+tenant isolation, stale version/source/SQL race, atomic proposal rollback, preserved classic data, truthful post-commit failure and commit-only matching hook.');
     console.log('Entire test uses synthetic isolated PGlite. No production credentials, client messages or external network.');
   } finally {await db.close();}
