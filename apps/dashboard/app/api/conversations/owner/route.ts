@@ -39,6 +39,7 @@ export const POST = protectedRoute(async (request: NextRequest) => {
       { status: changed ? 200 : 409 },
     );
   } catch (error) {
+    if (error instanceof Error && error.message.includes('broker_compliance_pending')) return NextResponse.json({ error: 'Conclua os registros e atividades pendentes para receber novos leads. Sua carteira atual continua disponível.' }, { status: 409 });
     if (error instanceof Error && error.message.includes('duty_priority_wait')) return NextResponse.json({ error: 'Os plantonistas têm preferência por cinco minutos após a chegada deste lead. Aguarde o prazo para assumir.' }, { status: 409 });
     return NextResponse.json(
       { error: "Não foi possível alterar o atendimento." },

@@ -43,6 +43,7 @@ async function run() {
     await db.query("INSERT INTO properties(id,company_id,code,title,purpose,price,district,city,property_type) VALUES($1,$2,'RENT-TEST','Aluguel sintético','Aluguel',2000,'Centro','Lavras','Casa')", [id(302), id(1)]);
     await db.exec(migration('20261007190000_crm_evolution_workspace.sql'));
     await db.exec(migration('20261007210000_crm_evolution_legacy_bridge.sql'));
+    await db.exec(migration('20261102121000_property_capture_ownership.sql'));
     const sessions = { owner: ['a'.repeat(64), 11], broker: ['b'.repeat(64), 12], otherBroker: ['c'.repeat(64), 13], otherCompany: ['d'.repeat(64), 21] };
     for (const [token, actor] of Object.values(sessions)) {
       await db.query("INSERT INTO account_sessions(token_hash,broker_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [crypto.createHash('sha256').update(token).digest('hex'), id(actor)]);

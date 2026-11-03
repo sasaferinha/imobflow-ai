@@ -8,6 +8,7 @@ import { canAccess, CrmError } from '@/lib/evolution/model';
 import { getEvolutionSnapshot, EvolutionServerError } from '@/lib/evolution/server';
 import { BrokerAssistantError, generateBrokerAssistance, type AssistantMessage, type AssistantSector } from '@/lib/ai/broker-assistant';
 import { readTenantAISettings } from '@/lib/ai/tenant-settings-server';
+import { audioNeedsTranscription, audioTranscriptText, transcribeConversationAudio } from '@/lib/ai/audio-transcription';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,7 +52,19 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     const conversationIds = new Set(conversations.map(row => row.id));
     const rows = await supabaseRequest<Array<{ id: string; company_id: string; conversation_id: string; direction: string; content: string }>>(`messages?company_id=eq.${company}&conversation_id=in.(${[...conversationIds].join(',')})&select=id,company_id,conversation_id,direction,content&order=created_at.desc,id.desc&limit=40`);
     if (!Array.isArray(rows) || rows.length > 40 || rows.some(row => !uuid.test(row.id) || row.company_id !== actor.companyId || !conversationIds.has(row.conversation_id))) throw new Error('scope');
-    const messages: AssistantMessage[] = rows.slice().reverse().filter(row => typeof row.content === 'string' && row.content.trim()).map(row => ({ id: row.id, side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing', text: row.content.slice(0, 2000) }));
+    let audioUnavailable = 0;
+    const audioDeadline = Date.now() + 20000;
+    for (const row of rows) {
+      if (!['incoming', 'Entrada'].includes(row.direction) || typeof row.content !== 'string') continue;
+      const cached = audioTranscriptText(row.content);
+      if (cached) row.content = cached;
+      else if (audioNeedsTranscription(row.content)) {
+        const transcript = await transcribeConversationAudio({ companyId: actor.companyId, conversationId: row.conversation_id, messageId: row.id, deadline: audioDeadline });
+        if (transcript) row.content = transcript;
+        else { audioUnavailable++; row.content = ''; }
+      }
+    }
+    const messages: AssistantMessage[] = rows.slice().reverse().filter(row => typeof row.content === 'string' && row.content.trim()).map(row => ({ id: row.id, side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing', text: row.content.slice(0, 6000) }));
     const assistance = await generateBrokerAssistance({ sector, profile: lead.data, messages, settings });
     // Recheck access after the external request; never return stale review data after reassignment.
     const fresh = await getEvolutionSnapshot(actor);
@@ -62,7 +75,7 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     // complete target (including ownership/source metadata), then return the
     // fresh global version/revision so saving still uses the normal strict CAS.
     if (!isDeepStrictEqual(current, lead)) return NextResponse.json({ error: 'A ficha foi atualizada durante a análise. Analise novamente para revisar os dados atuais.' }, { status: 409 });
-    return NextResponse.json({ assistance, review: { record: current, expectedVersion: fresh.state.version, expectedSourceRevision: fresh.state.sourceRevision }, messageCount: messages.length });
+    return NextResponse.json({ assistance, review: { record: current, expectedVersion: fresh.state.version, expectedSourceRevision: fresh.state.sourceRevision }, messageCount: messages.length, audioUnavailable });
   } catch (error) {
     if (error instanceof BrokerAssistantError || error instanceof EvolutionServerError || error instanceof CrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('broker_assistant_failed');

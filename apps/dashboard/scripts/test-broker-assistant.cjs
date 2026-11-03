@@ -45,6 +45,10 @@ const completion = value => ({ status: 'completed', output: [{ type: 'message', 
     { ...valid(), changes: [{ ...valid().changes[1], field: 'budgetMin', value: 500000 }, valid().changes[1]] },
   ];
   for (const value of invalid) assert.throws(() => provider.validateBrokerAssistance(value, messages), error => error.status === 502);
+  const summary = [{ text: 'Procura apartamento no Centro.', messageId: uuid(40), evidence: 'apartamento no Centro' }];
+  assert.equal(provider.validateBrokerAssistance({ ...valid(), summary }, messages).summary[0].text, summary[0].text);
+  assert.throws(() => provider.validateBrokerAssistance({ ...valid(), summary: [{ ...summary[0], messageId: uuid(41) }] }, messages), error => error.status === 502, 'Broker speech cannot prove customer intent');
+  assert.throws(() => provider.validateBrokerAssistance({ ...valid(), summary: [{ ...summary[0], evidence: 'Fabricated evidence' }] }, messages), error => error.status === 502);
   const validBefore = calls.length;
   delete env.OPENAI_API_KEY;
   assert.equal(provider.brokerAssistantConfigured(), false);
@@ -80,6 +84,7 @@ const completion = value => ({ status: 'completed', output: [{ type: 'message', 
     '@/lib/evolution/server': { EvolutionServerError, getEvolutionSnapshot: async () => { snapshotReads++; if (snapshotReads % 2 === 0) onSecondRead?.(); return { state: structuredClone(state), actor }; } },
     '@/lib/ai/broker-assistant': { ...provider, generateBrokerAssistance: async input => { generationCalls.push(input); return syntheticOutput; } },
     '@/lib/ai/tenant-settings-server': require('./helpers/tenant-ai-fixture.cjs').legacyTenantAIReader,
+    '@/lib/ai/audio-transcription': { audioNeedsTranscription: () => false, audioTranscriptText: () => null, transcribeConversationAudio: async () => assert.fail('Text-only fixture must not transcribe media') },
     '@/lib/supabase': { supabaseRequest: async url => { reads.push(url); return url.startsWith('conversations?') ? [{ id: uuid(20), company_id: actor.companyId, lead_id: uuid(30) }] : messages.map(item => ({ id: item.id, company_id: actor.companyId, conversation_id: uuid(20), direction: item.side, content: item.text })).reverse(); } },
   }, { structuredClone });
   const request = (body = { leadId: uuid(30), sector: 'automatic' }, headers = { origin: 'https://test.invalid' }) => new Request('https://test.invalid/api/conversations/assist', { method: 'POST', headers, body: JSON.stringify(body) });

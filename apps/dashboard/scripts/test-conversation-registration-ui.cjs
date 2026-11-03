@@ -171,7 +171,7 @@ async function run() {
   assert.equal(menu.calls[0].url, '/api/evolution');
   assert.equal(menu.calls[0].options.credentials, 'same-origin');
   assert.equal(trigger(menu.tree).props['aria-expanded'], true);
-  assert.deepEqual(nodes(menu.tree).filter(node => node.props.role === 'menuitem').map(node => text(find(node, child => child.type === 'strong'))), ['Lead', 'Iniciar atendimento', 'Agendar visita', 'Visita realizada', 'Proposta', 'Negociado']);
+  assert.deepEqual(nodes(menu.tree).filter(node => node.props.role === 'menuitem').map(node => text(find(node, child => child.type === 'strong'))), ['Lead', 'Iniciar atendimento', 'Agendar visita', 'Visita realizada', 'Proposta', 'Imóvel vendido / alugado']);
   assert.equal(find(menu.tree, node => node.props.role === 'menu').props.id, trigger(menu.tree).props['aria-controls']);
   find(menu.tree, node => node.props.role === 'menu').props.onKeyDown({ key: 'Escape', preventDefault() {} }); menu.render();
   assert.equal(trigger(menu.tree).props['aria-expanded'], false);
@@ -223,7 +223,7 @@ async function run() {
   await manual.open(); assert.equal(control(manual.tree, 'Negociação deste registro').props.value, uuid(701), 'active negotiation persists between registrations');
   assert.match(text(manual.tree), /Esta negociação é manual. As mudanças de etapa dependem do seu registro/);
   assert(!text(manual.tree).includes('A IA identifica'), 'extra negotiations never promise automatic stage classification');
-  manual.select('Negociado'); assert.match(text(manual.tree), /Registre uma proposta enviada/, 'primary proposal is not offered to close a different negotiation');
+  manual.select('Imóvel vendido / alugado'); assert.match(text(manual.tree), /Registre uma proposta enviada/, 'primary proposal is not offered to close a different negotiation');
   button(manual.tree, 'Cancelar').props.onClick(); manual.render();
   button(manual.tree, '+ Nova negociação').props.onClick(); manual.render(); await manual.settle();
   assert.match(text(manual.tree), /mantendo a mesma pessoa e conversa/);
@@ -363,10 +363,10 @@ async function run() {
   const historicalData = JSON.parse(historical.calls.at(-1).options.body).command.data;
   assert.equal(historicalData.propertyId, propertyId); assert.equal(historicalData.occurredAt, '2026-01-02T11:45');
   assert.equal(historicalData.taskId, undefined, 'an unscheduled past visit is distinct from selecting an appointment'); historical.unmount();
-  const broker = harness(); await broker.open(); broker.select('Negociado');
+  const broker = harness(); await broker.open(); broker.select('Imóvel vendido / alugado');
   assert.equal(submitButton(broker.tree).props.disabled, true, 'shared property cannot be closed by a broker without permission');
   assert.match(text(broker.tree), /administrador/); broker.unmount();
-  const owner = harness({ snapshot: fixture({ role: 'owner' }) }); await owner.open(); owner.select('Negociado');
+  const owner = harness({ snapshot: fixture({ role: 'owner' }) }); await owner.open(); owner.select('Imóvel vendido / alugado');
   await owner.submit(); assert.equal(owner.calls.filter(call => call.options.method === 'POST').length, 0, 'closing requires explicit confirmation');
   owner.change('Confirmo que', true); await owner.submit();
   assert.equal(JSON.parse(owner.calls.at(-1).options.body).command.data.confirmed, true); owner.unmount();

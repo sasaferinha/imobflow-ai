@@ -44,6 +44,7 @@ const request = (token = tokens[0]) => new NextRequest(`https://example.test/api
   try {
     for (const file of fs.readdirSync(path.resolve(__dirname, '../../../supabase/migrations')).filter(file => file.endsWith('.sql') && file > isolationMigration).sort()) await database.exec(migration(file));
     await seedCompanies(database);
+    await database.query('SELECT touch_broker_presence($1,$2)', [id(1), id(11)]);
     clock = Date.parse('2026-10-12T15:00:00Z'); // Monday, noon in São Paulo; deterministic past fixture.
     await database.query("INSERT INTO broker_accounts(id,company_id,name,name_key,password_hash,role,active,email,email_key) VALUES($1,$2,'Other broker','other broker','fixture','broker',true,'other@example.test','other@example.test')", [id(12), id(1)]);
     for (const [index, broker] of [[0, 11], [1, 21], [2, 12]]) await database.query("INSERT INTO account_sessions(token_hash,broker_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [crypto.createHash('sha256').update(tokens[index]).digest('hex'), id(broker)]);
@@ -55,7 +56,9 @@ const request = (token = tokens[0]) => new NextRequest(`https://example.test/api
     await database.query("INSERT INTO conversations(id,company_id,lead_id,status,bot_paused) VALUES($1,$2,$3,'Aberta',false),($4,$2,$5,'Aberta',false)", [id(502), id(1), id(102), id(503), id(103)]);
     await database.query("INSERT INTO messages(company_id,conversation_id,direction,sender_type,content,created_at) SELECT $1,$2,'incoming','client','Synthetic busy traffic',now()-interval '1 second' FROM generate_series(1,250)", [id(1), id(502)]);
     await database.query("INSERT INTO messages(id,company_id,conversation_id,direction,sender_type,content,created_at) VALUES($1,$2,$3,'incoming','client','Synthetic duty message',$4)", [id(703), id(1), id(503), new Date(clock - 3 * 60000).toISOString()]);
-    const document = {companyId: id(1), version: 1, records: [], events: [], members: [], settings: {operations: {dutyPriorityEnabled: true}}};
+    // This fixture isolates the unassigned queue with an old deterministic JS
+    // clock; assigned-lead admin deadlines are covered by management SQL tests.
+    const document = {companyId: id(1), version: 1, records: [], events: [], members: [], settings: {operations: {dutyPriorityEnabled: true, contactLimitHours: 8760}}};
     await database.query('INSERT INTO crm_evolution_workspaces(company_id,version,document,updated_by) VALUES($1,1,$2::jsonb,$3)', [id(1), JSON.stringify(document), id(11)]);
     // Reservation was created two minutes after the first arrival. It must not
     // restart either the preferred two-minute or the general five-minute clock.

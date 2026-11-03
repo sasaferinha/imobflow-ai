@@ -34,6 +34,10 @@ function runtime(react = React, environment = {}) {
         if (id === 'react') return react;
         if (id === 'react/jsx-runtime') return require(id);
         if (id.endsWith('.css')) return css;
+        if (id === './management' || id === '@/lib/evolution/management') return load('lib/evolution/management.ts');
+        if (id === './property-workflows' && relative.startsWith('lib/')) return load('lib/evolution/property-workflows.ts');
+        if (id === '@/lib/evolution/property-workflows') return load('lib/evolution/property-workflows.ts');
+        if (['./property-workflows','./property-feedback-panel','./management-settings','./buyer-report-panel','./meta-ads-panel'].includes(id)) return load('app/evolution/' + id.slice(2) + '.tsx');
         if (id === './account-menu') return load('app/evolution/account-menu.tsx');
         if (id === './ai-settings') return load('app/evolution/ai-settings.tsx');
         if (id === './settings-hub') return load('app/evolution/settings-hub.tsx');
@@ -271,6 +275,14 @@ const editableSource = editorHarness({ kind: 'leads', defaults: { source: '  Fon
 editableSource.submit(); assert.equal(editableSource.saves[0].source, '  Fonte antiga  ', 'the original source is kept byte-for-byte when untouched');
 editableSource.changeSource('Outros: Feira local  '); editableSource.submit();
 assert.equal(editableSource.saves[1].source, 'Outros: Feira local', 'only an explicitly changed source is trimmed on submit');
+
+const metadataRecord = structuredClone(state.records.find(record => record.kind === 'tasks'));
+metadataRecord.data.assignedAt = '2026-11-02T12:01:23.456Z';
+metadataRecord.data.visitStartedAt = '2026-11-02T12:04:27.891Z';
+const metadataEditor = editorHarness({ kind: 'tasks', record: metadataRecord });
+metadataEditor.submit();
+assert.equal(Object.hasOwn(metadataEditor.saves[0], 'assignedAt'), false, 'server assignment metadata is never resubmitted by a full record form');
+assert.equal(Object.hasOwn(metadataEditor.saves[0], 'visitStartedAt'), false, 'server visit timestamps are not rounded or overwritten by an unrelated edit');
 
 const closedState = structuredClone(state);
 const closedCase = closedState.records.find(record => record.kind === 'cases');

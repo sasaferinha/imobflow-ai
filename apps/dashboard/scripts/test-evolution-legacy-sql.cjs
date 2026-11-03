@@ -53,6 +53,7 @@ async function run() {
     await db.query("UPDATE leads SET interest_profile=interest_profile || '{\"financing\":{\"approved\":true},\"confirmationFlag\":true}'::jsonb WHERE id=$1", [id(101)]);
     await db.exec(migration('20261007190000_crm_evolution_workspace.sql'));
     await db.exec(migration('20261007210000_crm_evolution_legacy_bridge.sql'));
+    await db.exec(migration('20261102121000_property_capture_ownership.sql'));
     assert.equal((await db.query('SELECT count(*)::int n FROM crm_evolution_workspaces')).rows[0].n, 0, 'additive migrations seed no workspace or customer');
     await db.exec('SET ROLE service_role');
 

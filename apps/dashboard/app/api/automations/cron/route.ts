@@ -41,7 +41,8 @@ export async function GET(request: NextRequest) {
           ? await withAccount({ companyId: company.company_id, company: company.name, brokerId: 'system', name: 'Agendador', role: 'owner' }, () => runAutomations('cron'))
           : { failed: 0 };
         const crm = Date.now() + 12000 < deadline ? await runEvolutionScheduler(company.company_id, company.name, deadline) : { report: 'deferred' };
-        executions.push({ companyId: company.company_id, complete, generated, processed, busy, crm, failed: legacy.failed > 0 });
+        const buyerReportFailed = 'buyerReport' in crm && typeof crm.buyerReport === 'object' && crm.buyerReport !== null && 'status' in crm.buyerReport && crm.buyerReport.status === 'unavailable';
+        executions.push({ companyId: company.company_id, complete, generated, processed, busy, crm, failed: legacy.failed > 0 || buyerReportFailed });
         await supabaseRequest('conversation_settings?on_conflict=company_id',{method:'POST',prefer:'resolution=merge-duplicates',body:{company_id:company.company_id,last_scheduler_at:new Date().toISOString()}});
       } catch { executions.push({ companyId: company.company_id, complete: false, generated: 0, failed: true }); }
       if (Date.now() >= deadline) break;
