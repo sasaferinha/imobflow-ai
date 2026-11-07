@@ -4,9 +4,10 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type R
 import { canAccess, dashboardMetrics, filterCases, freshness, type Actor, type CrmState, type CrmRecord, type CrmCommand as Command } from '@/lib/evolution/model';
 import { CAPTURE_STAGES, MODULES, NEGOTIATION_STAGES, type Field, type Kind } from '@/lib/evolution/schema';
 import s from './evolution.module.css';
+import leadForm from './lead-registration.module.css';
 import AccountMenu from './account-menu';
 import OperationsCenter, { CatalogHealth, OperationsSettings } from './operations-center';
-import { operationsSummary } from '@/lib/evolution/operations';
+import { operationsSettings, operationsSummary } from '@/lib/evolution/operations';
 import LeadSourcePicker from '../lead-source-picker';
 import ConversationRegistration from '../conversation-registration';
 import { historicalFunnel } from '@/lib/evolution/historical-funnel';
@@ -638,6 +639,8 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave, full
   const definition = MODULES[editor.kind];
   const guided = ['people', 'leads', 'properties'].includes(editor.kind);
   const brokerReply = actor.role !== 'owner' && editor.kind === 'followups';
+  const creatingLead = editor.kind === 'leads' && !editor.record;
+  const completeLeadRequired = creatingLead && operationsSettings(state).requireCompleteClassification;
   const creatingProperty = editor.kind === 'properties' && !editor.record;
   const fieldRequired = (field: Field) => Boolean(field.required || creatingProperty && NEW_PROPERTY_FORM_ESSENTIALS.some(key => key === field.key));
   const initial: Values = {};
@@ -661,20 +664,41 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave, full
     prepared[field.key] = value;
   }
   const [data, setData] = useState<Values>(prepared);
+  const [editedLeadFields, setEditedLeadFields] = useState<string[]>(() => Object.keys(editor.defaults || {}));
   const selectedPerson = editor.kind === 'leads' ? state.records.find(record => record.kind === 'people' && record.id === data.personId) : undefined;
   const existingSourceLead = !editor.record && ['leads', 'cases'].includes(editor.kind) ? state.records.find(record => record.kind === 'leads' && record.legacy?.table === 'leads' && record.data.personId === data.personId) : undefined;
   const duplicate = editor.kind === 'people' && state.records.some(record => record.kind === 'people' && record.id !== editor.record?.id && ((data.email && v(record, 'email').toLowerCase() === String(data.email).toLowerCase()) || (data.phone && v(record, 'phone').replace(/\D/g, '') === String(data.phone).replace(/\D/g, ''))));
   const fields = definition.fields.filter(field => !workflowFieldKeys.has(field.key)).filter(field => !brokerReply || ['response', 'status'].includes(field.key));
-  const sections = [...new Set(fields.map(field => fieldSection(editor.kind, field)))].sort((a, b) => Number(a.toLowerCase().includes('complementares')) - Number(b.toLowerCase().includes('complementares')));
+  if (creatingLead) {
+    const firstFields = ['personId', 'name', 'assignedTo', 'status', 'purpose', 'source'];
+    const order = (field: Field) => firstFields.includes(field.key) ? firstFields.indexOf(field.key) : firstFields.length;
+    fields.sort((a, b) => order(a) - order(b));
+  }
+  const sectionFor = (field: Field) => !creatingLead ? fieldSection(editor.kind, field)
+    : fieldRequired(field) ? 'Dados essenciais'
+    : ['propertyType', 'city', 'region', 'budgetMax', 'budgetMin', 'propertyId', 'bedrooms', 'parkingSpaces', 'features'].includes(field.key) ? 'Preferências do imóvel'
+    : 'Outros detalhes';
+  const sections = [...new Set(fields.map(sectionFor))].sort((a, b) => creatingLead
+    ? ['Dados essenciais', 'Preferências do imóvel', 'Outros detalhes'].indexOf(a) - ['Dados essenciais', 'Preferências do imóvel', 'Outros detalhes'].indexOf(b)
+    : Number(a.toLowerCase().includes('complementares')) - Number(b.toLowerCase().includes('complementares')));
   const draftRecord: CrmRecord = { id: editor.record?.id || 'draft', kind: editor.kind, data: existingSourceLead ? { ...data, source: existingSourceLead.data.source ?? '' } : data, createdAt: editor.record?.createdAt || new Date().toISOString(), updatedAt: editor.record?.updatedAt || new Date().toISOString(), createdBy: actor.brokerId };
   const update = (field: Field, value: string) => {
     onDirtyChange?.(true);
+    if (creatingLead) setEditedLeadFields(current => current.includes(field.key) ? current : [...current, field.key]);
     setData(current => {
     const next: Values = { ...current, [field.key]: field.type === 'number' && value !== '' ? Number(value) : value };
     if (editor.kind === 'leads' && field.key === 'personId') {
       const person = state.records.find(item => item.kind === 'people' && item.id === value);
       const previousPerson = state.records.find(item => item.kind === 'people' && item.id === current.personId);
-      if (person && (!String(current.name || '').trim() || current.name === previousPerson?.data.name)) next.name = person.data.name;
+      if (creatingLead) {
+        const linkedLead = state.records.find(item => item.kind === 'leads' && item.legacy?.table === 'leads' && item.data.personId === value);
+        for (const candidate of fields) {
+          if (candidate.key === 'personId' || editedLeadFields.includes(candidate.key)) continue;
+          // Reuse the canonical contact instead of submitting empty preferences
+          // over an existing lead. Explicit changes in this draft always win.
+          next[candidate.key] = linkedLead?.data[candidate.key] ?? (candidate.key === 'name' ? person?.data.name : candidate.key === 'assignedTo' ? person?.data.assignedTo : undefined) ?? prepared[candidate.key] ?? '';
+        }
+      } else if (person && (!String(current.name || '').trim() || current.name === previousPerson?.data.name)) next.name = person.data.name;
     }
     if (field.key === 'journey') next.stage = 'Lead';
     if (['caseId', 'leadId'].includes(field.key)) {
@@ -702,8 +726,8 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave, full
       : field.ref ? state.records.filter(record => record.kind === field.ref).map(record => ({ id: record.id, name: label(record) })) : null;
     const id = `edit-${field.key}`;
     const rental = data.purpose === 'Aluguel' || (editor.kind === 'proposals' && state.records.some(item => item.id === data.caseId && item.data.purpose === 'Aluguel'));
-    const fieldLabel = rental && field.key === 'amount' ? (editor.kind === 'goals' ? 'Meta de aluguel mensal contratado (R$)' : 'Aluguel mensal proposto (R$)') : rental && field.key === 'price' ? 'Aluguel mensal (R$)' : field.label;
-    if (field.key === 'source') return <div key={field.key} className={s.fullField}><LeadSourcePicker id={id} value={String((existingSourceLead ? existingSourceLead.data.source : data.source) ?? '')} onChange={source => update(field, source)} options={state.settings.sources} disabled={locked || busy} required={required} />{locked && <p className={s.formNote}>Origem vinculada ao lead. Para corrigir, use Registro em Conversas.</p>}</div>;
+    const fieldLabel = creatingLead && field.key === 'personId' ? 'Cliente' : creatingLead && field.key === 'name' ? 'Nome do lead' : rental && field.key === 'amount' ? (editor.kind === 'goals' ? 'Meta de aluguel mensal contratado (R$)' : 'Aluguel mensal proposto (R$)') : rental && field.key === 'price' ? 'Aluguel mensal (R$)' : field.label;
+    if (field.key === 'source') return <div key={field.key} className={s.fullField}><LeadSourcePicker id={id} value={String((existingSourceLead ? existingSourceLead.data.source : data.source) ?? '')} onChange={source => update(field, source)} options={state.settings.sources} disabled={locked || busy} required={required} compact={creatingLead} />{locked && <p className={s.formNote}>Origem vinculada ao lead. Para corrigir, use Registro em Conversas.</p>}</div>;
     if (guided && field.control) {
       const suggestions = field.key === 'propertyType' ? PROPERTY_TYPE_CHOICES : field.key === 'features' ? PROPERTY_FEATURE_CHOICES
         : ['city', 'district', 'region'].includes(field.key) ? locationSuggestions(state.records, field.key as 'city' | 'district' | 'region', String(data.city || '')) : options || [];
@@ -720,28 +744,30 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave, full
         : <input id={id} disabled={locked || busy} list={field.key === 'reason' ? 'evolution-reasons' : undefined} type={field.type || 'text'} required={required} min={creatingProperty && ['area', 'price'].includes(field.key) ? 0.01 : field.min} step={field.type === 'number' ? field.key === 'target' ? '1' : 'any' : undefined} value={String(data[field.key] ?? '')} onChange={event => update(field, event.target.value)} {...(field.key === 'month' ? { pattern: '[0-9]{4}-(0[1-9]|1[0-2])', placeholder: '2026-10' } : {})} />}
     </label>;
   }
-  const form = <form className={fullPage ? s.registrationForm : undefined} aria-label={fullPage ? 'Cadastro de lead' : undefined} onSubmit={event => { event.preventDefault(); if (busy) return; void onSave(brokerReply ? { status: data.status, response: data.response } : { ...data, ...(existingSourceLead ? { source: existingSourceLead.data.source ?? '' } : typeof data.source === 'string' && data.source !== prepared.source ? { source: data.source.trim() } : {}) }); }}>
-      <div className={fullPage ? s.registrationLayout : s.modalFormLayout}>
+  const form = <form className={fullPage ? `${s.registrationForm} ${creatingLead ? leadForm.form : ''}` : undefined} aria-label={fullPage ? 'Cadastro de lead' : undefined} onSubmit={event => { event.preventDefault(); if (busy) return; void onSave(brokerReply ? { status: data.status, response: data.response } : { ...data, ...(existingSourceLead ? { source: existingSourceLead.data.source ?? '' } : typeof data.source === 'string' && data.source !== prepared.source ? { source: data.source.trim() } : {}) }); }}>
+      <div className={fullPage ? creatingLead ? leadForm.layout : s.registrationLayout : s.modalFormLayout}>
       <div className={fullPage ? s.registrationFields : s.formBody}>
         {error && <div className={s.error} role="alert"><Icon name="alert" size={16} />{error}</div>}
         {duplicate && <div className={s.warning}><Icon name="alert" size={16} />Já existe uma pessoa com este telefone ou email. Confira o cadastro existente; os contatos não serão mesclados automaticamente.</div>}
         {definition.description && <p className={s.formNote}>{definition.description}</p>}
         {brokerReply && editor.record && <div className={s.followupContext}><strong>{v(editor.record, 'name')}</strong><p>{v(editor.record, 'request')}</p><small>Prazo: {date(v(editor.record, 'dueAt'), true)} · a conclusão depende da revisão do gestor.</small></div>}
-        {guided && !fullPage && <div className={s.guidedIntro}><span className={s.guidedIntroIcon}><Icon name={editor.kind === 'properties' ? 'home' : 'people'} size={20} /></span><div><strong>{creatingProperty ? 'Selecione as opções e preencha os dados essenciais' : 'Selecione as opções e complete só o que souber'}</strong><p>{editor.kind === 'leads' ? 'Para uma ficha comercial completa: nome, telefone ou email da pessoa vinculada, responsável, origem, compra ou aluguel, tipo de imóvel, cidade ou região e orçamento máximo.' : editor.kind === 'properties' ? 'Comece pela identificação, finalidade, valor, tipo, localização e descrição. Informe área, quartos e vagas; selecione 0 quando não houver. Características adicionais e fotos ficam na seção complementar.' : 'Informe um telefone ou email para facilitar o próximo atendimento. Os demais detalhes podem ser preenchidos depois.'} Campos obrigatórios para salvar continuam marcados com *.</p></div></div>}
-        {!fullPage && ['people', 'leads', 'properties'].includes(editor.kind) && <CatalogHealth state={state} record={draftRecord} />}
+        {creatingLead && <div className={leadForm.intro}><p>Selecione o cliente e confira os campos com *. {completeLeadRequired ? 'A empresa exige também o interesse completo do cliente.' : 'As preferências podem ser preenchidas depois.'}</p>{existingSourceLead && <p role="status">Cadastro existente selecionado. Os dados já informados foram reaproveitados para revisão.</p>}{completeLeadRequired && <CatalogHealth state={state} record={draftRecord} />}</div>}
+        {guided && !fullPage && !creatingLead && <div className={s.guidedIntro}><span className={s.guidedIntroIcon}><Icon name={editor.kind === 'properties' ? 'home' : 'people'} size={20} /></span><div><strong>{creatingProperty ? 'Selecione as opções e preencha os dados essenciais' : 'Selecione as opções e complete só o que souber'}</strong><p>{editor.kind === 'leads' ? 'Para uma ficha comercial completa: nome, telefone ou email da pessoa vinculada, responsável, origem, compra ou aluguel, tipo de imóvel, cidade ou região e orçamento máximo.' : editor.kind === 'properties' ? 'Comece pela identificação, finalidade, valor, tipo, localização e descrição. Informe área, quartos e vagas; selecione 0 quando não houver. Características adicionais e fotos ficam na seção complementar.' : 'Informe um telefone ou email para facilitar o próximo atendimento. Os demais detalhes podem ser preenchidos depois.'} Campos obrigatórios para salvar continuam marcados com *.</p></div></div>}
+        {!fullPage && !creatingLead && ['people', 'leads', 'properties'].includes(editor.kind) && <CatalogHealth state={state} record={draftRecord} />}
         {sections.map((section, index) => {
-          const sectionFields = fields.filter(field => fieldSection(editor.kind, field) === section);
-          const optional = guided && section.toLowerCase().includes('complementares') && sectionFields.every(field => !fieldRequired(field));
+          const sectionFields = fields.filter(field => sectionFor(field) === section);
+          const optional = guided && (creatingLead ? section !== 'Dados essenciais' && !(completeLeadRequired && section === 'Preferências do imóvel') : section.toLowerCase().includes('complementares')) && sectionFields.every(field => !fieldRequired(field));
           if (optional) return <details key={section} id={fullPage ? `lead-section-${index}` : undefined} className={`${s.guidedOptional} ${fullPage ? s.registrationOptional : ''}`} onInvalidCapture={event => { event.currentTarget.open = true; }}><summary><span>{section}</span><small>Opcional · {sectionFields.filter(field => String(data[field.key] ?? '').trim()).length} preenchidos</small></summary><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></details>;
-          if (fullPage) return <section key={section} id={`lead-section-${index}`} className={s.registrationSection} aria-labelledby={`lead-section-title-${index}`}><header><span className={s.registrationStep} aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><div><h2 id={`lead-section-title-${index}`}>{section}</h2><p>{section === 'Cliente e atendimento' ? 'Vincule o cliente e defina quem vai acompanhar o contato.' : section === 'Origem do cliente' ? 'Selecione como o cliente chegou até a imobiliária.' : 'Escolha o perfil de imóvel e a faixa de investimento.'}</p></div></header><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></section>;
+          if (fullPage) return <section key={section} id={`lead-section-${index}`} className={`${s.registrationSection} ${creatingLead ? leadForm.section : ''}`} aria-labelledby={`lead-section-title-${index}`}><header>{!creatingLead && <span className={s.registrationStep} aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>}<div><h2 id={`lead-section-title-${index}`}>{section}</h2>{!creatingLead && <p>{section === 'Cliente e atendimento' ? 'Vincule o cliente e defina quem vai acompanhar o contato.' : section === 'Origem do cliente' ? 'Selecione como o cliente chegou até a imobiliária.' : 'Escolha o perfil de imóvel e a faixa de investimento.'}</p>}</div></header><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></section>;
           return section === 'Origem do cliente' ? <div className={s.formSection} key={section}>{sectionFields.map(fieldControl)}</div> : <fieldset className={s.formSection} key={section}><legend>{section}</legend><div className={s.formGrid}>{sectionFields.map(fieldControl)}</div></fieldset>;
         })}
+        {creatingLead && !completeLeadRequired && <details className={leadForm.completeness}><summary>Conferir ficha comercial</summary><CatalogHealth state={state} record={draftRecord} /></details>}
         <datalist id="evolution-reasons">{state.settings.lossReasons.map(item => <option key={item} value={item} />)}</datalist>
         {editor.kind === 'proposals' && <p className={s.formNote}>Marcar como “Enviada” registra o status interno. Não envia uma mensagem ao cliente.</p>}
         {editor.kind === 'cases' && <p className={s.formNote}>Pausas e perdas precisam de motivo. Uma mudança de etapa mantém o histórico anterior.</p>}
         {editor.kind === 'followups' && <p className={s.formNote}>O corretor envia o retorno como “Respondida”. O gestor confere, escreve a avaliação e conclui ou solicita um novo retorno. Não há envio ao cliente.</p>}
       </div>
-      {fullPage && <aside className={s.registrationAside} aria-label="Resumo do preenchimento"><div className={s.registrationSummary}><span className={s.registrationEyebrow}>SEU NOVO LEAD</span><h2>Complete no seu ritmo</h2><p>Os campos com * são obrigatórios para salvar. Você pode complementar a ficha depois.</p><CatalogHealth state={state} record={draftRecord} /><nav aria-label="Seções do cadastro">{sections.map((section, index) => <button type="button" key={section} onClick={() => { const target = document.getElementById(`lead-section-${index}`); if (target instanceof HTMLDetailsElement) target.open = true; target?.scrollIntoView({ block: 'start', behavior: 'auto' }); target?.querySelector<HTMLElement>('input:not([type="hidden"]), select, textarea, summary')?.focus({ preventScroll: true }); }}><span>{String(index + 1).padStart(2, '0')}</span>{section}<Icon name="arrow" size={14} /></button>)}</nav><div className={s.registrationSafety}><Icon name="shield" size={17} /><span>Nenhuma mensagem será enviada ao cliente ao cadastrar.</span></div></div></aside>}
+      {fullPage && !creatingLead && <aside className={s.registrationAside} aria-label="Resumo do preenchimento"><div className={s.registrationSummary}><span className={s.registrationEyebrow}>SEU NOVO LEAD</span><h2>Complete no seu ritmo</h2><p>Os campos com * são obrigatórios para salvar. Você pode complementar a ficha depois.</p><CatalogHealth state={state} record={draftRecord} /><nav aria-label="Seções do cadastro">{sections.map((section, index) => <button type="button" key={section} onClick={() => { const target = document.getElementById(`lead-section-${index}`); if (target instanceof HTMLDetailsElement) target.open = true; target?.scrollIntoView({ block: 'start', behavior: 'auto' }); target?.querySelector<HTMLElement>('input:not([type="hidden"]), select, textarea, summary')?.focus({ preventScroll: true }); }}><span>{String(index + 1).padStart(2, '0')}</span>{section}<Icon name="arrow" size={14} /></button>)}</nav><div className={s.registrationSafety}><Icon name="shield" size={17} /><span>Nenhuma mensagem será enviada ao cliente ao cadastrar.</span></div></div></aside>}
       </div>
       <footer className={fullPage ? s.registrationActions : s.dialogActions}>{fullPage && <span><Icon name="shield" size={16} />O cadastro só é criado ao salvar.</span>}<button type="button" className={s.secondaryButton} onClick={onClose} disabled={busy}>Cancelar</button><button type="submit" className={s.primaryButton} disabled={busy}><Icon name="check" size={16} />{busy ? 'Salvando…' : fullPage ? 'Salvar lead' : brokerReply && data.status === 'Respondida' ? 'Enviar retorno ao gestor' : 'Salvar registro'}</button></footer>
     </form>;

@@ -108,10 +108,17 @@ assert.equal(reply.calls.at(-1)[1].response, 'Retorno fictício concluído.');
 assert.equal(reply.calls.at(-1)[1].status, 'Respondida');
 
 const newLead = renderToStaticMarkup(React.createElement(RecordEditor, { editor: { kind: 'leads' }, state, actor: owner, busy: false, error: '', onClose() {}, onSave() {} }));
-assert(newLead.includes('Interesse principal do cliente'));
-assert(newLead.includes('Preferências e informações complementares'));
+assert(newLead.includes('Nome do lead') && newLead.includes('Dados essenciais'));
+assert(newLead.includes('Preferências do imóvel') && newLead.includes('Outros detalhes'));
 assert(newLead.includes('Orçamento máximo'));
+for (const key of ['name', 'personId', 'assignedTo', 'source', 'status']) {
+  assert(new RegExp(`<(?:input|select)\\b(?=[^>]*\\bid="edit-${key}")(?=[^>]*\\brequired="")[^>]*>`).test(newLead), `${key} remains a native required control.`);
+}
+assert(/<input\b(?=[^>]*\bname="edit-purpose-choice")(?=[^>]*\brequired="")[^>]*>/.test(newLead), 'Purchase/rental purpose remains a required native radio group.');
 assert(!/<option selected="">À vista<\/option>/.test(newLead), 'Unknown financing must not be prefilled as cash.');
+const strictLead = renderToStaticMarkup(React.createElement(RecordEditor, { editor: { kind: 'leads' }, state: { ...state, settings: { ...state.settings, operations: { ...state.settings.operations, requireCompleteClassification: true } } }, actor: owner, busy: false, error: '', onClose() {}, onSave() {} }));
+assert(strictLead.includes('A empresa exige também o interesse completo do cliente.'));
+assert(![...strictLead.matchAll(/<details\b[^>]*>[\s\S]*?<\/details>/g)].some(match => match[0].includes('Preferências do imóvel')), 'Admin-required qualification remains expanded.');
 const finished = { ...state.records[0], data: { ...state.records[0].data, status: 'Concluída', response: 'Retorno fictício', review: 'Conferido' } };
 const detail = renderToStaticMarkup(React.createElement(RecordDetail, { record: finished, state, actor: owner, busy: false, error: '', onClose() {}, onEdit() {}, onCreate() {}, onSelect() {}, execute() {} }));
 assert(!detail.includes('>Editar</button>'), 'Closed accountability history must not offer edit.');

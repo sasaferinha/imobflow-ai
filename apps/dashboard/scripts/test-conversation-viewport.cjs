@@ -20,7 +20,7 @@ assert.ok(count > 10);
 assert.equal([...read('layout.tsx').matchAll(/import\s+['"]\.\/(.+\.css)['"]/g)].at(-1)[1], 'conversation-viewport.css');
 assert.match(css, /overflow-y:\s*auto/);
 assert.doesNotMatch(css, /scrollbar-width:\s*none|::-webkit-scrollbar|overflow(?:-y)?:\s*hidden/);
-assert.match(css, /conversation-settings\[open\]/);
+assert.match(css, /conversation-options\[open\]/);
 assert.match(css, /conversation-sync-notice/);
 assert.match(css, /flex:\s*1;\s*min-height:\s*100px/);
 assert.match(css, /flex:\s*1;\s*min-height:\s*160px/);

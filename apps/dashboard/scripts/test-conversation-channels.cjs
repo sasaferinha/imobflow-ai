@@ -236,6 +236,15 @@ async function run() {
 
   const center = centerHarness();
   assert(center.workspace() && !center.instagram(), 'WhatsApp is initially the only workspace');
+  const options = find(center.tree, node => node.type === 'details' && node.props.className === 'conversation-options');
+  assert(options && options.props.open === undefined, 'Occasional controls start in a closed native disclosure');
+  assert(component(options, 'ConversationAlerts') && component(options, 'BrowserPushSettings'), 'Closed controls keep alert components mounted');
+  assert(component(center.tree, 'ConversationUrgentAlert') && !component(options, 'ConversationUrgentAlert'), 'Urgent notices remain outside the collapsed controls');
+  let returnedFocus = false;
+  const disclosure = { open: true, querySelector: () => ({ focus: () => { returnedFocus = true; } }) };
+  options.props.onKeyDown({ key: 'Escape', currentTarget: disclosure });
+  assert.equal(disclosure.open, false);
+  assert(returnedFocus, 'Closing options with Escape returns focus to its summary');
   const expectedWA = ['wa', 'generic', 'ads', 'variant', 'spaced'];
   assert.deepEqual(Array.from(center.workspace().props.leads, item => item.id), expectedWA, 'Only exact Instagram Direct is a separate source');
   assert.deepEqual(Array.from(center.workspace().props.inbox, item => item.leadId), expectedWA);

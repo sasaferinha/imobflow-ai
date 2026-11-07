@@ -52,12 +52,23 @@ export default function ConversationCenter(props: Omit<ComponentProps<typeof Con
     return true;
   }
   return <>
-    <ConversationChannels channel={channel} onChange={changeChannel} busy={workspaceBusy} />
-    <div className="conversation-tools" role="group" aria-label="Avisos do WhatsApp">
-      {channel === 'instagram' && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Avisos do WhatsApp</span>}
-      <ConversationAlerts inbox={whatsappInbox} ready={props.ready} demonstration={props.demonstration} />
-      <BrowserPushSettings key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} ready={props.ready} demonstration={props.demonstration} />
-      {channel === 'whatsapp' && <ConversationSettings/>}
+    <div className="conversation-toolbar">
+      <ConversationChannels channel={channel} onChange={changeChannel} busy={workspaceBusy} />
+      <details className="conversation-options" onKeyDown={event => {
+        if (event.key === 'Escape' && event.currentTarget.open) {
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector('summary')?.focus();
+        }
+      }}>
+        <summary>Alertas e horários</summary>
+        {/* Native disclosure keeps alert subscriptions and preferences mounted when closed. */}
+        <div className="conversation-tools" role="group" aria-label="Avisos do WhatsApp">
+          {channel === 'instagram' && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Avisos do WhatsApp</span>}
+          <ConversationAlerts inbox={whatsappInbox} ready={props.ready} demonstration={props.demonstration} />
+          <BrowserPushSettings key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} ready={props.ready} demonstration={props.demonstration} />
+          {channel === 'whatsapp' && <ConversationSettings/>}
+        </div>
+      </details>
     </div>
     <ConversationUrgentAlert key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} currentBrokerId={props.currentBrokerId}
       ready={props.ready} demonstration={props.demonstration} visibleLeadIds={whatsappLeads?.map(lead => lead.id)}
@@ -414,10 +425,12 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
         </div>
         {!demonstration && <ConversationAttendanceBanner attendance={attendance} ready={ready} saving={saving} release={() => void releaseConversation()}/>}
         <div className="full-chat-body" ref={bodyRef}>{!demonstration && historyPage.leadId === leadId && historyPage.cursor && <button type="button" className="conversation-property-button conversation-load-history" disabled={loadingOlder} onClick={() => void loadOlderMessages()}>{loadingOlder ? 'Carregando…' : 'Carregar mensagens anteriores'}</button>}{thread.messages.length ? thread.messages.map(message => <ConversationMessageBubble key={message.id} message={message} demo={demonstration}/>) : <div className="conversation-empty-thread"><ConversationIcon name="message"/><p>{ready ? 'Ainda não há mensagens deste lead no painel.' : 'Carregando histórico…'}</p></div>}</div>
+        <div className="conversation-reply-area">
         <details className="conversation-quick-reply" key={selected.id}><summary>Resposta sugerida</summary><div><p>{selected.suggestion}</p><button type="button" onClick={() => { dispatch({ type: 'draft', id: selected.id, text: selected.suggestion }); composerRef.current?.focus(); }}>Usar resposta</button></div></details>
         {sendNotice && <p className="conversation-send-notice" role="alert">{sendNotice}</p>}
         {showWhatsAppHandoff && <ConversationWhatsAppHandoff phone={lead.phone || ''} text={thread.draft.trim() || rejectedText || ''} />}
         <form className="full-composer" onSubmit={send}><button type="button" className="conversation-property-button" disabled={loadingProperties || !ready || saving || !canSend} onClick={() => void openPropertyPicker()}><ConversationIcon name="property"/>{loadingProperties ? 'Atualizando…' : 'Imóvel'}</button><input ref={composerRef} value={thread.draft} onChange={(event) => { setSendNotice(''); dispatch({ type: 'draft', id: selected.id, text: event.target.value }); }} aria-label={`Mensagem para ${selected.name}`} placeholder={canSend ? 'Escreva uma resposta…' : attendance.mode === 'closed' ? 'Conversa encerrada' : canClaim ? 'Assuma o atendimento para enviar' : 'Envio disponível ao corretor responsável'} maxLength={4000}/><button className="send-button" type="button" onClick={() => void submitDraft()} disabled={!thread.draft.trim() || !ready || saving || !canSend} aria-label="Adicionar mensagem"><ConversationIcon name="send"/></button></form>
+        </div>
       </section>
       <aside id="conversation-client-profile" hidden={!profileOpen} className="lead-profile panel" aria-label={`Ficha comercial de ${selected.name}`}>
         <div className="conversation-profile-title"><h2>Ficha do cliente</h2><button type="button" aria-label="Fechar ficha do cliente" onClick={() => setProfileOpen(false)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
