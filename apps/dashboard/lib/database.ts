@@ -97,6 +97,11 @@ export async function updateProperty(id: string, input: PropertyInput): Promise<
   return rows[0] ? mapProperty(rows[0]) : null;
 }
 
+export async function updatePropertyImages(id: string, images: string[]): Promise<PropertyRecord | null> {
+  const rows = await supabaseRequest<Record<string, unknown>[]>(`properties?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, { method: 'PATCH', prefer: 'return=representation', body: { images, updated_at: new Date().toISOString() } });
+  return rows[0] ? mapProperty(rows[0]) : null;
+}
+
 export async function deleteProperty(id: string): Promise<boolean> {
   const rows = await supabaseRequest<Array<{ id: string }>>(`properties?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&select=id`, { method: 'DELETE', prefer: 'return=representation' });
   return rows.length > 0;

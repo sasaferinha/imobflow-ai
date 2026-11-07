@@ -4,6 +4,7 @@ import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
+import { createPortal } from 'react-dom';
 import type { LeadLifecycleStatus, LeadProfile } from '@/lib/leads';
 import type { AppointmentRecord, PerformanceSnapshot, PropertyRecord } from '@/lib/operations';
 import AppointmentTimeField from './appointment-time-field';
@@ -207,8 +208,8 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   const [propertyImages, setPropertyImages] = useState<string[]>([]);
   const [preparingImages, setPreparingImages] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const photoFieldRef = useRef<HTMLDivElement>(null);
-  const focusPropertyPhotos = useRef(false);
+  const [photoProperty, setPhotoProperty] = useState<Property | null>(null);
+  const [photoError, setPhotoError] = useState('');
   useEffect(() => {
     if (!propertyPhotoRequest) return;
     const controller = new AbortController();
@@ -221,22 +222,15 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
         if (!property) throw new Error('Imóvel não encontrado. Atualize o catálogo e tente novamente.');
         if (controller.signal.aborted) return;
         setSelectedProperty(null);
-        setEditingProperty(property);
         setPropertyImages(property.images);
-        focusPropertyPhotos.current = true;
-        setPropertyModalOpen(true);
+        setPhotoError('');
+        setPhotoProperty(property);
       } catch (error) {
         if (!controller.signal.aborted) setToast(error instanceof Error ? error.message : 'Não foi possível abrir as fotos.');
       }
     })();
     return () => controller.abort();
   }, [propertyPhotoRequest]);
-  useEffect(() => {
-    if (!propertyModalOpen || !focusPropertyPhotos.current) return;
-    photoFieldRef.current?.scrollIntoView({ block: 'center' });
-    photoFieldRef.current?.querySelector<HTMLInputElement>('input[type="file"]')?.focus({ preventScroll: true });
-    focusPropertyPhotos.current = false;
-  }, [propertyModalOpen, editingProperty]);
   const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
 
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -569,6 +563,19 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
     }
   }
 
+  async function savePropertyPhotos() {
+    if (!photoProperty || savingProperty || preparingImages) return;
+    setSavingProperty(true); setPhotoError('');
+    try {
+      const response = await fetch(`/api/properties/${photoProperty.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'photos', images: propertyImages }) });
+      const result = await response.json() as { data?: Property; error?: string };
+      if (!response.ok || !result.data) throw new Error(result.error || 'Não foi possível salvar as fotos.');
+      setProperties(current => current.map(item => item.id === result.data!.id ? result.data! : item));
+      announcePropertyChange(); setPhotoProperty(null); setPropertyImages([]); notify('Fotos salvas');
+    } catch (error) { setPhotoError(error instanceof Error ? error.message : 'Não foi possível salvar as fotos.'); }
+    finally { setSavingProperty(false); }
+  }
+
   function openNewProperty() {
     setEditingProperty(null);
     setPropertyImages([]);
@@ -616,7 +623,8 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
       setPropertyImages(next);
       notify(`${prepared.length} ${prepared.length === 1 ? 'imagem adicionada' : 'imagens adicionadas'}`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Não foi possível preparar as imagens.');
+      const message = error instanceof Error ? error.message : 'Não foi possível preparar as imagens.';
+      if (photoProperty) setPhotoError(message); else notify(message);
     } finally {
       setPreparingImages(false);
     }
@@ -697,6 +705,17 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
         {view === 'integrations' && <WhatsAppIntegration canEdit={account?.role === 'owner'} onOpenConversations={() => setView('conversations')} />}
       </section>
 
+      {photoProperty && createPortal(<div style={{position:'fixed',inset:0,zIndex:10000,background:'rgba(15,30,50,.5)',display:'grid',placeItems:'center',padding:20}}>
+        <section role="dialog" aria-modal="true" aria-labelledby="photo-dialog-title" style={{background:'#fff',color:'#123052',borderRadius:18,width:'min(600px,100%)',maxHeight:'85dvh',overflowY:'auto',padding:24,boxShadow:'0 20px 80px #1234'}}>
+          <h2 id="photo-dialog-title" style={{margin:'0 0 8px'}}>Fotos do imóvel</h2>
+          <p>{photoProperty.title} · até 5 fotos em JPG, PNG ou WebP</p>
+          {photoError && <p role="alert" style={{color:'#b42318'}}>{photoError}</p>}
+          <label style={{display:'block',margin:'20px 0'}}>Adicionar imagens<input aria-label="Adicionar imagens" style={{display:'block',marginTop:10}} type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={preparingImages || savingProperty || propertyImages.length >= 5} onChange={event => { void addPropertyImages(event.target.files); event.target.value = ''; }} /></label>
+          {preparingImages && <p role="status">Preparando imagens…</p>}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:12}}>{propertyImages.map((image,index) => <div key={index}><img src={image} alt={`Foto ${index + 1}`} style={{width:'100%',height:140,objectFit:'cover',borderRadius:8}}/><button type="button" disabled={savingProperty || preparingImages} onClick={() => setPropertyImages(current => current.filter((_,i) => i !== index))}>Remover foto {index + 1}</button>{index === 0 && <small> · Capa</small>}</div>)}</div>
+          <div style={{display:'flex',justifyContent:'flex-end',gap:12,marginTop:24}}><button type="button" disabled={savingProperty || preparingImages} onClick={() => { setPhotoProperty(null); setPropertyImages([]); }}>Cancelar</button><button type="button" className="primary-button" disabled={savingProperty || preparingImages} onClick={() => void savePropertyPhotos()}>{savingProperty ? 'Salvando…' : 'Salvar fotos'}</button></div>
+        </section>
+      </div>, document.body)}
       {propertyModalOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => { setPropertyModalOpen(false); setEditingProperty(null); setPropertyImages([]); }}>
           <form className="modal-card property-editor-modal" onSubmit={saveProperty} onMouseDown={(event) => event.stopPropagation()}>
@@ -704,7 +723,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
             <section className="property-form-section"><h3>Identificação</h3><div className="form-grid"><label>Código do imóvel<input name="code" defaultValue={editingProperty?.code} placeholder="Ex.: IMO-1042" autoFocus required /></label><label>Título<input name="title" defaultValue={editingProperty?.title} placeholder="Ex.: Residencial das Flores" required /></label></div><label>Descrição<textarea name="description" defaultValue={editingProperty?.description || (editingProperty?.code ? '' : editingProperty?.meta)} placeholder="Destaques, acabamentos, condomínio e diferenciais do imóvel" rows={4} required /></label></section>
             <GuidedPropertyFields key={editingProperty?.id || 'new'} property={editingProperty} properties={properties} />
             <section className="property-form-section"><h3>Operação e divulgação</h3><div className="property-boolean-grid"><fieldset><legend>Chave no escritório</legend><label><input type="radio" name="keyInOffice" value="yes" defaultChecked={editingProperty?.keyInOffice === true} />Sim</label><label><input type="radio" name="keyInOffice" value="no" defaultChecked={editingProperty?.keyInOffice !== true} />Não</label></fieldset><fieldset><legend>Morador no imóvel</legend><label><input type="radio" name="occupied" value="yes" defaultChecked={editingProperty?.occupied === true} />Com morador</label><label><input type="radio" name="occupied" value="no" defaultChecked={editingProperty?.occupied !== true} />Sem morador</label></fieldset><fieldset><legend>Catalogado no Instagram</legend><label><input type="radio" name="catalogedOnInstagram" value="yes" defaultChecked={editingProperty?.catalogedOnInstagram === true} />Sim</label><label><input type="radio" name="catalogedOnInstagram" value="no" defaultChecked={editingProperty?.catalogedOnInstagram !== true} />Não</label></fieldset><fieldset><legend>Catalogado no site</legend><label><input type="radio" name="catalogedOnSite" value="yes" defaultChecked={editingProperty?.catalogedOnSite === true} />Sim</label><label><input type="radio" name="catalogedOnSite" value="no" defaultChecked={editingProperty?.catalogedOnSite !== true} />Não</label></fieldset></div></section>
-            <div className="property-image-field" ref={photoFieldRef}>
+            <div className="property-image-field">
               <div><strong>Fotos do imóvel</strong><span>Até 5 fotos em JPG, PNG ou WebP</span></div>
               <input id="property-images" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { void addPropertyImages(event.target.files); event.target.value = ''; }} />
               <button type="button" className="image-upload-button" disabled={preparingImages || propertyImages.length >= 5} onClick={() => document.getElementById('property-images')?.click()}>{preparingImages ? 'Preparando fotos...' : '＋ Adicionar imagens'}</button>

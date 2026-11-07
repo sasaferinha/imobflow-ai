@@ -1,7 +1,7 @@
 import { protectedRoute } from '@/lib/accounts';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
-import { deleteProperty, updateProperty } from '@/lib/database';
+import { deleteProperty, updateProperty, updatePropertyImages } from '@/lib/database';
 import type { PropertyInput } from '@/lib/operations';
 import { persistPropertyImages } from '@/lib/property-images';
 import { hasSameOrigin } from '@/lib/request-security';
@@ -28,6 +28,12 @@ async function handlePATCH(request: NextRequest, context: { params: Promise<{ id
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const body = await request.json() as Record<string, unknown>;
+    if (body.action === 'photos') {
+      if (Object.keys(body).some(key => !['action', 'images'].includes(key)) || !Array.isArray(body.images) || body.images.length > 5 || cleanImages(body.images).length !== body.images.length) return NextResponse.json({ error: 'Selecione até 5 fotos válidas em JPG, PNG ou WebP.' }, { status: 400 });
+      const images = await persistPropertyImages(cleanImages(body.images));
+      const data = await updatePropertyImages((await context.params).id, images);
+      return data ? NextResponse.json({ data }) : NextResponse.json({ error: 'Imóvel não encontrado.' }, { status: 404 });
+    }
     const yes = (value: unknown) => value === true || value === 'yes';
     const input: PropertyInput = {
       code: clean(body.code, 60), title: clean(body.title, 160), description: clean(body.description, 1200), district: clean(body.district, 120), city: clean(body.city, 120), address: clean(body.address, 300), price: clean(body.price, 80), meta: clean(body.meta, 500),
