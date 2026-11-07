@@ -1,52 +1,71 @@
 /* Conversation-only sizing. Never hide the document scrollbar or shrink text to fit. */
 @media (min-width: 761px) and (min-height: 600px) {
-  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) {
+  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"]:not(:has(.conversation-options[open])) {
     display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%;
   }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) > .workspace {
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) > .workspace {
     display: flex; flex-direction: column; flex: 1; min-height: 0;
   }
   .app-shell.crm-workspace[data-panel-view="conversations"] .topbar { flex-shrink: 0; }
-  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"] .topbar { margin-bottom: 10px; padding-bottom: 0; border-bottom: 0; }
+  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"] > .workspace { position: relative; }
+  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"] .topbar { position: absolute; top: 2px; right: 0; z-index: 40; margin: 0; padding: 0; border: 0; }
+  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"] .topbar .header-actions { flex-wrap: nowrap; width: auto; gap: 8px; }
+  .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"] .conversation-toolbar { padding-right: 270px; min-height: 44px; }
   .app-shell.crm-workspace.evolution-operational[data-panel-view="conversations"] .crm-context-copy { display: none; }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-tools { flex-shrink: 0; margin-bottom: 12px; }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean {
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-tools { flex-shrink: 0; margin-bottom: 12px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean {
     display: flex; flex-direction: column; flex: 1; min-height: 0;
   }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .inbox-layout {
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .inbox-layout {
     flex: 1; min-height: 0; height: 100% !important;
     grid-template-columns: minmax(190px, 25%) minmax(0, 1fr) !important;
   }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .inbox-layout.has-profile {
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .inbox-layout.has-profile {
     grid-template-columns: minmax(190px, 22%) minmax(0, 1fr) minmax(210px, 24%) !important;
   }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .inbox-layout > :is(.inbox-list, .full-chat, .lead-profile) {
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .inbox-layout > :is(.inbox-list, .full-chat, .lead-profile) {
     grid-column: auto; grid-row: auto; min-width: 0; min-height: 0; height: 100% !important; max-height: 100%;
   }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .inbox-layout > .lead-profile:not([hidden]) {
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .inbox-layout > .lead-profile:not([hidden]) {
     display: flex !important; flex-direction: column; gap: 0; padding: 0 16px 16px !important;
     border-left: 1px solid var(--line); border-top: 0; overflow-y: auto; overscroll-behavior: contain;
   }
   .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .lead-profile > * { flex-shrink: 0; }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .conversation-lead-highlights { display: block; }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .full-chat { overflow-y: auto; overscroll-behavior: contain; }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .full-chat-body { flex: 1; min-height: 100px; padding: 14px; overflow-y: auto; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .conversation-lead-highlights { display: block; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .full-chat { overflow-y: auto; overscroll-behavior: contain; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .full-chat-body { flex: 1; min-height: 100px; padding: 14px; overflow-y: auto; }
   .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat > :not(.full-chat-body) { flex-shrink: 0; }
-  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat-head { padding: 12px; gap: 8px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat-head { padding: 7px 10px; gap: 6px 8px; }
   .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat-head .conversation-head-actions { gap: 6px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-head-actions > div > button { min-height: 36px; padding: 7px 8px; font-size: 12px; }
   .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-head-actions button { padding-inline: 8px; }
   .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-inbox-heading > span { white-space: nowrap; }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-empty-state { flex: 1; min-height: 0; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-attendance { gap: 4px 10px; padding: 4px 10px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-attendance > div { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-attendance-help > summary { min-height: 30px; margin: 0; padding-block: 6px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-attendance-help[open] { flex-basis: 100%; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-attendance-help[open] p { margin-bottom: 6px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-reply-area { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 8px; padding: 6px 10px; border-top: 1px solid var(--line); background: var(--paper); }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-quick-reply { min-width: 0; padding: 0; border: 0; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-quick-reply > summary { display: list-item; min-height: 40px; padding: 11px 4px; font-size: 12px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-quick-reply[open] { grid-column: 1 / -1; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-reply-area > :is(.conversation-send-notice, .conversation-whatsapp-handoff) { grid-column: 1 / -1; margin: 4px 0; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-reply-area > .full-composer { min-width: 0; padding: 0; border: 0; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .conversation-reply-area:has(.conversation-quick-reply[open], .conversation-send-notice, .conversation-whatsapp-handoff) > .full-composer { grid-column: 1 / -1; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-composer :is(input, .conversation-property-button) { min-height: 40px; padding-block: 8px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-composer .send-button { width: 40px; height: 40px; min-height: 40px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-empty-state { flex: 1; min-height: 0; }
 }
 @media (min-width: 761px) and (max-width: 1100px) and (min-height: 600px) {
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .inbox-layout.has-profile {
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-clean .full-chat-head .conversation-head-actions { flex-basis: auto; width: auto; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .inbox-layout.has-profile {
     grid-template-columns: minmax(190px, 25%) minmax(0, 1fr) !important;
   }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-settings[open])) .conversation-clean .inbox-layout.has-profile > .full-chat { display: none; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(:has(.conversation-options[open])) .conversation-clean .inbox-layout.has-profile > .full-chat { display: none; }
 }
 @media (min-width: 901px) and (min-height: 600px) {
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(.evolution-operational):not(:has(.conversation-settings[open])) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
-  .app-shell.crm-workspace[data-panel-view="conversations"]:not(.evolution-operational):not(:has(.conversation-settings[open])) > .workspace { padding-block: 20px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(.evolution-operational):not(:has(.conversation-options[open])) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
+  .app-shell.crm-workspace[data-panel-view="conversations"]:not(.evolution-operational):not(:has(.conversation-options[open])) > .workspace { padding-block: 20px; }
 }
 @media (max-width: 760px), (max-height: 599px) {
   .crm-workspace.crm-workspace[data-panel-view="conversations"] .conversation-clean .inbox-layout > .inbox-list {
@@ -64,3 +83,16 @@
 
 .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-sync-notice { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-sync-notice button { min-height: 36px; padding: 6px 12px; border: 1px solid currentColor; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+
+/* Occasional controls stay mounted; urgent notices remain outside this disclosure. */
+.app-shell.crm-workspace[data-panel-view="conversations"] .conversation-toolbar { flex-shrink: 0; margin-bottom: 10px; }
+.app-shell.crm-workspace[data-panel-view="conversations"] .conversation-options { min-width: 0; color: var(--ink); font: 500 13px/1.5 var(--crm-font, var(--native-font)); }
+.app-shell.crm-workspace[data-panel-view="conversations"] .conversation-options > summary { width: fit-content; min-height: 38px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); cursor: pointer; }
+.app-shell.crm-workspace[data-panel-view="conversations"] .conversation-options > summary:focus-visible { outline: 2px solid var(--accent, #0066df); outline-offset: 3px; }
+.app-shell.crm-workspace[data-panel-view="conversations"] .conversation-options[open] > .conversation-tools { margin: 10px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+@media (min-width: 761px) and (min-height: 600px) {
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 8px; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-options { flex: 0 0 auto; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-options[open] { flex: 1 1 100%; }
+  .app-shell.crm-workspace[data-panel-view="conversations"] .conversation-options[open] > summary { margin-left: auto; }
+}

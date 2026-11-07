@@ -24,6 +24,6 @@ export default function ConversationChannels({ channel, onChange, busy = false }
         <ChannelIcon channel={item} /><span>{item === 'whatsapp' ? 'WhatsApp' : 'Instagram'}</span>
       </button>)}
     </div>
-    <span className={s.channelHint}>{busy ? 'Aguarde a operação em andamento.' : channel === 'instagram' ? 'DMs · envio ainda não habilitado' : 'Atendimento pelo WhatsApp'}</span>
+    <span className={s.channelHint} data-busy={busy || undefined}>{busy ? 'Aguarde a operação em andamento.' : channel === 'instagram' ? 'DMs · envio ainda não habilitado' : 'Atendimento pelo WhatsApp'}</span>
   </div>;
 }

@@ -1,0 +1,14 @@
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.intro { color: var(--ev-muted); font-size: 13px; line-height: 1.6; }
+.intro p { margin: 0; }
+.intro p + p { margin-top: 8px; color: var(--ev-brand); }
+.intro > div { margin-top: 12px; }
+.form .section { padding: 20px 24px; }
+.form .section > header { margin-bottom: 18px; }
+.completeness { color: var(--ev-muted); font-size: 12px; }
+.completeness > summary { cursor: pointer; padding: 8px 0; }
+.completeness > summary:focus-visible { outline: 2px solid var(--ev-brand); outline-offset: 3px; }
+.completeness > div { margin-top: 8px; }
+@media (max-width: 560px) {
+  .form .section { padding: 18px; }
+}

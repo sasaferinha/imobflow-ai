@@ -1043,12 +1043,12 @@
 .app { --ev-sidebar-width: 208px; }
 /* The live conversation workspace consumes the viewport instead of stacking fixed-height panels. */
 @media (min-width: 761px) and (min-height: 600px) {
-  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))) { height: 100dvh; min-height: 0; }
-  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))) > .workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))) > .workspace > .pageHead { flex-shrink: 0; min-height: 80px; padding-block: 16px 12px; }
-  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))) > .workspace > .main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-bottom: 16px; }
-  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))) .operationalPanel:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))) .footer { flex-shrink: 0; margin-top: 10px; padding-block: 8px; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-options[open]))) { height: 100dvh; min-height: 0; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-options[open]))) > .workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-options[open]))) > .workspace > .pageHead { flex-shrink: 0; min-height: 48px; padding-block: 4px; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-options[open]))) > .workspace > .main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-bottom: 6px; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-options[open]))) .operationalPanel:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .app[data-operational-page="conversations"] .footer { display: none; }
 }
 .workspace { margin-left: var(--ev-sidebar-width); min-width: 0; }
 .sidebar { position: fixed; z-index: 45; inset: 0 auto 0 0; width: var(--ev-sidebar-width); display: flex; flex-direction: column; padding: 0 12px 18px 0; border-right: 1px solid var(--ev-line); background: var(--ev-paper); color: var(--ev-ink); overflow-y: auto; overscroll-behavior: contain; }
@@ -1306,6 +1306,11 @@
 .app[data-operational-page="conversations"] > .workspace > .main { width: 100%; max-width: none; padding-inline: 12px; box-sizing: border-box; }
 .app[data-operational-page="conversations"] > .workspace > .pageHead { padding-inline: 12px; }
 @media (min-width: 761px) and (min-height: 600px) {
-  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))) { height: 100dvh; min-height: 0; }
-  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-settings[open]))) > .workspace { height: 100%; min-height: 0; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-options[open]))) { height: 100dvh; min-height: 0; }
+  .app[data-operational-page="conversations"]:not(:has(:global(.conversation-options[open]))) > .workspace { height: 100%; min-height: 0; }
+  .app[data-operational-page="conversations"] > .workspace > .pageHead { align-items: center; min-height: 48px; padding-block: 4px; }
+  .app[data-operational-page="conversations"] > .workspace > .pageHead h1 { font-size: 26px; line-height: 1.2; }
+  .app[data-operational-page="conversations"] > .workspace > .pageHead .pageHeading > p { display: none; }
+  .app[data-operational-page="conversations"] .headerTools { padding-top: 0; }
+  .app[data-operational-page="conversations"] .headerTools .headerUser { min-height: 40px; }
 }
