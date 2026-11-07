@@ -18,7 +18,7 @@ const PAGES: Record<DashboardView, OperationalPage> = {
   properties: 'portfolio', leads: 'customer-base',
 };
 
-function OperationalPanel({ actor, page, refreshKey, onNavigate, propertyPhotoRequest }: { actor: LiveActor; page: OperationalPage; refreshKey: number; onNavigate: (page: OperationalPage) => void; propertyPhotoRequest: { id: string } | null }) {
+function OperationalPanel({ actor, page, refreshKey, onNavigate }: { actor: LiveActor; page: OperationalPage; refreshKey: number; onNavigate: (page: OperationalPage) => void }) {
   const lastRefresh = useRef(refreshKey);
   useEffect(() => {
     if (lastRefresh.current === refreshKey) return;
@@ -27,7 +27,7 @@ function OperationalPanel({ actor, page, refreshKey, onNavigate, propertyPhotoRe
     for (const entity of ['leads', 'conversations', 'properties', 'appointments', 'opportunities', 'performance']) announceDashboardChange(entity);
   }, [refreshKey]);
   const account = { brokerId: actor.brokerId, name: actor.name, company: actor.company || 'ImobFlow', role: actor.role };
-  return <DashboardClient account={account} embedded initialView={VIEWS[page]} propertyPhotoRequest={page === 'portfolio' ? propertyPhotoRequest : null}
+  return <DashboardClient account={account} embedded initialView={VIEWS[page]}
     initialUtility={page === 'account' ? 'profile' : page === 'brokers' ? 'team' : null}
     onViewChange={view => { if (view !== VIEWS[page]) onNavigate(PAGES[view]); }} />;
 }
@@ -35,6 +35,6 @@ function OperationalPanel({ actor, page, refreshKey, onNavigate, propertyPhotoRe
 /** The isolated preview never imports this production-only client boundary. */
 export default function LiveEvolutionClient({ initialState, actor, integrated = false }: { initialState: CrmState; actor: LiveActor; integrated?: boolean }) {
   return <EvolutionClient initialState={initialState} actor={actor} mode="live" integrated={integrated}
-    renderOperationalPanel={(page, refreshKey, onNavigate, propertyPhotoRequest) => <OperationalPanel actor={actor} page={page} refreshKey={refreshKey} onNavigate={onNavigate} propertyPhotoRequest={propertyPhotoRequest} />}
+    renderOperationalPanel={(page, refreshKey, onNavigate) => <OperationalPanel actor={actor} page={page} refreshKey={refreshKey} onNavigate={onNavigate} />}
   />;
 }
