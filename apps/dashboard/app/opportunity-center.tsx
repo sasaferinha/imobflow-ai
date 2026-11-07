@@ -1,9 +1,11 @@
+/* eslint-disable @next/next/no-img-element -- property catalog photos */
 'use client';
 import { dashboardFetch as fetch } from '@/lib/dashboard-transport';
 import { useEffect, useState } from 'react';
 import type { Opportunity, ReactivationLead } from '@/lib/opportunities';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import styles from './opportunity-center.module.css';
+import OpportunityPhotos from './opportunity-photos';
 
 export async function actOnOpportunity(id: string, action: string) {
   const response = await fetch('/api/opportunities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, action }) });
@@ -12,8 +14,8 @@ export async function actOnOpportunity(id: string, action: string) {
   announceDashboardChange('opportunities');
   return body.data || {};
 }
-export default function OpportunityCenter({ onLead, onProperty, focusedId }: {
-  onLead: (id: string) => void; onProperty: (id: string) => void; focusedId?: string;
+export default function OpportunityCenter({ onLead, onProperty, focusedId, properties = [] }: {
+  onLead: (id: string) => void; onProperty: (id: string) => void; focusedId?: string; properties?: { id: string; images: string[] }[];
 }) {
   const [items, setItems] = useState<Opportunity[] | null>(null);
   const [offset, setOffset] = useState(0);
@@ -57,6 +59,7 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId }: {
         <span className={styles.status} data-contacted={item.status === 'contacted'}>{item.status === 'contacted' ? 'Contato realizado' : 'A revisar'}</span>
       </header>
       <div className={styles.property}>
+        {properties.find(property => property.id === item.propertyId)?.images[0] && <img className={styles.propertyCover} src={properties.find(property => property.id === item.propertyId)!.images[0]} alt={`Capa de ${item.propertyTitle}`} />}
         <span className={styles.eyebrow}>Imóvel compatível</span>
         <h3>{item.propertyTitle}</h3>
         <p>{[item.district, item.city].filter(Boolean).join(', ')}</p>
@@ -88,6 +91,7 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId }: {
             return { ...current, message, url: url.toString() };
           });
         }}/>
+        <OpportunityPhotos key={item.id} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName} />
         <a className={styles.primary} href={draft.url} target="_blank" rel="noopener noreferrer">Continuar no WhatsApp <span aria-hidden="true">↗</span></a>
         <p>Você pode editar a mensagem antes de continuar. Após enviar no WhatsApp, registre o contato abaixo.</p>
       </div>}

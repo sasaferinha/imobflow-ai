@@ -149,3 +149,5 @@
   :global(.crm-workspace) .center .workflow { padding: 8px 16px; }
   :global(.crm-workspace) .center .review { margin: 0 16px 16px; }
 }
+
+.propertyCover{width:100%;height:220px;object-fit:cover;border-radius:12px;margin-bottom:16px;display:block}@media(min-width:900px){.propertyCover{max-width:360px;height:200px}}
