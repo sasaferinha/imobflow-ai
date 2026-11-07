@@ -23,7 +23,10 @@
 .primary:hover:not(:disabled) { background:#0059c9; }
 .secondary:hover:not(:disabled) { background:#f3f8ff; }
 .primary:disabled,.secondary:disabled { cursor:not-allowed; opacity:.55; }
-.root button:focus-visible,.root summary:focus-visible { outline:3px solid #8abfff; outline-offset:3px; }
+.root button:focus-visible,.root summary:focus-visible,.root a:focus-visible { outline:3px solid #8abfff; outline-offset:3px; }
+.externalSite { margin-top:14px; border-top:1px solid #e4edf6; padding-top:12px; }
+.externalSite summary { cursor:pointer; color:#526c87; font-size:12px; }
+.externalSite p { font-size:12px; margin:12px 0; }
 .card small { font-size:11px; color:#73869b; line-height:1.55; margin-top:12px; min-height:4.65em; }
 .team { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:22px 0; padding:20px 24px; background:#f0f6fd; border-radius:12px; border:1px solid #dce8f5; }
 .team strong { font-size:14px; }

@@ -47,10 +47,11 @@ export default function SettingsHub({ state, isAdmin, integrated, children, onWh
       </section>
       <section className={s.card}>
         <div className={s.cardTop}><span className={s.symbol}><Symbol kind="site" /></span><span className={s.step}>03</span></div>
-        <h3>Site da imobiliária</h3><p>Prepare a conexão para publicar imóveis, atualizar anúncios e retirar os indisponíveis.</p>
-        <span className={`${s.status} ${s.pending}`}>{state.settings.website?.url ? 'Aguardando integração' : 'Integração ainda não ativa'}</span>
-        <button type="button" className={s.secondary} onClick={onWebsite}>{state.settings.website?.url ? 'Ver preparação do site' : 'Preparar conexão do site'} <span aria-hidden="true">→</span></button>
-        <small>Depende da compatibilidade com quem fornece o site. Nenhum anúncio é enviado nesta etapa.</small>
+        <h3>Site da imobiliária</h3><p>Personalize sua marca, publique novidades e mostre os imóveis disponíveis da sua carteira.</p>
+        <span className={s.status}>Catálogo conectado ao CRM</span>
+        <a className={s.secondary} href={integrated ? '/painel/site' : '/modelo-imobiliaria/editor'}>{integrated ? 'Editar site da imobiliária' : 'Experimentar editor do site'} <span aria-hidden="true">→</span></a>
+        <small>Veja a prévia e publique quando estiver pronto. Imóveis vendidos ou indisponíveis saem do catálogo.</small>
+        <details className={s.externalSite}><summary>Já tenho um site de outro fornecedor</summary><p>A conexão com um site externo depende da compatibilidade do fornecedor.</p><button type="button" className={s.secondary} onClick={onWebsite}>{state.settings.website?.url ? 'Ver preparação do site' : 'Preparar conexão do site'} <span aria-hidden="true">→</span></button></details>
       </section>
     </div>
     {integrated && <div className={s.team}><div><strong>Quem vai atender seus clientes?</strong><p>Cadastre os corretores e ajuste os acessos da equipe.</p></div><button type="button" className={s.secondary} onClick={onTeam}>Corretores e acessos <span aria-hidden="true">→</span></button></div>}

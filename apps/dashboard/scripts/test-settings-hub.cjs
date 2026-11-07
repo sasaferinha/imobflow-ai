@@ -198,15 +198,16 @@ async function run() {
   };
   const hubHtml = renderToStaticMarkup(React.createElement(Hub, hubProps));
   for (const label of ['WhatsApp da empresa', 'IA de atendimento', 'Site da imobiliária', 'Somente administrador', 'Regras e opções da operação']) assert(hubHtml.includes(label), label);
-  assert.equal([...hubHtml.matchAll(/<details\b[^>]*>/g)].length, 1);
+  assert.equal([...hubHtml.matchAll(/<details\b[^>]*>/g)].length, 2);
   assert(!/<details\b[^>]*\sopen(?:=|\s|>)/.test(hubHtml), 'Advanced operations start closed');
   assert(hubHtml.includes('INTERNAL_ADVANCED_OPTIONS'), 'Existing operation forms remain mounted');
   assert(!visibleNodes(Hub(hubProps)).some(node => node.props?.['data-advanced-test']), 'Mounted advanced options are not initially visible');
-  assert(hubHtml.includes('Integração ainda não ativa'));
+  assert(hubHtml.includes('href="/painel/site"') && hubHtml.includes('Editar site da imobiliária'));
+  assert(!visibleNodes(Hub(hubProps)).some(node => node.type === 'button' && text(node).includes('Preparar conexão do site')), 'External supplier preparation is secondary and starts closed');
   assert(hubHtml.includes('Salvar preferências não confirma o funcionamento do provedor de IA'));
   assert(!/\b(?:Site conectado|Sincronização ativa|IA funcionando|WhatsApp conectado)\b/i.test(hubHtml));
   const savedHubHtml = renderToStaticMarkup(React.createElement(Hub, { ...hubProps, state: stateWith(configured) }));
-  assert(savedHubHtml.includes('Aguardando integração') && savedHubHtml.includes('Ver preparação do site'));
+  assert(savedHubHtml.includes('Ver preparação do site') && savedHubHtml.includes('href="/painel/site"'));
   const privateSettingsState = stateWith({ ...configured, provider: 'PRIVATE_PROVIDER_SENTINEL' });
   privateSettingsState.settings.sources = ['PRIVATE_SOURCE_SENTINEL'];
   privateSettingsState.settings.ai = { assistantName: 'PRIVATE_AI_SENTINEL' };
@@ -236,6 +237,7 @@ async function run() {
   }
   assert.deepEqual(actions, ['whatsapp', 'ai', 'website', 'team']);
   const previewHub = Hub({ ...hubProps, integrated: false });
+  assert(find(previewHub, node => node.type === 'a' && node.props.href === '/modelo-imobiliaria/editor'), 'Product demo opens the isolated site editor');
   assert.equal(button(previewHub, 'Configurar WhatsApp →').props.disabled, true);
   assert(!button(previewHub, 'Corretores e acessos →'));
   const SettingsView = pure.load(clientFile).SettingsView;
@@ -246,7 +248,7 @@ async function run() {
   assert(!/<details\b[^>]*\sopen(?:=|\s|>)/.test(fullHub));
   const initiallyVisibleHub = fullHub.replace(/<details\b[\s\S]*?<\/details>/g, '');
   assert(!initiallyVisibleHub.includes('<form') && !initiallyVisibleHub.includes('Salvar prazos'), 'All old forms remain below the closed advanced disclosure');
-  assert(initiallyVisibleHub.includes('Configurar WhatsApp') && initiallyVisibleHub.includes('Configurar IA') && initiallyVisibleHub.includes('Preparar conexão do site'));
+  assert(initiallyVisibleHub.includes('Configurar WhatsApp') && initiallyVisibleHub.includes('Configurar IA') && initiallyVisibleHub.includes('Editar site da imobiliária'));
   const fullBrokerProps = { ...settingsProps, state: privateSettingsState, isAdmin: false, onAccount: () => accountActions.push('settings-account') };
   const fullBrokerHub = renderToStaticMarkup(React.createElement(SettingsView, fullBrokerProps));
   assert(fullBrokerHub.includes('Acesso exclusivo do administrador') && fullBrokerHub.includes('conta de corretor') && !fullBrokerHub.includes('<form'));

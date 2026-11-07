@@ -14,6 +14,19 @@ async function createDatabase({ hardened = true, propertyAutoDeliveries = true }
     CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
     CREATE SCHEMA storage;
     CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit integer,allowed_mime_types text[]);
+    -- Supabase owns this relation in production. Include its relevant storage
+    -- shape and RLS here so every tracked storage policy runs unchanged.
+    CREATE TABLE storage.objects(
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      bucket_id text REFERENCES storage.buckets(id),
+      name text NOT NULL, owner uuid, owner_id text,
+      created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(),
+      last_accessed_at timestamptz DEFAULT now(), metadata jsonb, user_metadata jsonb,
+      version text, UNIQUE(bucket_id,name)
+    );
+    GRANT USAGE ON SCHEMA storage TO anon,authenticated,service_role;
+    GRANT ALL ON storage.objects TO anon,authenticated,service_role;
+    ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
     CREATE TABLE companies(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text NOT NULL,slug text NOT NULL UNIQUE);
     CREATE TABLE leads(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),company_id uuid NOT NULL REFERENCES companies(id),
       name text NOT NULL,phone text NOT NULL,email text,goal text,property_type text,region text,budget_min numeric,budget_max numeric,
