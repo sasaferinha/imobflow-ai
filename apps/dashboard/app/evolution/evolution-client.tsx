@@ -178,7 +178,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const isAdmin = actor.role === 'owner';
   const selected = state.records.find(record => record.id === selectedId);
   const member = state.members.find(item => item.id === memberId);
-  const pageTitle = (item: Page) => item === 'ai-settings' ? 'Configurar IA' : item === 'website-settings' ? 'Site da imobiliária' : item in MODULES ? MODULES[item as Kind].title : isOperationalPage(item) ? OPERATIONAL_TITLES[item] : { dashboard: 'Dashboard', reports: 'Relatórios', members: 'Usuários e permissões', settings: 'Configurações', operations: 'Central de gestão' }[item as 'dashboard' | 'reports' | 'members' | 'settings' | 'operations'];
+  const pageTitle = (item: Page) => item === 'ai-settings' ? 'Configurar IA' : item === 'website-settings' ? 'Conectar site externo' : item in MODULES ? MODULES[item as Kind].title : isOperationalPage(item) ? OPERATIONAL_TITLES[item] : { dashboard: 'Dashboard', reports: 'Relatórios', members: 'Usuários e permissões', settings: 'Configurações', operations: 'Central de gestão' }[item as 'dashboard' | 'reports' | 'members' | 'settings' | 'operations'];
   const aiDraftRef = useRef({ active: false, dirty: false, busy: false });
   const websiteDraftRef = useRef({ active: false, dirty: false, busy: false });
   const creatingLeadPage = page === 'leads/new';
