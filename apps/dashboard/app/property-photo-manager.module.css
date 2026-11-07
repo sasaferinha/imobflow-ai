@@ -19,3 +19,5 @@
 :global(.dark-mode) .catalogButton small{background:#254468;color:#bedcff}
 
 @media(max-width:520px){.backdrop{padding:12px}.dialog{border-radius:18px;max-height:94dvh}.header{padding:20px 18px;gap:10px}.header h2{font-size:20px}.icon{width:42px;height:42px}.body{padding:18px}.footer{padding:16px 18px;flex-wrap:wrap}.footer>div{margin-left:auto}.preview{height:125px}.photoFooter{flex-wrap:wrap}.grid{gap:10px}}
+
+.dropActive .upload{background:#e2efff;border:2px dashed #0865ed;box-shadow:0 0 0 4px #0865ed15}.dropActive .uploadIcon{background:#0865ed;color:#fff}
