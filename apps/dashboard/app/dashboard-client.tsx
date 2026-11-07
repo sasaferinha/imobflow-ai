@@ -184,7 +184,7 @@ function announcePropertyChange() {
   announceDashboardChange('properties');
 }
 
-export default function DashboardClient({ account, publicDemo = false, initialView = 'overview', initialDarkMode = false, embedded = false, initialUtility = null, onViewChange }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View; initialDarkMode?: boolean; embedded?: boolean; initialUtility?: DashboardUtility | null; onViewChange?: (view: DashboardView) => void }) {
+export default function DashboardClient({ account, publicDemo = false, initialView = 'overview', initialDarkMode = false, embedded = false, initialUtility = null, onViewChange, propertyPhotoRequest }: { account?: { brokerId:string; name: string; company: string; role: 'owner' | 'broker' }; publicDemo?: boolean; initialView?: View; initialDarkMode?: boolean; embedded?: boolean; initialUtility?: DashboardUtility | null; onViewChange?: (view: DashboardView) => void; propertyPhotoRequest?: { id: string } | null }) {
   const [view, setViewState] = useState<View>(initialView);
   function setView(next: View) { setViewState(next); if (embedded) onViewChange?.(next); }
   const [viewInput, setViewInput] = useState({ embedded, initialView });
@@ -206,8 +206,39 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
   const [savingProperty, setSavingProperty] = useState(false);
   const [propertyImages, setPropertyImages] = useState<string[]>([]);
   const [preparingImages, setPreparingImages] = useState(false);
-  const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const photoFieldRef = useRef<HTMLDivElement>(null);
+  const focusPropertyPhotos = useRef(false);
+  useEffect(() => {
+    if (!propertyPhotoRequest) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch('/api/properties', { cache: 'no-store', signal: controller.signal });
+        const body = await response.json() as { data?: Property[]; error?: string };
+        if (!response.ok) throw new Error(body.error || 'Não foi possível carregar o imóvel.');
+        const property = body.data?.find(item => item.id === propertyPhotoRequest.id);
+        if (!property) throw new Error('Imóvel não encontrado. Atualize o catálogo e tente novamente.');
+        if (controller.signal.aborted) return;
+        setSelectedProperty(null);
+        setEditingProperty(property);
+        setPropertyImages(property.images);
+        focusPropertyPhotos.current = true;
+        setPropertyModalOpen(true);
+      } catch (error) {
+        if (!controller.signal.aborted) setToast(error instanceof Error ? error.message : 'Não foi possível abrir as fotos.');
+      }
+    })();
+    return () => controller.abort();
+  }, [propertyPhotoRequest]);
+  useEffect(() => {
+    if (!propertyModalOpen || !focusPropertyPhotos.current) return;
+    photoFieldRef.current?.scrollIntoView({ block: 'center' });
+    photoFieldRef.current?.querySelector<HTMLInputElement>('input[type="file"]')?.focus({ preventScroll: true });
+    focusPropertyPhotos.current = false;
+  }, [propertyModalOpen, editingProperty]);
+  const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
+
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [utilityModal, setUtilityModal] = useState<DashboardUtility | null>(initialUtility);
@@ -673,7 +704,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
             <section className="property-form-section"><h3>Identificação</h3><div className="form-grid"><label>Código do imóvel<input name="code" defaultValue={editingProperty?.code} placeholder="Ex.: IMO-1042" autoFocus required /></label><label>Título<input name="title" defaultValue={editingProperty?.title} placeholder="Ex.: Residencial das Flores" required /></label></div><label>Descrição<textarea name="description" defaultValue={editingProperty?.description || (editingProperty?.code ? '' : editingProperty?.meta)} placeholder="Destaques, acabamentos, condomínio e diferenciais do imóvel" rows={4} required /></label></section>
             <GuidedPropertyFields key={editingProperty?.id || 'new'} property={editingProperty} properties={properties} />
             <section className="property-form-section"><h3>Operação e divulgação</h3><div className="property-boolean-grid"><fieldset><legend>Chave no escritório</legend><label><input type="radio" name="keyInOffice" value="yes" defaultChecked={editingProperty?.keyInOffice === true} />Sim</label><label><input type="radio" name="keyInOffice" value="no" defaultChecked={editingProperty?.keyInOffice !== true} />Não</label></fieldset><fieldset><legend>Morador no imóvel</legend><label><input type="radio" name="occupied" value="yes" defaultChecked={editingProperty?.occupied === true} />Com morador</label><label><input type="radio" name="occupied" value="no" defaultChecked={editingProperty?.occupied !== true} />Sem morador</label></fieldset><fieldset><legend>Catalogado no Instagram</legend><label><input type="radio" name="catalogedOnInstagram" value="yes" defaultChecked={editingProperty?.catalogedOnInstagram === true} />Sim</label><label><input type="radio" name="catalogedOnInstagram" value="no" defaultChecked={editingProperty?.catalogedOnInstagram !== true} />Não</label></fieldset><fieldset><legend>Catalogado no site</legend><label><input type="radio" name="catalogedOnSite" value="yes" defaultChecked={editingProperty?.catalogedOnSite === true} />Sim</label><label><input type="radio" name="catalogedOnSite" value="no" defaultChecked={editingProperty?.catalogedOnSite !== true} />Não</label></fieldset></div></section>
-            <div className="property-image-field">
+            <div className="property-image-field" ref={photoFieldRef}>
               <div><strong>Fotos do imóvel</strong><span>Até 5 fotos em JPG, PNG ou WebP</span></div>
               <input id="property-images" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { void addPropertyImages(event.target.files); event.target.value = ''; }} />
               <button type="button" className="image-upload-button" disabled={preparingImages || propertyImages.length >= 5} onClick={() => document.getElementById('property-images')?.click()}>{preparingImages ? 'Preparando fotos...' : '＋ Adicionar imagens'}</button>
