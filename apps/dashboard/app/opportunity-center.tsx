@@ -79,9 +79,17 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId }: {
       </div>
       {draft?.id === item.id && <div className={styles.review}>
         <div className={styles.reviewHeading}><label htmlFor={`opportunity-message-${item.id}`}>Mensagem para o cliente</label><button type="button" aria-label="Fechar mensagem" onClick={() => setDraft(null)}>×</button></div>
-        <textarea id={`opportunity-message-${item.id}`} readOnly rows={4} value={draft.message}/>
+        <textarea id={`opportunity-message-${item.id}`} rows={4} value={draft.message} onChange={event => {
+          const message = event.target.value;
+          setDraft(current => {
+            if (!current || current.id !== item.id) return current;
+            const url = new URL(current.url);
+            url.searchParams.set('text', message);
+            return { ...current, message, url: url.toString() };
+          });
+        }}/>
         <a className={styles.primary} href={draft.url} target="_blank" rel="noopener noreferrer">Continuar no WhatsApp <span aria-hidden="true">↗</span></a>
-        <p>Após enviar no WhatsApp, registre o contato abaixo.</p>
+        <p>Você pode editar a mensagem antes de continuar. Após enviar no WhatsApp, registre o contato abaixo.</p>
       </div>}
       <footer className={styles.workflow}>
         <button type="button" disabled={pending || item.status === 'contacted'} onClick={() => void act(item.id, 'contacted')}>{item.status === 'contacted' ? 'Contato registrado' : 'Registrar contato'}</button>
