@@ -18,6 +18,7 @@ const photos = {
 };
 
 export const demoContent: SiteContent = {
+  layout: 'classic',
   brandName: 'Horizonte Imobiliária',
   tagline: 'Novos lugares. Novas histórias.',
   primaryColor: '#184D42',

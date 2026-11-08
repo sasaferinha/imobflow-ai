@@ -72,6 +72,30 @@ async function main() {
   assert(markup.includes('Modelo demonstrativo') && markup.includes('/modelo-imobiliaria/editor'));
   assert(markup.includes('R$') && markup.includes('HZ001') && markup.includes('À venda') && markup.includes('Para alugar'));
   assert(!markup.includes('<iframe'), 'Disabled video must not embed a provider');
+  const legacyProps = structuredClone(props); delete legacyProps.content.layout;
+  const classicMarkup = renderToStaticMarkup(React.createElement(publicUi.default, { ...props, content: { ...props.content, layout: 'classic' } }));
+  assert.equal(renderToStaticMarkup(React.createElement(publicUi.default, legacyProps)), classicMarkup, 'Documents without layout preserve the complete classic rendering');
+  assert.equal(renderToStaticMarkup(React.createElement(publicUi.default, { ...props, content: { ...props.content, layout: 'unknown' } })), classicMarkup, 'An unsupported layout cannot select an untrusted CSS class');
+  for (const layout of ['classic', 'modern', 'catalog']) {
+    const variant = { ...props, content: { ...props.content, layout } };
+    const html = renderToStaticMarkup(React.createElement(publicUi.default, variant));
+    assert(html.includes(`data-site-layout="${layout}"`));
+    if (layout === 'modern') assert(html.includes('class="site modern"'));
+    if (layout === 'catalog') assert(html.includes('class="site catalogLayout"'));
+    assert.equal((html.match(/aria-label="Ver detalhes:/g) || []).length, props.properties.length, `${layout}: every available property is rendered once`);
+    assert(html.includes(props.content.heroTitle) && html.includes(props.content.promotion.title) && html.includes(props.content.aboutTitle), `${layout}: all configured content remains available`);
+    const themed = harness('SiteView', variant);
+    nodes(themed.tree).find(node => node.type === 'select').props.onChange({ target: { value: 'Aluguel' } }); themed.render();
+    const cards = nodes(themed.tree).filter(node => node.type === 'button' && node.props['aria-label']?.startsWith('Ver detalhes:'));
+    assert.equal(cards.length, 2, `${layout}: purchase/rent filter remains functional`);
+    cards[0].props.onClick(); themed.render();
+    const detail = nodes(themed.tree).find(node => typeof node.type === 'function' && node.type.name === 'PropertyDialog');
+    assert(detail && detail.props.property.purpose === 'Aluguel', `${layout}: detail opens the selected filtered property`);
+    themed.render({ content: { ...variant.content, layout: layout === 'modern' ? 'catalog' : 'modern' } });
+    const changedDetail = nodes(themed.tree).find(node => typeof node.type === 'function' && node.type.name === 'PropertyDialog');
+    assert.equal(changedDetail.props.property.id, detail.props.property.id, 'Changing the layout does not reset the visitor selection');
+    assert.equal(nodes(themed.tree).filter(node => node.type === 'button' && node.props['aria-label']?.startsWith('Ver detalhes:')).length, 2, 'Changing the layout preserves active filters');
+  }
   const malicious = structuredClone(props);
   malicious.content.video = { enabled: true, title: 'Teste', url: 'javascript:alert(1)' };
   malicious.content.promotion.linkUrl = 'javascript:alert(1)';

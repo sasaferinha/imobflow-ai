@@ -153,8 +153,11 @@ function SiteView({ content, properties, companySlug, demo = false, preview = fa
   try { if (content.video.enabled) video = videoEmbedUrl(content.video.url); } catch { /* An editor can preview an incomplete video URL safely. */ }
   const fileVideo = /\.(mp4|webm)(?:\?|$)/i.test(content.video.url);
   const hasContact = Boolean(content.contactPhone || content.contactEmail || content.contactAddress || content.instagramUrl);
+  // Old published documents and already-open previews remain on the original layout.
+  const layout = content.layout === 'modern' || content.layout === 'catalog' ? content.layout : 'classic';
+  const layoutClass = layout === 'modern' ? s.modern : layout === 'catalog' ? s.catalogLayout : '';
   const style = { '--site-brand': /^#[a-f0-9]{6}$/i.test(content.primaryColor) ? content.primaryColor : '#184D42' } as CSSProperties;
-  return <div className={s.site} style={style}>
+  return <div className={`${s.site}${layoutClass ? ` ${layoutClass}` : ''}`} data-site-layout={layout} style={style}>
     {(demo || preview) && <div className={s.notice} role="note"><span>{preview ? 'Prévia do site · alterações ainda não publicadas' : 'Modelo demonstrativo · empresa, imóveis e valores fictícios'}</span>{demo && !preview && <a href="/modelo-imobiliaria/editor">Experimentar painel do site <span aria-hidden="true">↗</span></a>}</div>}
     <header className={s.header}>
       <a href="#inicio" className={s.brand} aria-label={`${content.brandName} — início`}>

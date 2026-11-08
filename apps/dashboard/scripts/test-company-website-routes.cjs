@@ -3,7 +3,7 @@ function load(file, deps) { const m={exports:{}}; vm.runInNewContext(ts.transpil
 const model=load('lib/website/model.ts',{}), uuid='00000000-0000-4000-8000-000000000001';
 const company={id:uuid,name:'Horizonte fictícia',slug:'horizonte-fixture'};
 const doc=model.defaultSiteContent(company.name);
-let owner={companyId:uuid,brokerId:'owner-1',name:'Owner',role:'owner'}, ownerReads=0, active=true, published=doc, previous=null, fakeLimit=true;
+let owner={companyId:uuid,brokerId:'owner-1',name:'Owner',role:'owner'}, ownerReads=0, active=true, draftDoc={...doc,heroTitle:'PRIVATE DRAFT'}, published=doc, previous=null, fakeLimit=true;
 const queries=[],writes=[], leads=[],deferred=[];
 const canonical={id:'property-1',title:'Casa teste',code:'TESTE1',status:'Disponível',purpose:'Venda',price:500000,city:'Lavras',district:'Centro',property_type:'Casa',images:['https://images.example.com/photo.jpg'],owner:'DO NOT EXPOSE',address:'DO NOT EXPOSE',notes:'DO NOT EXPOSE'};
 const rpc=async (url,opts={})=>{
@@ -12,7 +12,7 @@ const rpc=async (url,opts={})=>{
  if(url==='rpc/website_can_edit') return active;
  if(url==='rpc/website_catalog') return [canonical];
  if(url.startsWith('companies?')) return [company];
- if(url.startsWith('company_websites?')) return url.includes('select=published')? (published?[{published}]:[]):url.includes('select=company_id&')? (published||previous?[{company_id:uuid}]:[]):[{company_id:uuid,version:2,draft:{...doc,heroTitle:'PRIVATE DRAFT'},published,previous:null,published_at:null,updated_at:null}];
+ if(url.startsWith('company_websites?')) return url.includes('select=published')? (published?[{published}]:[]):url.includes('select=company_id&')? (published||previous?[{company_id:uuid}]:[]):[{company_id:uuid,version:2,draft:draftDoc,published,previous,published_at:null,updated_at:null}];
  if(url.startsWith('website_marketing_accounts?')) return [];
  if(url==='rpc/save_company_website') return {};
  throw Error(`Unexpected ${url}`);
@@ -29,6 +29,14 @@ const inquiry=load('app/api/site/[slug]/inquiry/route.ts',{'next/server':next,'@
 function req(body, {cookies={crm:'owner'},origin='https://imobflow.net.br',query='',length}={}) {const headers=new Headers();if(origin)headers.set('origin',origin);if(length)headers.set('content-length',length);return {nextUrl:new URL('https://imobflow.net.br/api/website'+query),headers,cookies:{get:n=>cookies[n]?{value:cookies[n]}:undefined},text:async()=>typeof body==='string'?body:JSON.stringify(body)};}
 const ctx={params:Promise.resolve({slug:company.slug})};
 (async()=>{
+ const legacy={...doc,heroImageUrl:'https://images.example.com/existing-cover.jpg',promotion:{...doc.promotion,enabled:true,title:'Campanha existente',text:'Promoção existente',imageUrl:'https://images.example.com/existing-banner.jpg'},video:{enabled:true,title:'Vídeo existente',url:'https://youtu.be/dQw4w9WgXcQ'}};delete legacy.layout;
+ draftDoc={...legacy,heroTitle:'Rascunho anterior'};published={...legacy,heroTitle:'Publicado anterior'};previous={...legacy,heroTitle:'Publicação anterior'};
+ const savedInputs=JSON.stringify([draftDoc,published,previous]);
+ const compatible=await server.readWebsiteSnapshot({companyId:uuid,id:'owner-1',name:'Owner',role:'owner'});
+ for(const [key,raw] of [['draft',draftDoc],['published',published],['previous',previous]]) assert.deepEqual(JSON.parse(JSON.stringify(compatible.site[key])),{layout:'classic',...raw},`${key}: legacy media and copy preserved`);
+ assert.equal(JSON.stringify([draftDoc,published,previous]),savedInputs,'read normalization does not mutate any persisted snapshot');
+ assert.equal((await server.getPublicWebsite(company.slug)).content.layout,'classic','legacy publication remains available');
+ draftDoc={...doc,heroTitle:'PRIVATE DRAFT'};published=doc;previous=null;
  const missing=await route.GET(req(null,{cookies:{}}));assert.equal(missing.status,401);assert.equal(missing.headers.get('cache-control'),'private, no-store, max-age=0');
  ownerReads=0;const selected=await auth.resolveWebsiteActor(req(null,{cookies:{crm:'owner',imobflow_website_session:'a'.repeat(64)},query:'?access=marketing'}));assert.equal(selected.role,'marketing');assert.equal(selected.companyId,'other-company');assert.equal(ownerReads,0,'marketing page never reads owner cookie');
  assert.equal(await auth.resolveWebsiteActor(req(null,{cookies:{crm:'owner'},query:'?access=marketing'})),null,'missing marketing cookie never falls back to owner');
@@ -43,6 +51,11 @@ const ctx={params:Promise.resolve({slug:company.slug})};
  assert.equal((await route.POST(req({...post,companyId:'foreign'}))).status,400);
  assert.equal((await route.POST(req({...post,expectedVersion:-1}))).status,400);
  const success=await route.POST(req(post));assert.equal(success.status,200);assert.equal(writes.findLast(x=>x[0]==='rpc/save_company_website')[1].p_company_id,uuid);
+ for(const layout of ['classic','modern','catalog']) { assert.equal((await route.POST(req({...post,content:{...doc,layout}}))).status,200);assert.equal(writes.findLast(x=>x[0]==='rpc/save_company_website')[1].p_content.layout,layout,'chosen layout reaches publication persistence'); }
+ assert.equal((await route.POST(req({...post,content:legacy}))).status,200);assert.equal(writes.findLast(x=>x[0]==='rpc/save_company_website')[1].p_content.layout,'classic','legacy editor payload remains accepted');
+ const savedCount=writes.filter(x=>x[0]==='rpc/save_company_website').length;
+ for(const layout of [null,'unknown',0,{},[]]) assert.equal((await route.POST(req({...post,content:{...doc,layout}}))).status,400);
+ assert.equal(writes.filter(x=>x[0]==='rpc/save_company_website').length,savedCount,'invalid layouts never reach persistence');
  const marketerReq=req({action:'deactivate',id:'x'},{cookies:{imobflow_website_session:'a'.repeat(64)},query:'?access=marketing'});assert.equal((await access.POST(marketerReq)).status,403);
  queries.length=0;const live=await server.getPublicWebsite(company.slug);const payload=JSON.stringify(live);assert(!payload.includes('PRIVATE DRAFT'));assert(!payload.includes('DO NOT EXPOSE'));assert(queries.some(q=>q.includes('select=published')));assert(!queries.some(q=>q.includes('select=company_id,version')));
  published={...doc,showPrices:false};assert.equal((await server.getPublicWebsite(company.slug)).properties[0].price,0,'hidden price not delivered to visitor');

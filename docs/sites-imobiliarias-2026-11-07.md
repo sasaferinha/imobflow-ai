@@ -4,6 +4,10 @@
 
 O administrador abre **Configurações → Editar site da imobiliária**. O editor nasce com a marca da empresa, permite ajustar identidade, capa, apresentação, destaque de campanha, vídeo e canais de contato. O conteúdo fica em rascunho até a publicação explícita. Também é possível restaurar a publicação anterior ou retirar o site do ar sem apagar os imóveis.
 
+Em **Identidade**, a empresa escolhe entre três modelos: **Clássico** (foto lateral e apresentação editorial), **Moderno** (capa panorâmica) e **Vitrine** (introdução compacta e catálogo em destaque). As miniaturas permitem comparar a estrutura; **Ver prévia** usa a marca e o conteúdo da própria empresa. A escolha entra no rascunho e só passa ao site ao publicar. Trocar de modelo conserva textos, fotos, campanhas, vídeo, contatos e estoque.
+
+O modelo é salvo no campo `layout` do conteúdo, com os valores `classic`, `modern` ou `catalog`. Documentos antigos sem esse campo são lidos como Clássico, inclusive rascunhos, publicações anteriores e dados da demonstração. Valores desconhecidos são rejeitados. Essa extensão usa o JSON já existente e não exige outra migration.
+
 O site usa `/imobiliaria/<slug da empresa>`. A primeira versão não provisiona domínios personalizados nem substitui sites de fornecedores externos. A preparação de conexão externa continua disponível separadamente. As páginas antigas de atendimento continuam funcionando enquanto a imobiliária não publica seu site.
 
 O catálogo consulta a base do CRM. Imóveis disponíveis aparecem; vendidos, alugados, reservados e arquivados ficam fora. Não existe cópia manual do estoque. Novas leituras refletem preço, fotos e disponibilidade; visitantes com a página aberta recebem atualização periódica quando a aba está visível. O formulário reconfere a disponibilidade antes de registrar interesse.
@@ -26,7 +30,7 @@ Aplicar `20261108000000_company_websites.sql` e `20261108001000_website_media.sq
 
 O acesso público usa somente a versão publicada. Escritas verificam a versão esperada para impedir a substituição silenciosa do trabalho de outra pessoa. Rascunhos, auditoria e credenciais nunca entram na resposta pública.
 
-Para reverter o código, reverter apenas esta entrega no Git e republicar. Preservar as tabelas e o bucket para não perder conteúdo ou arquivos. A interface permite restaurar conteúdo anterior sem reverter o software.
+Para voltar ao visual original, escolher **Clássico** e publicar. A interface também permite restaurar o conteúdo anterior. Uma reversão técnica deve preservar a leitura do campo `layout`: versões anteriores à seleção de modelos rejeitam esse campo nos documentos novos. Preservar as tabelas e o bucket para não perder conteúdo ou arquivos.
 
 ## Validação
 
