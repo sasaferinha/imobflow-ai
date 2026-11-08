@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SocialError } from '@/lib/social-model';
 import { protectedRoute } from '@/lib/accounts';
 import { hasSameOrigin } from '@/lib/request-security';
 import { listOpportunities, listReactivationLeads, opportunityAction } from '@/lib/opportunities';
@@ -26,5 +27,5 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     if (typeof body.id !== 'string' || typeof body.action !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.id) || !['draft','read','dismissed','contacted','converted'].includes(body.action))
       return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });
     return NextResponse.json({ data: await opportunityAction(body.id, body.action) });
-  } catch { return NextResponse.json({ error: 'Oportunidade indisponível. Atualize a lista e confira o cadastro do lead.' }, { status: 409 }); }
+  } catch (error) { return NextResponse.json({ error: error instanceof SocialError ? error.message : 'Oportunidade indisponível. Atualize a lista e confira o cadastro do lead.' }, { status: error instanceof SocialError ? error.status : 409 }); }
 });

@@ -1,19 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { protectedRoute } from '@/lib/accounts';
 import { currentAccount } from '@/lib/tenant-context';
 import { supabaseServiceRequest } from '@/lib/supabase';
 import { verifyMetaWebhookSignature, verifyMetaWebhookToken } from '@/lib/meta-whatsapp';
-import { parseSocialEvents, saveSocialEvent, socialConnections } from '@/lib/meta-social';
+import { parseSocialEvents, saveSocialEvent } from '@/lib/meta-social';
+import { activeSocialConnections } from '@/lib/social-connections';
+import { socialId, socialObject } from '@/lib/social-model';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const status = protectedRoute(async () => {
   const actor=currentAccount()!;
   if(actor.role!=='owner') return NextResponse.json({error:'Somente o administrador pode consultar os canais.'},{status:403});
   try {
-    const connections=socialConnections().filter(c=>c.companyId===actor.companyId);
+    const connections=await activeSocialConnections({companyId:actor.companyId});
     const leads=await supabaseServiceRequest<Array<{id:string;name:string;source:string;created_at:string;details:string;interest_profile:Record<string,unknown>}>>(`leads?company_id=eq.${encodeURIComponent(actor.companyId)}&source=in.(Facebook%20Lead%20Ads,Instagram%20Direct)&select=id,name,source,created_at,details,interest_profile&order=created_at.desc&limit=30`);
     return NextResponse.json({data:{
       facebook:connections.some(c=>c.enabled&&c.pageId&&c.accessToken), instagram:connections.some(c=>c.enabled&&c.instagramId),
@@ -38,9 +40,18 @@ export async function POST(request:NextRequest) {
   let payload:unknown;
   try{payload=JSON.parse(raw);}catch{return NextResponse.json({error:'JSON inválido.'},{status:400});}
   try {
-    const events=parseSocialEvents(payload,socialConnections());
+    const entries=socialObject(payload).entry;
+    const accountIds=Array.isArray(entries)?entries.map(e=>socialId(socialObject(e).id)).filter(Boolean):[];
+    const events=parseSocialEvents(payload,await activeSocialConnections({accountIds}));
     const deadline=Date.now()+45000;
-    for(const event of events){if(Date.now()>deadline)throw Error('deadline');await saveSocialEvent(event);}
+    for(const event of events){
+      if(Date.now()>deadline)throw Error('deadline');
+      const result=await saveSocialEvent(event);
+      if('saved' in result && result.saved && result.companyId && result.messageId){
+        const input={companyId:result.companyId,threadId:result.threadId,leadId:result.leadId,messageId:result.messageId};
+        after(async()=>{try{const {processSocialAI}=await import('@/lib/social-ai');await processSocialAI(input);}catch{console.error('social_ai_processing_failed');}});
+      }
+    }
     return NextResponse.json({received:true},{headers:{'Cache-Control':'no-store'}});
   }catch{console.error('meta_social_webhook_failed');return NextResponse.json({error:'Não foi possível confirmar todos os eventos. Reenvie o webhook.'},{status:503});}
 }

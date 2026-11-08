@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict');const{createDatabase,seedCompanies,id,migration}=require('./helpers/tenant-test-database.cjs');
+(async()=>{const db=await createDatabase();try{
+ await seedCompanies(db);await db.exec('CREATE TABLE crm_evolution_workspaces(company_id uuid PRIMARY KEY REFERENCES companies(id),document jsonb NOT NULL)');await db.exec(migration('20261102100000_meta_ads.sql'));await db.exec(migration('20261108124000_meta_ads_drafts_attribution.sql'));
+ const scalar=async(sql,args=[])=>Object.values((await db.query(sql,args)).rows[0])[0];
+ await db.query('INSERT INTO meta_ads_connections(company_id,connected_by,token_ciphertext,account_id) VALUES($1,$2,$3,$4)',[id(1),id(11),'cipher','act_12345']);
+ const claim=(company,actor,account='act_12345')=>scalar('SELECT claim_meta_ads_build($1,$2,$3,$4,$5,$6,$7)',[id(company),id(actor),id(50),account,'a'.repeat(64),'777','Synthetic']);
+ assert.equal(await claim(1,11),true);assert.equal(await claim(1,11),false);await assert.rejects(()=>claim(1,21),/ads_forbidden/);await assert.rejects(()=>claim(2,21),/ads_forbidden/);
+ const attr={source:'facebook',medium:'paid_social',campaign:'777',content:'333',term:'',campaignId:'777',adId:'333'};
+ await db.query("INSERT INTO leads(id,company_id,name,phone,interest_profile) VALUES($1,$2,'Private customer','5535999999999',$3)",[id(501),id(1),JSON.stringify({websiteAttribution:attr})]);
+ assert.equal(await scalar('SELECT campaign_id FROM lead_ad_attributions WHERE company_id=$1 AND lead_id=$2',[id(1),id(501)]),'777');
+ await assert.rejects(()=>db.query("INSERT INTO leads(id,company_id,name,phone,interest_profile) VALUES($1,$2,'Invalid','',$3)",[id(502),id(1),JSON.stringify({websiteAttribution:{...attr,source:42}})]),/ads_invalid_attribution/);assert.equal(await scalar('SELECT count(*)::int FROM leads WHERE id=$1',[id(502)]),0,'invalid attribution and lead roll back together');
+ await assert.rejects(()=>db.query('INSERT INTO lead_ad_attributions(company_id,lead_id,source,medium,campaign,content,term) VALUES($1,$2,$3,$4,$5,$6,$7)',[id(2),id(501),'facebook','paid','777','','']),/foreign key/);
+ const closed=new Date().toISOString();await db.query('INSERT INTO crm_evolution_workspaces(company_id,document) VALUES($1,$2)',[id(1),JSON.stringify({records:[{id:'case1',kind:'cases',data:{status:'Ganho',purpose:'Venda',leadId:`lead:${id(501)}`,propertyId:'p1',closedAt:closed,name:'Do not return customer'}},{id:'proposal1',kind:'proposals',data:{caseId:'case1',status:'Aceita',propertyId:'p1',amount:300000}}],events:[]})]);
+ const report=await scalar('SELECT meta_ads_attribution_inputs($1,$2,$3,$4)',[id(1),id(11),new Date(Date.now()-86400000).toISOString(),new Date(Date.now()+86400000).toISOString()]);assert.equal(report.attributions.length,1);assert.equal(report.sales.length,1);assert.equal(report.sales[0].amount,300000);assert.doesNotMatch(JSON.stringify(report),/Private customer|5535999999999|Do not return/);
+ await assert.rejects(()=>scalar('SELECT meta_ads_attribution_inputs($1,$2,$3,$4)',[id(1),id(21),closed,new Date(Date.now()+86400000).toISOString()]),/ads_forbidden/);
+ await db.exec('SET ROLE anon');await assert.rejects(()=>db.query('SELECT * FROM lead_ad_attributions'),/permission denied/);await assert.rejects(()=>db.query('SELECT * FROM meta_ads_build_requests'),/permission denied/);await db.exec('RESET ROLE');
+ console.log('PASS Meta Ads SQL: owner/account claim, tenant FKs/RLS, transactional first-touch capture, no partial lead and private aggregate inputs.');
+}finally{await db.close();}})().catch(error=>{console.error(error);process.exit(1);});

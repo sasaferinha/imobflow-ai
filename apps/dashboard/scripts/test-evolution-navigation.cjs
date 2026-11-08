@@ -41,6 +41,10 @@ function runtime(react = React, environment = {}) {
         if (id === './account-menu') return load('app/evolution/account-menu.tsx');
         if (id === './ai-settings') return load('app/evolution/ai-settings.tsx');
         if (id === './settings-hub') return load('app/evolution/settings-hub.tsx');
+        if (id === '../social-connections') return load('app/social-connections.tsx');
+        if (id === './mobile-workspace') return load('app/evolution/mobile-workspace.tsx');
+        if (id === '@/lib/evolution/mobile-workspace') return load('lib/evolution/mobile-workspace.ts');
+        if (id === './model') return load('lib/evolution/model.ts');
         if (id === './website-settings' && relative.startsWith('app/')) return load('app/evolution/website-settings.tsx');
         if (id === './website-settings' || id === '@/lib/evolution/website-settings') return load('lib/evolution/website-settings.ts');
         if (id === '../ai/tenant-settings' || id === '@/lib/ai/tenant-settings') return load('lib/ai/tenant-settings.ts');
@@ -138,7 +142,7 @@ function navigationHarness(actor = owner, hash = '#conversations', browser = {})
     }),
   });
   const Client = isolated.load(clientPath).default;
-  const props = { initialState: browser.state || state, actor, mode: 'live', integrated: true, renderOperationalPanel: nativeHost };
+  const props = { initialState: browser.state || state, actor, mode: 'live', integrated: true, renderOperationalPanel: browser.renderOperationalPanel || nativeHost };
   function render() {
     let attempts = 0;
     do {
@@ -209,6 +213,16 @@ const property = {
   data: { name: 'Imóvel fictício', code: '', assignedTo: '', purpose: '', price: 123, status: 'Disponível', photoUrl: 'data:image/png;base64,AAA' },
   legacy: { table: 'properties', id: 'original-test', access: 'owner', missingPurpose: true },
 };
+const catalogState = structuredClone(state); catalogState.records.push(property);
+const catalog = navigationHarness(owner, '#portfolio', { state: catalogState,
+  renderOperationalPanel: (page, refreshKey, onNavigate, onOpenProperty) => React.createElement('native-host', { page, refreshKey, onOpenProperty }),
+});
+const catalogHost = () => find(catalog.tree, node => node.type === 'native-host');
+catalogHost().props.onOpenProperty('not-in-this-workspace'); catalog.render();
+assert(!find(catalog.tree, node => node.type?.name === 'RecordDetail'), 'unknown catalog ids must not open a record');
+catalogHost().props.onOpenProperty(property.legacy.id); catalog.render();
+assert.equal(find(catalog.tree, node => node.type?.name === 'RecordDetail').props.record.id, property.id, 'catalog visits open the canonical CRM property, without re-creating or reassigning records');
+assert(catalog.requests.every(request => request.method === 'GET'), 'opening visit registration must not start a visit automatically');
 function renderEditor(record) {
   return renderToStaticMarkup(React.createElement(RecordEditor, {
     editor: { kind: record.kind, record }, state, actor: owner, busy: false, error: '', onClose() {}, onSave: async () => {},

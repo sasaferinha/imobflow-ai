@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import type { CrmCommand, CrmRecord, CrmState } from '@/lib/evolution/model';
+import { useRef, useState } from 'react';
+import { canAccess, type Actor, type CrmCommand, type CrmRecord, type CrmState } from '@/lib/evolution/model';
 import { parseComparables, propertyPriceReview, valuation, type Comparable } from '@/lib/evolution/property-workflows';
+import PropertyFeedbackPanel from './property-feedback-panel';
 import s from './property-workflows.module.css';
 
 type Props = { record: CrmRecord; state?: CrmState; canEdit: boolean; busy: boolean; execute: (command: CrmCommand) => Promise<boolean> };
@@ -64,14 +65,45 @@ export function PropertyWorkflowPanel({ record, canEdit, busy, execute }: Props)
   </>;
 }
 
-export function VisitWorkflowPanel({ record, canEdit, busy, execute }: Props) {
+export function PropertyVisitStartPanel({ record, state, actor, busy, execute, onSelect, demonstration = false }: { record: CrmRecord; state: CrmState; actor: Actor; busy: boolean; execute: Props['execute']; onSelect?: (id: string) => void; demonstration?: boolean }) {
+  const [caseId, setCaseId] = useState('');
+  const [error, setError] = useState('');
+  const inFlight = useRef(false);
+  const request = useRef<{ caseId: string; propertyId: string; id: string } | null>(null);
+  if (record.kind !== 'properties') return null;
+  const cases = state.records.filter(item => item.kind === 'cases' && item.data.status === 'Aberto' && item.data.journey !== 'Captação' && item.data.purpose === record.data.purpose && canAccess(state, actor, item, 'write'));
+  const available = ['Disponível', 'Reservado'].includes(String(record.data.status));
+  const visits = state.records.filter(item => item.kind === 'tasks' && item.data.type === 'Visita' && item.data.propertyId === record.id && item.data.visitStartedAt && !item.data.visitEndedAt && ['Confirmada', 'Pendente'].includes(String(item.data.status)) && canAccess(state, actor, item, 'write'));
+  return <section className={s.panel} aria-label="Visitar este imóvel"><h3>Visitar este imóvel</h3><p>Escolha um cliente que já está no seu atendimento e registre o início da visita.</p>
+    {visits.map(visit => <div className={s.reference} key={visit.id}><strong>{String(visit.data.name)}</strong><p>Em andamento desde {dateTime(visit.data.visitStartedAt)}</p><VisitWorkflowPanel record={visit} state={state} canEdit busy={busy} execute={execute} demonstration={demonstration} /></div>)}
+    {available ? <form onSubmit={async event => {
+      event.preventDefault(); if (!caseId || busy || inFlight.current) return;
+      inFlight.current = true; setError('');
+      if (!request.current || request.current.caseId !== caseId || request.current.propertyId !== record.id) request.current = { caseId, propertyId: record.id, id: crypto.randomUUID() };
+      try { if (await execute({ type: 'visit-start', caseId, propertyId: record.id, requestId: request.current.id })) { const id = record.legacy ? `appointment:${request.current.id}` : request.current.id; request.current = null; setCaseId(''); onSelect?.(id); } }
+      catch { setError('Não foi possível confirmar o início. Atualize antes de tentar novamente.'); }
+      finally { inFlight.current = false; }
+    }}><label>Cliente / atendimento<select required disabled={busy || cases.length === 0} value={caseId} onChange={event => setCaseId(event.target.value)}><option value="">Escolha um atendimento existente</option>{cases.map(item => <option key={item.id} value={item.id}>{String(state.records.find(person => person.id === item.data.personId)?.data.name || item.data.name)} · {String(item.data.name)}</option>)}</select></label><div className={s.actions}><button className={s.primary} disabled={busy || !caseId}>Iniciar visita</button></div>{!cases.length && <p>Você ainda não possui atendimento aberto compatível com este imóvel.</p>}</form> : <p>Este imóvel não está disponível para novas visitas.</p>}
+    {error && <p role="alert" className={s.error}>{error}</p>}
+  </section>;
+}
+
+export function VisitWorkflowPanel({ record, canEdit, busy, execute, demonstration = false }: Props & { demonstration?: boolean }) {
   const [feedback, setFeedback] = useState(String(record.data.clientFeedback || ''));
+  const inFlight = useRef(false);
   if (record.kind !== 'tasks' || record.data.type !== 'Visita') return null;
   const started = Boolean(record.data.visitStartedAt), finished = Boolean(record.data.visitEndedAt);
   const active = ['Pendente', 'Confirmada'].includes(String(record.data.status));
-  return <section className={s.panel} aria-label="Registro da visita"><h3>Registro da visita</h3><p>Os horários são registrados no momento da ação e ficam no histórico do atendimento. Registre abaixo o relato do cliente sobre o imóvel.</p>
+  async function progress(action: 'start' | 'finish') {
+    if (inFlight.current || busy) return;
+    inFlight.current = true;
+    try { await execute({ type: 'visit-progress', id: record.id, action, ...(action === 'finish' ? { feedback } : {}) }); }
+    finally { inFlight.current = false; }
+  }
+  return <section className={s.panel} aria-label="Registro da visita"><h3>Registro da visita</h3><p>Início e encerramento ficam no histórico. Ao encerrar, você recebe o link para enviar a avaliação ao cliente.</p>
     <div className={s.times}><span>Início<strong>{dateTime(record.data.visitStartedAt)}</strong></span><span>Encerramento<strong>{dateTime(record.data.visitEndedAt)}</strong></span></div>
-    {canEdit && active && !started && <button className={s.primary} disabled={busy} onClick={() => void execute({ type: 'visit-progress', id: record.id, action: 'start' })}>Iniciar visita</button>}
-    {canEdit && active && started && !finished ? <form onSubmit={async event => { event.preventDefault(); await execute({ type: 'visit-progress', id: record.id, action: 'finish', feedback }); }}><label>O que o cliente achou do imóvel?<textarea required rows={4} maxLength={6000} value={feedback} disabled={busy} onChange={e => setFeedback(e.target.value)} placeholder="O que gostou, objeções ao preço, condições do imóvel e próximo passo…" /></label><div className={s.actions}><button className={s.primary} disabled={busy || !feedback.trim()}>Encerrar visita e salvar relato</button></div></form> : record.data.clientFeedback ? <p className={s.readOnly}>{String(record.data.clientFeedback)}</p> : !active && <p>Visita {String(record.data.status).toLocaleLowerCase('pt-BR')}. Os registros anteriores foram preservados.</p>}
+    {canEdit && active && !started && <button className={s.primary} disabled={busy} onClick={() => void progress('start')}>Iniciar visita</button>}
+    {canEdit && active && started && !finished ? <form onSubmit={async event => { event.preventDefault(); await progress('finish'); }}><details><summary>Adicionar observação (opcional)</summary><label>Observação da visita<textarea rows={2} maxLength={6000} value={feedback} disabled={busy} onChange={e => setFeedback(e.target.value)} placeholder="Algo que deseja guardar sobre esta visita…" /></label></details><div className={s.actions}><button className={s.primary} disabled={busy}>Encerrar visita</button></div></form> : record.data.clientFeedback ? <p className={s.readOnly}>{String(record.data.clientFeedback)}</p> : !active && <p>Visita {String(record.data.status).toLocaleLowerCase('pt-BR')}. Os registros anteriores foram preservados.</p>}
+    {finished && Boolean(record.data.caseId) && <PropertyFeedbackPanel key={record.id} caseId={String(record.data.caseId)} visitId={record.id} disabled={!canEdit || busy} demonstration={demonstration} />}
   </section>;
 }

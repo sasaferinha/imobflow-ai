@@ -14,9 +14,10 @@ function load(file){
   if(cache.has(file))return cache.get(file);
   const mod={exports:{}};cache.set(file,mod.exports);
   const requireLocal=specifier=>{
-    if(specifier==='next/server')return{NextResponse:Response,NextRequest:Request};
+    if(specifier==='next/server')return{NextResponse:Response,NextRequest:Request,after:()=>{}};
     if(specifier==='@/lib/supabase'||specifier==='./supabase')return{supabaseRequest:db,supabaseServiceRequest:db};
     if(specifier==='@/lib/meta-social')return{...load('lib/meta-social.ts'),saveSocialEvent:async event=>{if(failSave)throw Error('synthetic-failure');saved.push(event);return {created:true};}};
+    if(specifier==='@/lib/social-connections')return{activeSocialConnections:async filter=>load('lib/meta-social.ts').socialConnections().filter(c=>!filter.companyId||c.companyId===filter.companyId)};
     if(specifier==='./lead-import')return{importPhone:input=>input.replace(/\D/g,'')};
     if(specifier==='./leads')return{analyzeLead:()=>({score:0,temperature:'Frio'}),explainProfile:()=>''};
     if(specifier.startsWith('@/'))return load(specifier.slice(2)+'.ts');

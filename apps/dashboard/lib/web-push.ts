@@ -26,6 +26,20 @@ export function validatePushSubscription(value: unknown): BrowserPushSubscriptio
   return { endpoint: validPushEndpoint(input.endpoint), keys: { p256dh: String(keys.p256dh), auth: String(keys.auth) } };
 }
 export const pushEndpointHash = (endpoint: string) => createHash('sha256').update(endpoint).digest('hex');
+/** A dedicated worker key does not grant access to the general CRM cron. */
+export function webPushSchedulerSecret(env = process.env): string | null {
+  if (env.WEB_PUSH_SCHEDULER_SECRET !== undefined) {
+    return /^[A-Za-z0-9_-]{32,256}$/.test(env.WEB_PUSH_SCHEDULER_SECRET) ? env.WEB_PUSH_SCHEDULER_SECRET : null;
+  }
+  return env.CRON_SECRET || null;
+}
+function validVapidSubject(value: string) {
+  if (/^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return true;
+  try {
+    const url = new URL(value);
+    return value.length <= 1000 && value === value.trim() && url.protocol === 'https:' && !url.username && !url.password && !url.port && !url.hash && !url.search && url.hostname.includes('.') && !url.hostname.endsWith('.localhost');
+  } catch { return false; }
+}
 export function webPushConfig(env = process.env) {
   if (env.WEB_PUSH_ENABLED !== 'true') return null;
   try {
@@ -33,8 +47,8 @@ export function webPushConfig(env = process.env) {
     const pair = createECDH('prime256v1'); pair.setPrivateKey(privateKey);
     if (!pair.getPublicKey().equals(publicKey)) return null;
     const subject = env.VAPID_SUBJECT || '';
-    if (!/^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/.test(subject)) return null;
+    if (!validVapidSubject(subject)) return null;
     return { publicKey: publicKey.toString('base64url'), privateKey: privateKey.toString('base64url'), subject,
-      schedulerConfigured: env.WEB_PUSH_SCHEDULER_CONFIGURED === 'true' && Boolean(env.CRON_SECRET) };
+      schedulerConfigured: env.WEB_PUSH_SCHEDULER_CONFIGURED === 'true' && Boolean(webPushSchedulerSecret(env)) };
   } catch { return null; }
 }

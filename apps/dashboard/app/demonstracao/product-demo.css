@@ -4,6 +4,8 @@ html:has(.public-product-demo) { scroll-behavior: auto; }
 .public-demo-notice { display: flex; gap: 12px; align-items: center; padding: 12px 24px; border-bottom: 1px solid #dce8f7; background: #fff; color: #58708f; font: 13px/1.5 var(--crm-font, 'Inter', 'Segoe UI', sans-serif); }
 .public-demo-notice strong { font-weight: 600; color: #0066f5; }
 .public-demo-loading { padding: 48px; color: var(--muted); }
+.public-product-demo .product-demo-visit { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow-y: auto; }
+.product-demo-visit > p { color: var(--crm-muted, #58708f); font-size: 14px; line-height: 1.6; }
 /* The landing preview grows with its content. The presentation uses the real
    administrator geometry, including its sticky sidebar and native chat height. */
 .public-product-demo:not(.admin-presentation-demo) .app-shell { min-height: 740px; }

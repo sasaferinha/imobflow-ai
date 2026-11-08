@@ -1,0 +1,54 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), path = require('node:path');
+const { createDatabase, seedCompanies, id, migration, isolationMigration } = require('./helpers/tenant-test-database.cjs');
+
+(async () => {
+  const db = await createDatabase();
+  try {
+    for (const file of fs.readdirSync(path.resolve(__dirname, '../../../supabase/migrations')).filter(f => f.endsWith('.sql') && f > isolationMigration && f <= '20261108000000_company_websites.sql').sort()) await db.exec(migration(file));
+    await db.exec(migration('20261108122000_website_domains.sql'));
+    await seedCompanies(db);
+    const manage = (action, hostname, row = null, actor = 11, company = 1) => db.query('SELECT manage_website_domain($1,$2,$3,$4,$5,$6,$7) result', [id(company), id(actor), action, hostname, row?.id || null, row?.version || null, 'a'.repeat(64)]).then(r => r.rows[0].result);
+    const begin = (row, check, actor = 11, company = 1) => db.query('SELECT begin_website_domain_check($1,$2,$3,$4,$5) result', [id(company), id(actor), row.id, row.version, id(check)]).then(r => r.rows[0].result);
+    const finish = (row, check, result, actor = 11, company = 1) => db.query('SELECT finish_website_domain_check($1,$2,$3,$4,$5::jsonb) result', [id(company), id(actor), row.id, id(check), JSON.stringify(result)]).then(r => r.rows[0].result);
+    await db.exec('SET ROLE service_role');
+    await assert.rejects(() => manage('create', 'www.example.com', null, 21, 1), /website_forbidden/, 'Foreign owner cannot create a domain for another tenant');
+    await assert.rejects(() => manage('create', 'imobflow.net.br'), /website_domain_invalid/);
+    const row = await manage('create', 'www.example.com');
+    assert.equal(row.status, 'pending'); assert.equal(row.version, 1); assert.equal(row.ownership_verified_at, null);
+    await assert.rejects(() => manage('create', 'www.example.com', null, 21, 2), /website_domain_reserved/, 'Global hostname uniqueness blocks cross-tenant claims');
+    await assert.rejects(() => begin(row, 800, 21, 2), /website_not_found/);
+    const checking = await begin(row, 800);
+    await assert.rejects(() => begin(row, 801), /website_conflict/);
+    await assert.rejects(() => begin(checking, 801), /website_conflict/, 'An unexpired verification lease serializes provider operations');
+    const result = { status: 'active', ownershipVerified: true, providerVerified: true, dnsValid: true, tlsVerified: true, projectId: 'prj_fixture', records: [], message: 'Confirmed by synthetic test' };
+    await assert.rejects(() => finish(checking, 800, { ...result, ownershipVerified: false }), /check constraint/, 'ACTIVE requires independent ownership proof');
+    await assert.rejects(() => finish(checking, 800, { ...result, tlsVerified: false }), /check constraint/, 'ACTIVE requires TLS confirmation');
+    await assert.rejects(() => finish(checking, 800, { ...result, dnsValid: false }), /check constraint/, 'ACTIVE requires provider DNS validity');
+    await assert.rejects(() => finish(checking, 800, { ...result, providerVerified: false }), /check constraint/);
+    const active = await finish(checking, 800, result);
+    assert.equal(active.status, 'active'); assert(active.ownership_verified_at && active.tls_verified_at);
+    await assert.rejects(() => manage('disable', null, active, 21, 2), /website_not_found/);
+    const disabled = await manage('disable', null, active);
+    assert(disabled.disabled_at); assert.equal(disabled.status, 'pending');
+    assert.equal((await db.query("SELECT id FROM company_website_domains WHERE status='active' AND disabled_at IS NULL")).rows.length, 0);
+    assert.equal(disabled.ownership_token, row.ownership_token, 'Disconnect preserves the owned record for reconnection');
+    await assert.rejects(() => begin(disabled, 802), /website_not_found/);
+    const enabled = await manage('enable', null, disabled);
+    assert.equal(enabled.disabled_at, null); assert.equal(enabled.status, 'pending'); assert.equal(enabled.tls_verified_at, null, 'Reconnection never trusts stale activation');
+    const competing = await begin(enabled, 803);
+    const disconnectedDuringCheck = await manage('disable', null, competing);
+    await assert.rejects(() => finish(competing, 803, result), /website_not_found/, 'Disconnect wins against an in-flight provider verification');
+    await assert.rejects(() => manage('enable', null, enabled), /website_conflict/, 'Stale views cannot re-enable a domain');
+    await manage('create', 'second.example.com'); await manage('create', 'third.example.com');
+    await assert.rejects(() => manage('create', 'fourth.example.com'), /website_domain_limit/);
+    await assert.rejects(() => db.query("UPDATE company_website_domains SET status='active' WHERE id=$1", [disconnectedDuringCheck.id]), /permission denied/, 'Service role cannot bypass guarded mutation functions');
+    await db.exec('RESET ROLE'); await db.exec('SET ROLE anon');
+    await assert.rejects(() => db.query('SELECT * FROM company_website_domains'), /permission denied/);
+    await assert.rejects(() => manage('create', 'anonymous.example.com'), /permission denied/);
+    await db.exec('RESET ROLE'); await db.exec('SET ROLE authenticated');
+    await assert.rejects(() => db.query('SELECT * FROM company_website_domains'), /permission denied/);
+    await assert.rejects(() => begin(row, 900), /permission denied/);
+    console.log('PASS domain SQL: owner/tenant isolation, unique reservation, guarded ACTIVE prerequisites, verification lease, disconnect during verification, CAS, reversible reconnection, domain count and no direct client/table writes.');
+  } finally { await db.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

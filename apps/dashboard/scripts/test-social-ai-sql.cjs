@@ -1,0 +1,66 @@
+const assert=require('node:assert/strict');
+const {createDatabase,seedCompanies,id,migration}=require('./helpers/tenant-test-database.cjs');
+(async()=>{
+ const db=await createDatabase();try{
+  await seedCompanies(db);await db.exec('CREATE TABLE crm_evolution_workspaces(company_id uuid PRIMARY KEY REFERENCES companies(id),document jsonb NOT NULL)');
+  await db.exec(migration('20260912221000_message_recovery.sql'));
+  await db.exec(`CREATE SCHEMA net; CREATE SCHEMA vault;
+   CREATE TABLE net._http_response(id bigint,status_code integer,created timestamptz);
+   CREATE TABLE vault.decrypted_secrets(name text,decrypted_secret text);
+   INSERT INTO vault.decrypted_secrets VALUES('imobflow_message_recovery_secret',repeat('fixture-',6));
+   CREATE TABLE public.message_recovery_scheduler(id boolean PRIMARY KEY,last_tick_at timestamptz,last_request_at timestamptz,last_request_id bigint,last_http_status integer,last_success_at timestamptz);
+   INSERT INTO public.message_recovery_scheduler(id) VALUES(true);
+   CREATE TABLE IF NOT EXISTS public.inbound_reply_jobs(state text,next_attempt_at timestamptz);
+   CREATE TABLE public.synthetic_http_calls(url text,body jsonb,timeout integer);
+   CREATE FUNCTION net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) RETURNS bigint LANGUAGE plpgsql AS $$BEGIN INSERT INTO public.synthetic_http_calls VALUES(url,body,timeout_milliseconds);RETURN 1;END$$;
+   CREATE FUNCTION public.dispatch_message_recovery() RETURNS void LANGUAGE plpgsql AS $$BEGIN RETURN;END$$;`);
+  await db.exec(migration('20261108121000_social_messaging.sql'));await db.exec(migration('20261108123000_social_ai.sql'));
+  const scalar=async(sql,args=[])=>Object.values((await db.query(sql,args)).rows[0])[0];
+  const account=await scalar('SELECT bind_social_account($1,$2,$3,$4,$5,$6,$7,$8)',[id(1),id(11),'instagram','456','123','Synthetic','ciphertext','v26.0']);
+  await scalar('SELECT configure_social_account($1,$2,$3,$4,$5)',[id(1),id(11),'instagram','mode','automatic']);
+  const receive=(n,mid=`incoming-${n}`)=>scalar('SELECT receive_social_message($1,$2,$3,$4,$5,$6,$7,$8)',[account,id(n),String(n),mid,'Procuro apartamento','[]',null,new Date().toISOString()]);
+  const profile=lead=>scalar('SELECT social_ai_profile($1,$2)',[id(1),lead]);
+  const prepare=(msg,expected,patch={},reply='Qual bairro?',handoff=false)=>scalar('SELECT prepare_social_ai_turn($1,$2,$3,$4,$5,$6,$7)',[id(1),msg.threadId,msg.messageId,JSON.stringify(patch),reply,handoff,JSON.stringify(expected)]);
+  const claim=(msg,n,company=id(1))=>scalar('SELECT claim_social_ai_job($1,$2,$3)',[id(n),company,msg.messageId]);
+  const finish=(msg,n,outcome)=>scalar('SELECT finish_social_ai_job($1,$2,$3,$4,$5)',[id(1),msg.messageId,id(n),outcome,'fixture']);
+  const enqueue=(msg,key='reply',reply='Qual bairro?')=>scalar('SELECT enqueue_social_batch($1,$2,$3,$4,$5,$6,$7)',[id(1),msg.threadId,null,key,JSON.stringify([{content:reply,media:[]}]),'ai',msg.messageId]);
+  await scalar('SELECT dispatch_message_recovery()');assert.equal(await scalar('SELECT count(*)::int FROM synthetic_http_calls'),0,'existing worker stays idle without pending work');
+  const first=await receive(1001);assert.equal((await receive(1001)).saved,false);
+  assert.equal(await scalar('SELECT count(*)::int FROM social_ai_jobs WHERE message_id=$1',[first.messageId]),1,'durable job commits once with verified incoming');
+  await scalar('SELECT dispatch_message_recovery()');assert.equal(await scalar('SELECT count(*)::int FROM synthetic_http_calls'),1,'existing minute worker wakes for social-only work');
+  await prepare(first,await profile(first.leadId));const abandoned=await enqueue(first,'abandoned');
+  assert.equal(await claim(first,8000,id(2)),null,'tenant scope cannot claim another company');
+  assert.equal((await claim(first,8001)).attempts,1);assert.equal(await claim(first,8002),null,'active lease cannot be stolen');
+  assert.equal(await finish(first,8002,'done'),false,'stale completion is rejected');assert.equal(await finish(first,8001,'retry'),true);
+  assert.equal(await claim(first,8002),null,'backoff is enforced');
+  await db.query("UPDATE social_ai_jobs SET next_attempt_at=now()-interval '1 second' WHERE message_id=$1",[first.messageId]);
+  assert.equal((await claim(first,8002)).attempts,2);await db.query("UPDATE social_ai_jobs SET lease_until=now()-interval '1 second' WHERE message_id=$1",[first.messageId]);
+  assert.equal((await claim(first,8003)).attempts,3);assert.equal(await finish(first,8002,'done'),false);
+  await db.query("UPDATE social_ai_jobs SET lease_until=now()-interval '1 second' WHERE message_id=$1",[first.messageId]);assert.equal(await claim(first,8004),null);
+  assert.equal(await scalar('SELECT status FROM social_ai_jobs WHERE message_id=$1',[first.messageId]),'failed');assert.equal(await scalar('SELECT mode FROM social_threads WHERE id=$1',[first.threadId]),'human','crashed third attempt falls back to broker');
+  assert.equal(await scalar('SELECT status FROM social_messages WHERE id=$1',[abandoned[0]]),'failed','exhausted job cannot leave a reply visibly pending forever');
+
+  const second=await receive(1002);const original=await profile(second.leadId);
+  await db.query("UPDATE leads SET region='Manual bairro',interest_profile=jsonb_build_object('regions',jsonb_build_array('Old bairro')) WHERE id=$1",[second.leadId]);
+  assert.equal((await prepare(second,original,{budgetMax:500000})).ready,false,'manual profile edit during inference cancels preparation');
+  assert.equal(await scalar('SELECT count(*)::int FROM social_ai_turns WHERE message_id=$1',[second.messageId]),0);
+  const current=await profile(second.leadId);assert.equal((await prepare(second,current,{budgetMax:500000})).ready,true);
+  assert.equal(await scalar('SELECT region FROM leads WHERE id=$1',[second.leadId]),'Manual bairro','unrelated AI patch cannot restore old canonical region');
+  const replay=await prepare(second,original,{budgetMax:900000},'Changed retry');assert.equal(replay.reply,'Qual bairro?');assert.equal(Number(await scalar('SELECT budget_max FROM leads WHERE id=$1',[second.leadId])),500000,'prepared turn retry never reapplies inferred patch');
+  const ids=await enqueue(second);assert.deepEqual(await enqueue(second),ids);
+  await db.query("UPDATE leads SET budget_max=600000 WHERE id=$1",[second.leadId]);
+  await assert.rejects(()=>scalar('SELECT claim_social_message($1,$2)',[id(1),ids[0]]),/social_handoff/,'manual change after enqueue blocks provider dispatch');
+  assert.equal(await scalar('SELECT status FROM social_messages WHERE id=$1',[ids[0]]),'pending','failed authorization does not claim provider send');
+  assert.equal((await prepare(second,await profile(second.leadId))).ready,false,'changed profile cannot revive an old prepared turn');
+  await claim(second,8010);await finish(second,8010,'done');assert.equal(await scalar('SELECT status FROM social_messages WHERE id=$1',[ids[0]]),'failed','skipped turn clears stale pending reply');
+
+  const third=await receive(1003);await prepare(third,await profile(third.leadId),{},'Corretor continuará.',true);const outgoing=await enqueue(third,'handoff','Corretor continuará.');
+  await scalar('SELECT finish_social_ai_turn($1,$2,$3)',[id(1),third.threadId,third.messageId]);assert.equal(await scalar('SELECT mode FROM social_threads WHERE id=$1',[third.threadId]),'automatic','handoff waits for a terminal send');
+  assert.ok(await scalar('SELECT claim_social_message($1,$2)',[id(1),outgoing[0]]));await db.query("UPDATE social_messages SET status='sent' WHERE id=$1",[outgoing[0]]);
+  const newer=await receive(1003,'incoming-1003-new');await scalar('SELECT finish_social_ai_turn($1,$2,$3)',[id(1),third.threadId,third.messageId]);assert.equal(await scalar('SELECT mode FROM social_threads WHERE id=$1',[third.threadId]),'automatic','late completion cannot hand off a newer turn');
+  await prepare(newer,await profile(newer.leadId));await scalar('SELECT social_handoff($1,$2,$3,$4)',[id(1),id(11),newer.threadId,'human']);await assert.rejects(()=>enqueue(newer,'after-human'),/social_handoff/);
+  await db.query('INSERT INTO crm_evolution_workspaces(company_id,document) VALUES($1,$2)',[id(1),JSON.stringify({settings:{ai:{automaticMode:'human'}}})]);const off=await receive(1004);assert.equal(await scalar('SELECT count(*)::int FROM social_ai_jobs WHERE message_id=$1',[off.messageId]),0);
+  await db.exec('SET ROLE anon');await assert.rejects(()=>db.query('SELECT * FROM social_ai_jobs'),/permission denied/);await assert.rejects(()=>claim(first,8099),/permission denied/);await db.exec('RESET ROLE');
+  console.log('PASS social AI SQL: durable incoming dedup, tenant scope, lease/backoff/three-attempt recovery, profile CAS before prepare and dispatch, persisted replay, no stale handoff, global stop and service-only jobs.');
+ }finally{await db.close();}
+})().catch(error=>{console.error(error);process.exit(1);});

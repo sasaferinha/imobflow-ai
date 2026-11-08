@@ -176,6 +176,10 @@ async function routeTests() {
   };
   class CrmError extends Error {} class EvolutionServerError extends Error {}
   const route = load('app/api/conversations/assist/route.ts', {
+    '@/lib/lead-channel-server': { leadMessageDestination: async () => ({ channel: 'whatsapp', threadId: null }) },
+    '@/lib/social-messaging': { readSocialInbox: async () => assert.fail('WhatsApp policy fixture cannot read a social inbox') },
+    '@/lib/social-audio': { transcribeSocialAudio: async () => assert.fail('Text policy fixture cannot read social audio') },
+    '@/lib/social-model': { SocialError: class extends Error {} },
     'next/server': { NextResponse: { json: Response.json } },
     '@/lib/accounts': { protectedRoute: handler => handler }, '@/lib/tenant-context': { currentAccount: () => actor },
     '@/lib/request-security': { hasSameOrigin: () => true, hasSafeRequestSize: () => true, consumeRateLimit: async () => true },

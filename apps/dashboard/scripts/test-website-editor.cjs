@@ -43,10 +43,11 @@ function harness(initial, supplied = {}) {
   const hooks = { ...React,
     useState(value) { const index = cursor++; if (!(index in slots)) slots[index] = { value: typeof value === 'function' ? value() : value }; return [slots[index].value, update => { slots[index].value = typeof update === 'function' ? update(slots[index].value) : update; pending = true; }]; },
     useRef(value) { const index = cursor++; return slots[index] || (slots[index] = { current: value }); },
+    useMemo(create, deps) { const index = cursor++; if (!(index in slots) || different(slots[index].deps, deps)) slots[index] = { deps, value: create() }; return slots[index].value; },
     useEffect(effect, deps) { const index = cursor++; if (!(index in slots) || different(slots[index].deps, deps)) { const old = slots[index]; slots[index] = { deps }; effects.push(() => { old?.cleanup?.(); slots[index].cleanup = effect(); }); } },
   };
   const env = runtime(hooks, { window: { confirm: () => confirm, addEventListener(name, fn) { events.set(name, fn); }, removeEventListener(name) { events.delete(name); } }, ...(supplied.globals || {}) });
-  const api = env.load(editorFile);
+  const api = env.load(supplied.moduleFile || editorFile);
   const transform = env.load(demoFile).applyDemoWebsiteMutation;
   let saved = structuredClone(initial);
   const transport = { load: async () => structuredClone(saved), mutate: async command => { commands.push(command); if (supplied.mutate) return supplied.mutate(command, api); saved = transform(saved, command); return saved; }, upload: async () => '/test.png' };
@@ -119,9 +120,30 @@ async function run() {
   assert.deepEqual(plain(migrated.snapshot.properties), plain(legacyPayload.properties));
   assert.deepEqual(plain(migrated.unavailable), plain(legacyPayload.unavailable), 'A sold demo property is not restored when older content gains a layout default');
 
+  let demoStorage = JSON.stringify(legacyPayload), demoWrites = 0;
+  const demoWrapper = harness(initial, { moduleFile: demoFile, globals: {
+    localStorage: { getItem: () => demoStorage, setItem: (_key, value) => { demoStorage = value; demoWrites++; } },
+    window: { dispatchEvent() {} }, Event,
+  } });
+  const demoEditorProps = demoWrapper.tree.props;
+  assert.equal(demoWrapper.tree.type.name, 'SiteEditor', 'Demo uses the shared editor with no separate stock-mutation panel');
+  assert(demoEditorProps.demo);
+  assert.equal(demoWrites, 0, 'Opening the demo must not reset or overwrite saved contents');
+  const demoMarkup = renderToStaticMarkup(React.createElement(api.default, demoEditorProps));
+  assert(demoMarkup.includes('somente para consulta'));
+  for (const removed of ['Atualizar preço', 'Marcar vendido', 'Voltar a disponibilizar', 'Cadastrar imóvel fictício', 'Reiniciar demonstração']) assert(!demoMarkup.includes(removed), `Demo catalog has no mutation control: ${removed}`);
+  await demoEditorProps.transport.mutate({ action: 'save', expectedVersion: migrated.snapshot.site.version, content: { ...migrated.snapshot.site.draft, heroTitle: 'Conteúdo novo, catálogo preservado' } });
+  const demoAfterSave = JSON.parse(demoStorage);
+  assert.equal(demoWrites, 1);
+  assert.deepEqual(demoAfterSave.properties, plain(legacyPayload.properties));
+  assert.deepEqual(demoAfterSave.unavailable, plain(legacyPayload.unavailable));
+  assert.equal(demoAfterSave.site.published.heroTitle, legacyPayload.site.published.heroTitle, 'Saving the read-only catalog demo still changes only the draft');
+
   const ownerMarkup = renderToStaticMarkup(React.createElement(api.default, { initial }));
   const marketingMarkup = renderToStaticMarkup(React.createElement(api.default, { initial: { ...initial, role: 'marketing' } }));
   assert(ownerMarkup.includes('Acesso da equipe de marketing'));
+  assert(ownerMarkup.includes('Domínio próprio'));
+  assert(!marketingMarkup.includes('Domínio próprio'), 'Marketing cannot manage domain ownership');
   assert(!marketingMarkup.includes('Acesso da equipe de marketing') && !marketingMarkup.includes('Gerenciar imóveis'), 'Marketing does not receive CRM controls or access management');
   assert(marketingMarkup.includes('Sair do editor'));
   assert(ownerMarkup.includes('Seções do editor') && ownerMarkup.includes('Publicação e histórico'));
@@ -131,8 +153,12 @@ async function run() {
   }
 
   const layouts = harness(initial);
+  assert(find(layouts.tree, node => node.props?.preview === true), 'Desktop preview is mounted immediately alongside the editor');
+  assert(find(layouts.tree, node => node.type === 'form' && node.props.className === 'form'), 'Form and preview coexist in the editor');
   layouts.change('Título principal', 'Rascunho em andamento');
   layouts.chooseLayout('modern');
+  assert.equal(find(layouts.tree, node => node.props?.preview === true).props.content.heroTitle, 'Rascunho em andamento', 'Typing updates the live preview before saving');
+  assert.equal(find(layouts.tree, node => node.props?.preview === true).props.content.layout, 'modern', 'Model selection updates the live preview immediately');
   assert.equal(layouts.commands.length, 0, 'Choosing a model neither saves nor publishes automatically');
   assert.equal(field(layouts.tree, 'Título principal').props.value, 'Rascunho em andamento', 'Choosing a model preserves current unsaved edits');
   layouts.click('Salvar rascunho'); await tick(); layouts.render();
@@ -198,9 +224,24 @@ async function run() {
 
   const invalid = harness(initial);
   invalid.change('Nome da imobiliária', '');
+  invalid.change('Título principal', '');
+  invalid.click('Ver prévia');
+  assert(!find(invalid.tree, node => node.props?.role === 'alert'), 'Opening the small-screen preview does not validate an unfinished draft');
+  assert.equal(find(invalid.tree, node => node.props?.preview === true).props.content.heroTitle, '', 'Incomplete draft text reaches the preview without replacing the actual draft');
+  invalid.click('Voltar à edição');
+  assert.equal(field(invalid.tree, 'Nome da imobiliária').props.value, '', 'Switching views preserves incomplete edits');
   invalid.click('Publicar alterações'); await tick(); invalid.render();
   assert.equal(invalid.commands.length, 0, 'Invalid content never reaches a transport');
   assert(find(invalid.tree, node => node.props?.role === 'alert'));
+
+  const PublicSite = pure.load('app/website/public-site.tsx').default;
+  for (const layout of ['classic', 'modern', 'catalog']) {
+    const unfinished = { ...initial.site.draft, layout, brandName: '', heroTitle: '', primaryColor: '#', logoUrl: 'javascript:alert(1)', heroImageUrl: 'https://', instagramUrl: 'javascript:alert(2)', promotion: { ...initial.site.draft.promotion, enabled: true, title: '', imageUrl: 'javascript:alert(3)', linkUrl: 'javascript:alert(4)' }, video: { enabled: true, title: '', url: 'https://www.youtube.com/watch?v=' } };
+    const previewMarkup = renderToStaticMarkup(React.createElement(PublicSite, { content: unfinished, properties: initial.properties, companySlug: initial.company.slug, preview: true }));
+    assert(previewMarkup.includes(`data-site-layout="${layout}"`), 'Every model safely renders an unfinished draft');
+    assert(!previewMarkup.includes('javascript:') && !previewMarkup.includes('<iframe'), 'Incomplete or unsafe URLs never become executable preview content');
+    assert.equal(unfinished.primaryColor, '#', 'Preview fallbacks never mutate the user’s partial input');
+  }
 
   const requests = [];
   const transportRuntime = runtime(React, { fetch: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => url.includes('/media') ? { url: '/logo.png' } : initial }; } });
@@ -224,6 +265,6 @@ async function run() {
   assert.deepEqual(resetRequests[0].body, { action: 'reset-password', id: account.id, password: 'synthetic-passphrase' });
   assert(passwordCleared && text(access.tree).includes('As sessões anteriores dessa pessoa foram encerradas.'));
   assert(!find(access.tree, node => node.props?.['aria-label'] === 'Nova senha para Marketing sintético'), 'Reset password is unmounted after success');
-  console.log('PASS website editor: accessible model selection without data loss, legacy demo preservation, model save/preview/publish/rollback, draft/publication separation, CAS conflict preservation, role-limited controls, dirty guard, duplicate-submit prevention, media validation, explicit marketing transport, and owner password reset.');
+  console.log('PASS website editor: simultaneous live draft preview, safe incomplete previews in all models, read-only demo catalog and legacy preservation, accessible model selection, save/publish/rollback, CAS conflict preservation, role-limited controls, dirty guard, duplicate-submit prevention, media validation, explicit marketing transport, and owner password reset.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

@@ -45,6 +45,7 @@ async function run() {
     await db.exec(migration('20261007190000_crm_evolution_workspace.sql'));
     await db.exec(migration('20261007210000_crm_evolution_legacy_bridge.sql'));
     await db.exec(migration('20261102121000_property_capture_ownership.sql'));
+    await db.exec(migration('20261108121000_social_messaging.sql'));
     const sessions = { owner: ['a'.repeat(64), 11], broker: ['b'.repeat(64), 12], otherBroker: ['c'.repeat(64), 13], otherCompany: ['d'.repeat(64), 21] };
     for (const [token, actor] of Object.values(sessions)) {
       await db.query("INSERT INTO account_sessions(token_hash,broker_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [crypto.createHash('sha256').update(token).digest('hex'), id(actor)]);
@@ -75,7 +76,7 @@ async function run() {
           return Response.json(fn === 'account_session' ? rows : rows[0][fn]);
         }
         assert.equal(options.method || 'GET', 'GET', 'No direct canonical/message writes are allowed');
-        assert.ok(['broker_accounts', 'crm_evolution_workspaces', 'leads', 'properties', 'appointments', 'conversations', 'messages'].includes(resource), resource);
+        assert.ok(['broker_accounts', 'crm_evolution_workspaces', 'leads', 'properties', 'appointments', 'conversations', 'messages', 'social_threads'].includes(resource), resource);
         const values = [], conditions = [];
         for (const [key, value] of url.searchParams) {
           if (['select', 'order', 'offset', 'limit'].includes(key)) continue;

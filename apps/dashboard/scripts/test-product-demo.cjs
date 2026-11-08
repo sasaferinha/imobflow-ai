@@ -132,4 +132,4 @@ async function run() {
   console.log('PASS product demo: all tabs have coherent fictional data; 64 writes blocked; external and unknown requests isolated; no native fallback; production transport preserved');
 }
 
-run().catch(error => { console.error(error); process.exitCode = 1; });
+run().then(() => require('./test-product-demo-visits.cjs')).catch(error => { console.error(error); process.exitCode = 1; });

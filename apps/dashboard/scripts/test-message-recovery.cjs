@@ -51,12 +51,13 @@ async function senderTests() {
     if(scenario.persistenceFailure) assert.equal(saves,2);
   }
   let calls=0;
-  const api=load('app/api/automations/recover/route.ts', {'../../../../lib/inbound-recovery':{recoverInboundReply:async()=>({processed:0,failed:0})},'../../../../lib/message-outbox':{recoverMessageOutbox:async()=>{calls++;return {processed:0,failed:0,recovered:0,remaining:0};}}}, {process:{env:{MESSAGE_RECOVERY_SECRET:'x'.repeat(48)}}});
+  let socialCalls=0;const api=load('app/api/automations/recover/route.ts', {'../../../../lib/social-ai':{recoverSocialAI:async deadline=>{socialCalls++;assert.ok(deadline>Date.now()&&deadline<=Date.now()+20000);return{processed:1,deferred:0,failed:0};}},'../../../../lib/inbound-recovery':{recoverInboundReply:async()=>({processed:0,failed:0})},'../../../../lib/message-outbox':{recoverMessageOutbox:async()=>{calls++;return {processed:0,failed:0,recovered:0,remaining:0};}}}, {process:{env:{MESSAGE_RECOVERY_SECRET:'x'.repeat(48)}}});
   for(const auth of ['', 'Bearer wrong', `Bearer ${'é'.repeat(48)}`]) {
     assert.equal((await api.POST(new Request('https://example.test/api/automations/recover',{method:'POST',headers:{authorization:auth}}))).status,401);
   }
   assert.equal(calls,0);
-  assert.equal((await api.POST(new Request('https://example.test/api/automations/recover',{method:'POST',headers:{authorization:`Bearer ${'x'.repeat(48)}`}}))).status,200);
+  assert.equal(socialCalls,0,'unauthorized requests cannot run social jobs');
+  const recovered=await api.POST(new Request('https://example.test/api/automations/recover',{method:'POST',headers:{authorization:`Bearer ${'x'.repeat(48)}`}}));assert.equal(recovered.status,200);assert.equal((await recovered.json()).socialAI.processed,1);assert.equal(socialCalls,1);
   assert.equal(calls,1);
 }
 

@@ -1,5 +1,6 @@
 import { currentAccount } from './tenant-context';
 import { supabaseServiceRequest } from './supabase';
+import { opportunityMessageDestination } from './lead-channel-server';
 import { whatsappNumber } from './property-matching';
 
 export type Opportunity = {
@@ -35,15 +36,24 @@ export type OpportunityDraft = { phone: string; name: string; title: string; dis
 export function manualWhatsAppDraft(draft: OpportunityDraft) {
   const phone = whatsappNumber(draft.phone);
   if (!phone) throw new Error('Telefone do lead inválido. Corrija o cadastro antes de abrir o WhatsApp.');
+  const message = propertyOfferText(draft);
+  return { message, url: `https://wa.me/${phone}?text=${encodeURIComponent(message)}` };
+}
+export function propertyOfferText(draft: OpportunityDraft) {
   const price = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(draft.price);
   const message = `Olá, ${draft.name.trim().split(/\s+/)[0]}! Encontrei um imóvel que combina com o que você estava procurando: ${draft.title}, em ${draft.district}, ${draft.city}, com ${draft.bedrooms} quartos, por ${price}${draft.purpose === 'Aluguel' ? ' por mês' : ''}. Quer que eu te envie mais detalhes?`;
-  return { message, url: `https://wa.me/${phone}?text=${encodeURIComponent(message)}` };
+  return message;
 }
 export async function opportunityAction(id: string, action: string) {
   const data = await supabaseServiceRequest<OpportunityDraft>('rpc/opportunity_action', {
     method: 'POST', body: { ...actor(), p_id: id, p_action: action },
   });
-  return action === 'draft' ? manualWhatsAppDraft(data) : { ok: true };
+  if (action !== 'draft') return { ok: true };
+  const destination = await opportunityMessageDestination(id);
+  if (destination.channel === 'whatsapp') return { ...manualWhatsAppDraft(data), channel: destination.channel };
+  const message = propertyOfferText(data);
+  return { message, channel: destination.channel, threadId: destination.threadId };
+
 }
 export async function generatePropertyOpportunities(companyId: string, propertyId: string) {
   return supabaseServiceRequest<number>('rpc/generate_property_opportunities', { method: 'POST',

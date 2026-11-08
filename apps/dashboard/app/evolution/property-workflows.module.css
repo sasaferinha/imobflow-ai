@@ -2,7 +2,9 @@
 .panel h3 { margin: 0 0 8px; font-size: 17px; }
 .panel p { margin: 8px 0 14px; font-size: 13px; color: #52667e; line-height: 1.55; }
 .panel label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
-.panel input,.panel textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #cbd6e2; border-radius: 7px; padding: 9px; background: #fff; color: #172b4d; font: inherit; }
+.panel input,.panel textarea,.panel select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #cbd6e2; border-radius: 7px; padding: 9px; background: #fff; color: #172b4d; font: inherit; }
+.panel summary { cursor: pointer; font-size: 13px; padding: 8px 0; color: #52667e; }
+.panel button:focus-visible,.panel select:focus-visible,.panel summary:focus-visible { outline: 3px solid #7eb6e4; outline-offset: 3px; }
 .panel textarea { resize: vertical; }
 .panel button { border: 1px solid #d4deea; border-radius: 7px; padding: 9px 13px; background: #f5f8fb; color: #214263; font: inherit; font-size: 12px; cursor: pointer; }
 .panel button:disabled { opacity: .55; cursor: default; }

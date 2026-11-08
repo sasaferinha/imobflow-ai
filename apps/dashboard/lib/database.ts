@@ -1,3 +1,4 @@
+import type { AdAttribution } from './meta-ads-attribution';
 import { neon } from '@neondatabase/serverless';
 import type { LeadInput, LeadProfile } from './leads';
 import { analyzeLead, explainProfile, hasCommercialQualification } from './leads';
@@ -16,7 +17,7 @@ function database() {
   return neon(process.env.DATABASE_URL);
 }
 
-export async function createLead(input: LeadInput): Promise<LeadProfile> {
+export async function createLead(input: LeadInput, attribution?: AdAttribution | null): Promise<LeadProfile> {
   const lifecycleStatus = input.lifecycleStatus || 'Novo';
   const analysis = analyzeLead({ ...input, lifecycleStatus });
   const [budgetMin, budgetMax] = parseBudget(input.budget);
@@ -29,6 +30,7 @@ export async function createLead(input: LeadInput): Promise<LeadProfile> {
       score: analysis.score, temperature: analysis.temperature, lifecycle_status: lifecycleStatus,
       source: input.source || 'Formulário do site', assigned_to: input.assignedTo || null,
       last_contact_at: input.lastContactAt || null,
+      ...(attribution ? { interest_profile: { websiteAttribution: attribution } } : {}),
     },
   });
   return mapLead(rows[0]);

@@ -45,19 +45,16 @@ async function handlePOST(request: NextRequest) {
         await Promise.all(ids.map(id => onPropertyChanged(actor.companyId, id)));
       });
     });
-    // Run after the CRM transaction is committed. Feedback delivery has its own
-    // durable idempotent outbox and never changes the confirmed visit or sale.
+    // The visit is already committed. Prepare its exact link before returning,
+    // so the broker can copy it immediately. This never queues a message.
     const command = body.command as CrmCommand;
-    const mayRequestFeedback = command.type === 'register' && ['close', 'visit'].includes(command.action)
-      || command.type === 'visit-progress' && command.action === 'finish'
-      || command.type === 'save' && ['tasks', 'proposals'].includes(command.kind) && ['Realizada', 'Aceita'].includes(String(command.data.status));
-    if (mayRequestFeedback) after(async () => {
-      const { feedbackCaseIdsForCommand, ensureCaseFeedback } = await import('@/lib/evolution/property-feedback');
-      for (const caseId of feedbackCaseIdsForCommand(result.state, body.command as CrmCommand)) {
-        try { await ensureCaseFeedback(actor, result.state, caseId, true); }
-        catch { console.error('property_feedback_automatic_pending'); }
+    if (command.type === 'visit-progress' && command.action === 'finish') {
+      const { feedbackTargetsForCommand, ensureCaseFeedback } = await import('@/lib/evolution/property-feedback');
+      for (const target of feedbackTargetsForCommand(result.state, command)) {
+        try { await ensureCaseFeedback(actor, result.state, target.caseId, false, target.visitId); }
+        catch { console.error('property_feedback_link_pending'); }
       }
-    });
+    }
     return NextResponse.json(result);
   } catch (error) { return failure(error); }
 }

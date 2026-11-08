@@ -31,8 +31,9 @@ function load(file,mocks) {
   const result=await route.POST(req(body));assert.equal(result.status,202);assert.equal(queued,1);assert.equal(sent,0);
   await background[0]();assert.equal(sent,1);
 
-  const dbCalls=[];
+  const dbCalls=[];let channel='whatsapp';
   const service=load('lib/property-whatsapp.ts',{
+    './lead-channel-server':{opportunityMessageDestination:async opportunity=>{assert.equal(opportunity,id(2));return{channel,threadId:channel==='whatsapp'?null:id(5)};}},
     './tenant-context':{currentAccount:()=>({companyId:id(1),brokerId:id(11)})},
     './supabase':{supabaseServiceRequest:async(p,o)=>{dbCalls.push(p);if(p.startsWith('property_whatsapp_batches?'))return[{message_ids:[id(8),id(9)]}];if(p.startsWith('messages?'))return[{id:id(9),delivery_status:'sent'},{id:id(8),delivery_status:'delivered'}];if(p==='rpc/property_whatsapp_context')return{phoneNumberId:'12345'};throw Error(p)}},
     './meta-whatsapp-connections':{loadMetaWhatsAppConnectionForCompany:async()=>[{enabled:true,accessToken:'fixture',phoneNumberId:'12345'}]},
@@ -42,5 +43,6 @@ function load(file,mocks) {
   assert(dbCalls[0].includes('broker_id=eq.'+id(11)));assert(dbCalls.every(p=>p.includes('company_id=eq.'+id(1))));
   await assert.rejects(service.queuePropertyOffer({...body,images:['https://evil.test/photo.jpg']}),/invalid_offer_images/);
   assert(!dbCalls.includes('rpc/enqueue_property_whatsapp_offer'));
+  for(const social of ['instagram','facebook']){channel=social;const before=dbCalls.length;await assert.rejects(()=>service.propertyWhatsAppContext(id(2)),/social_channel_required/);await assert.rejects(()=>service.queuePropertyOffer({...body,images:[]}),/social_channel_required/);assert.equal(dbCalls.length,before,'social leads cannot enter WhatsApp preflight or outbound queue');}
   console.log('PASS property WhatsApp: explicit confirmation, origin, input limits, read-only preflight, scoped receipts in photo order, foreign images denied; no real sends.');
 })().catch(e=>{console.error(e);process.exitCode=1});

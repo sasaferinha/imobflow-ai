@@ -6,10 +6,12 @@ import type { Opportunity, ReactivationLead } from '@/lib/opportunities';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import styles from './opportunity-center.module.css';
 import OpportunityPhotos from './opportunity-photos';
+import OpportunitySocialSend from './opportunity-social-send';
+import type { LeadChannel } from '@/lib/lead-channel';
 
 export async function actOnOpportunity(id: string, action: string) {
   const response = await fetch('/api/opportunities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, action }) });
-  const body = await response.json() as { error?: string; data?: { message?: string; url?: string } };
+  const body = await response.json() as { error?: string; data?: { message?: string; url?: string; channel?: LeadChannel } };
   if (!response.ok) throw new Error(body.error || 'Não foi possível concluir a ação.');
   announceDashboardChange('opportunities');
   return body.data || {};
@@ -21,7 +23,7 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId, prope
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
-  const [draft, setDraft] = useState<{ id: string; message: string; url: string } | null>(null);
+  const [draft, setDraft] = useState<{ id: string; message: string; url?: string; channel: LeadChannel } | null>(null);
   useEffect(() => subscribeDashboardSync({ entities: ['opportunities','leads','properties'], interval: 30000,
     load: async signal => {
       const response = await fetch(`/api/opportunities?offset=${offset}`, { signal, cache: 'no-store' });
@@ -34,7 +36,7 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId, prope
     setPending(true); setError(''); setDraft(null);
     try {
       const result = await actOnOpportunity(id, action);
-      if (action === 'draft' && result.message && result.url) setDraft({ id, message: result.message, url: result.url });
+      if (action === 'draft' && result.message && result.channel) setDraft({ id, message: result.message, url: result.url, channel: result.channel });
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha na operação.'); }
     finally { setPending(false); }
   }
@@ -86,13 +88,14 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId, prope
           const message = event.target.value;
           setDraft(current => {
             if (!current || current.id !== item.id) return current;
+            if (!current.url) return { ...current, message };
             const url = new URL(current.url);
             url.searchParams.set('text', message);
             return { ...current, message, url: url.toString() };
           });
         }}/>
-        <OpportunityPhotos opportunityId={item.id} key={item.id} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName} whatsappUrl={draft.url} />
-        <p>Você pode editar a mensagem antes de abrir o WhatsApp. Confira o destinatário e anexe as fotos baixadas antes de enviar.</p>
+        {draft.channel !== 'whatsapp' ? <OpportunitySocialSend opportunityId={item.id} channel={draft.channel} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName}/> : draft.url ? <OpportunityPhotos opportunityId={item.id} key={item.id} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName} whatsappUrl={draft.url} /> : null}
+        {draft.channel === 'whatsapp' && <p>Você pode editar a mensagem antes de abrir o WhatsApp. Confira o destinatário e anexe as fotos baixadas antes de enviar.</p>}
       </div>}
       <footer className={styles.workflow}>
         <button type="button" disabled={pending || item.status === 'contacted'} onClick={() => void act(item.id, 'contacted')}>{item.status === 'contacted' ? 'Contato registrado' : 'Registrar contato'}</button>

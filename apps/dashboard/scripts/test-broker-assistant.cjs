@@ -76,6 +76,10 @@ const completion = value => ({ status: 'completed', output: [{ type: 'message', 
   class CrmError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
   class EvolutionServerError extends Error { constructor(status, message) { super(message); this.status = status; } }
   const route = load('app/api/conversations/assist/route.ts', {
+    '@/lib/lead-channel-server': { leadMessageDestination: async () => ({ channel: 'whatsapp', threadId: null }) },
+    '@/lib/social-messaging': { readSocialInbox: async () => assert.fail('WhatsApp fixture cannot read a social inbox') },
+    '@/lib/social-audio': { transcribeSocialAudio: async () => assert.fail('WhatsApp fixture cannot read social audio') },
+    '@/lib/social-model': { SocialError: class extends Error {} },
     'next/server': { NextResponse: { json: (body, options) => Response.json(body, options) } },
     '@/lib/accounts': { protectedRoute: handler => request => authenticated ? handler(request) : Response.json({ error: 'auth' }, { status: 401 }) },
     '@/lib/tenant-context': { currentAccount: () => actor },

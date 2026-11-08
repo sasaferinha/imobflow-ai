@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import type { CrmState } from '@/lib/evolution/model';
 import MetaAdsPanel from './meta-ads-panel';
+import SocialConnections from '../social-connections';
 import s from './settings-hub.module.css';
 
 type Props = {
@@ -56,6 +57,7 @@ export default function SettingsHub({ state, isAdmin, integrated, children, onWh
     </div>
     {integrated && <div className={s.team}><div><strong>Quem vai atender seus clientes?</strong><p>Cadastre os corretores e ajuste os acessos da equipe.</p></div><button type="button" className={s.secondary} onClick={onTeam}>Corretores e acessos <span aria-hidden="true">→</span></button></div>}
     <div className={s.team}><div><strong>Metas de captação de imóveis</strong><p>Defina quantos imóveis cada corretor deve captar por mês e finalidade.</p></div><button type="button" className={s.secondary} onClick={onCaptureGoal}>Criar meta de captação <span aria-hidden="true">→</span></button></div>
+    {integrated && <SocialConnections/>}
     <MetaAdsPanel integrated={integrated} />
     <details className={s.advanced}><summary><span><strong>Regras e opções da operação</strong><small>Prazos, preenchimento de cadastros, origens e motivos de perda.</small></span><span aria-hidden="true">⌄</span></summary><div className={s.advancedBody}>{children}</div></details>
   </div>;

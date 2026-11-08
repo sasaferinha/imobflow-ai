@@ -18,7 +18,7 @@ const PAGES: Record<DashboardView, OperationalPage> = {
   properties: 'portfolio', leads: 'customer-base',
 };
 
-function OperationalPanel({ actor, page, refreshKey, onNavigate }: { actor: LiveActor; page: OperationalPage; refreshKey: number; onNavigate: (page: OperationalPage) => void }) {
+function OperationalPanel({ actor, page, refreshKey, onNavigate, onOpenProperty }: { actor: LiveActor; page: OperationalPage; refreshKey: number; onNavigate: (page: OperationalPage) => void; onOpenProperty: (id: string) => void }) {
   const lastRefresh = useRef(refreshKey);
   useEffect(() => {
     if (lastRefresh.current === refreshKey) return;
@@ -28,6 +28,7 @@ function OperationalPanel({ actor, page, refreshKey, onNavigate }: { actor: Live
   }, [refreshKey]);
   const account = { brokerId: actor.brokerId, name: actor.name, company: actor.company || 'ImobFlow', role: actor.role };
   return <DashboardClient account={account} embedded initialView={VIEWS[page]}
+    onVisitProperty={property => onOpenProperty(property.id)}
     initialUtility={page === 'account' ? 'profile' : page === 'brokers' ? 'team' : null}
     onViewChange={view => { if (view !== VIEWS[page]) onNavigate(PAGES[view]); }} />;
 }
@@ -35,6 +36,6 @@ function OperationalPanel({ actor, page, refreshKey, onNavigate }: { actor: Live
 /** The isolated preview never imports this production-only client boundary. */
 export default function LiveEvolutionClient({ initialState, actor, integrated = false }: { initialState: CrmState; actor: LiveActor; integrated?: boolean }) {
   return <EvolutionClient initialState={initialState} actor={actor} mode="live" integrated={integrated}
-    renderOperationalPanel={(page, refreshKey, onNavigate) => <OperationalPanel actor={actor} page={page} refreshKey={refreshKey} onNavigate={onNavigate} />}
+    renderOperationalPanel={(page, refreshKey, onNavigate, onOpenProperty) => <OperationalPanel actor={actor} page={page} refreshKey={refreshKey} onNavigate={onNavigate} onOpenProperty={onOpenProperty} />}
   />;
 }
