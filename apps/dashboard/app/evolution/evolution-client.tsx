@@ -153,6 +153,17 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const leadDraftRef = useRef({ active: false, dirty: false, busy: false });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshSequence = useRef(0);
+  const writing = useRef(false);
+  const [clockMinute, setClockMinute] = useState(() => Date.now());
+  const [recordLimit, setRecordLimit] = useState(40);
+  useEffect(() => {
+    if (typeof window.setInterval !== 'function' || typeof document === 'undefined') return;
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') setClockMinute(Date.now()); }, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [view, setView] = useState<'cards' | 'list' | 'board'>('cards');
@@ -169,6 +180,10 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const [dashboardPurpose, setDashboardPurpose] = useState('Venda');
   const [funnelMode, setFunnelMode] = useState<'current' | 'historical'>('current');
   const [historicalDrill, setHistoricalDrill] = useState<{ ids: string[]; label: string } | null>(null);
+  const [recordWindow, setRecordWindow] = useState({ page, filters, query, taskRange, historicalDrill });
+  if (recordWindow.page !== page || recordWindow.filters !== filters || recordWindow.query !== query || recordWindow.taskRange !== taskRange || recordWindow.historicalDrill !== historicalDrill) {
+    setRecordWindow({ page, filters, query, taskRange, historicalDrill }); setRecordLimit(40);
+  }
   const [memberId, setMemberId] = useState<string | null>(null);
   const [operationalRefresh, setOperationalRefresh] = useState(0);
   const [retainedOperationalPage, setRetainedOperationalPage] = useState<OperationalPage | null>(null);
@@ -293,11 +308,12 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     const controller = new AbortController();
     const timer = window.setInterval(async () => {
       if (document.visibilityState === 'hidden') return;
+      const sequence = refreshSequence.current;
       try {
         const response = await fetch('/api/evolution', { cache: 'no-store', signal: controller.signal });
         if (!response.ok || disposed) return;
         const payload = await response.json() as { state: CrmState };
-        if (!disposed && payload.state?.companyId === actor.companyId) setState(payload.state);
+        if (!disposed && sequence === refreshSequence.current && !writing.current && payload.state?.companyId === actor.companyId) setState(current => JSON.stringify(current) === JSON.stringify(payload.state) ? current : payload.state);
       } catch { /* Explicit refresh still reports errors; a background retry never interrupts a draft. */ }
     }, 60000);
     return () => { disposed = true; window.clearInterval(timer); controller.abort(); };
@@ -325,17 +341,22 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
 
   async function refresh(workspace = false) {
     if (operationalPage && !workspace) { setOperationalRefresh(current => current + 1); return; }
-    setBusy(true); setError('');
+    if (writing.current) return;
+    const sequence = ++refreshSequence.current;
+    setRefreshing(true); setError('');
     try {
       const response = await fetch('/api/evolution', { cache: 'no-store' });
       const payload = await response.json() as { state: CrmState; error?: string };
       if (!response.ok) throw new Error(payload.error || 'Não foi possível atualizar os dados.');
+      if (sequence !== refreshSequence.current || writing.current) return;
       setState(payload.state); setNotice('Dados atualizados.');
-    } catch (issue) { setError(issue instanceof Error ? issue.message : 'Falha de conexão. Tente novamente.'); }
-    finally { setBusy(false); }
+    } catch (issue) { if (sequence === refreshSequence.current) setError(issue instanceof Error ? issue.message : 'Falha de conexão. Tente novamente.'); }
+    finally { if (sequence === refreshSequence.current) setRefreshing(false); }
   }
 
   async function execute(command: Command): Promise<boolean> {
+    if (writing.current) return false;
+    writing.current = true; refreshSequence.current++; setRefreshing(false);
     setBusy(true); setError(''); setNotice('');
     try {
       const response = await fetch('/api/evolution', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command, expectedVersion: state.version, expectedSourceRevision: state.sourceRevision }) });
@@ -351,20 +372,29 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
       setState(payload.state); setNotice(command.type === 'settings' ? 'Configurações salvas.' : 'Alteração salva e registrada no histórico.');
       return true;
     } catch (issue) { setError(issue instanceof Error ? issue.message : 'Falha de conexão. Seus dados não foram enviados.'); return false; }
-    finally { setBusy(false); }
+    finally { writing.current = false; setBusy(false); }
   }
 
   const personalFilters = useMemo(() => ({ ...filters, ...personalFunnelFilter(actor, filters) }), [actor, filters]);
   const scope = useMemo(() => state.records.filter(record => matches(record, { ...personalFilters, stage: '', journey: '', freshness: '' }, state)), [state, personalFilters]);
-  const metrics = dashboardMetrics(state, { ...personalFilters, freshness: FRESHNESS_KEYS[filters.freshness] || filters.freshness });
+  const metrics = useMemo(() => dashboardMetrics(state, { ...personalFilters, freshness: FRESHNESS_KEYS[filters.freshness] || filters.freshness }, new Date(clockMinute).toISOString()), [state, personalFilters, filters.freshness, clockMinute]);
   const scopedCases = metrics.cases;
   const openCases = metrics.active;
   const properties = metrics.inventory;
-  const filteredRecords = state.records.filter(record => record.kind === page && (page !== 'cases' || !historicalDrill || historicalDrill.ids.includes(record.id)) && matches(record, filters, state) && (!query || Object.values(record.data).some(value => String(value).toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))) && (page !== 'tasks' || taskRange === 'all' || (taskRange === 'done' ? v(record, 'status') === 'Realizada' : ['Pendente', 'Confirmada'].includes(v(record, 'status')) && (taskRange === 'late' ? Date.parse(v(record, 'dueAt')) < Date.now() : taskRange === 'today' ? new Date(v(record, 'dueAt')).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) === new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : Date.parse(v(record, 'dueAt')) >= Date.now()))));
-  const globalResults = globalQuery.trim().length >= 2 ? state.records.filter(record => Object.values(record.data).some(value => String(value).toLocaleLowerCase('pt-BR').includes(globalQuery.toLocaleLowerCase('pt-BR')))).slice(0, 8) : [];
+  const filteredRecords = useMemo(() => state.records.filter(record => record.kind === page && (page !== 'cases' || !historicalDrill || historicalDrill.ids.includes(record.id)) && matches(record, filters, state) && (!query || Object.values(record.data).some(value => String(value).toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))) && (page !== 'tasks' || taskRange === 'all' || (taskRange === 'done' ? v(record, 'status') === 'Realizada' : ['Pendente', 'Confirmada'].includes(v(record, 'status')) && (taskRange === 'late' ? Date.parse(v(record, 'dueAt')) < clockMinute : taskRange === 'today' ? new Date(v(record, 'dueAt')).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) === new Date(clockMinute).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : Date.parse(v(record, 'dueAt')) >= clockMinute)))), [state, page, historicalDrill, filters, query, taskRange, clockMinute]);
+  const searchIndex = useMemo(() => state.records.map(record => ({ record, text: Object.values(record.data).map(value => String(value).toLocaleLowerCase('pt-BR')).join('\n') })), [state.records]);
+  const globalResults = useMemo(() => {
+    const term = globalQuery.toLocaleLowerCase('pt-BR');
+    if (term.trim().length < 2) return [];
+    const result: CrmRecord[] = [];
+    for (const item of searchIndex) { if (item.text.includes(term)) result.push(item.record); if (result.length === 8) break; }
+    return result;
+  }, [searchIndex, globalQuery]);
+  const recordsById = useMemo(() => new Map(state.records.map(record => [record.id, record])), [state.records]);
+  const membersById = useMemo(() => new Map(state.members.map(member => [member.id, member])), [state.members]);
   const accepted = metrics.accepted;
-  const memberName = (id: string) => state.members.find(item => item.id === id)?.name || 'Sem responsável';
-  const refName = (id: string) => state.records.find(record => record.id === id)?.data.name || 'Registro indisponível';
+  const memberName = (id: string) => membersById.get(id)?.name || 'Sem responsável';
+  const refName = (id: string) => recordsById.get(id)?.data.name || 'Registro indisponível';
   const drillCases = (extra: Partial<Filters>) => navigate('cases', { ...personalFilters, ...extra });
   const drillHistory = (purpose: string, journey: string, ids: string[], label: string) => {
     navigate('cases', { from: filters.from, to: filters.to, assignedTo: personalFilters.assignedTo, purpose, journey });
@@ -400,7 +430,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
       else setEditor(null);
     }
   };
-  const attentionCount = operationsSummary(state).followups.overdue;
+  const attentionCount = useMemo(() => operationsSummary(state, new Date(clockMinute).toISOString()).followups.overdue, [state, clockMinute]);
 
   function acceptedAmounts(records: CrmRecord[], compact = false) {
     const purposes = filters.purpose ? [filters.purpose] : ['Venda', 'Aluguel'];
@@ -554,7 +584,8 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
       {kind === 'tasks' && <div className={s.taskTabs}>{[['all', 'Todas'], ['today', 'Hoje'], ['upcoming', 'Próximas'], ['late', 'Atrasadas'], ['done', 'Realizadas']].map(([key, text]) => <button key={key} className={taskRange === key ? s.taskTabActive : ''} onClick={() => setTaskRange(key)}>{text}</button>)}</div>}{definition.description && <div className={s.infoStrip}><Icon name="shield" size={15} />{definition.description}</div>}
       {kind === 'cases' && historicalDrill && <div className={s.historyDrill}><div><strong>{historicalDrill.label}</strong><span>Registros selecionados pelo histórico. Os cartões mostram a etapa atual.</span></div><button className={s.textButton} onClick={() => setHistoricalDrill(null)}>Remover recorte histórico ×</button></div>}
       {filters.status && <div className={s.appliedFilters}><Pill>{filters.status}</Pill><button onClick={() => setFilters(current => ({ ...current, status: '' }))}>Remover situação ×</button></div>}{filters.freshness && <div className={s.appliedFilters}><Pill>{filters.freshness}</Pill><button onClick={() => setFilters(current => ({ ...current, freshness: '' }))}>Remover filtro ×</button></div>}
-      {kind === 'cases' && view === 'board' ? <div className={s.board}>{stages.map(stage => { const cards = filteredRecords.filter(record => v(record, 'stage') === stage); return <section className={s.boardColumn} key={stage}><header><span>{stage}</span><b>{cards.length}</b></header>{cards.map(record => <button className={s.boardCard} key={record.id} onClick={() => setSelectedId(record.id)}><small>{v(record, 'purpose')} · {v(record, 'source')}</small><strong>{label(record)}</strong><span>{String(refName(v(record, 'personId')))}</span><div><Pill>{v(record, 'status')}</Pill><i title={memberName(v(record, 'assignedTo'))}>{initials(memberName(v(record, 'assignedTo')))}</i></div>{v(record, 'nextActivityAt') && <time><Icon name="clock" size={12} />{date(v(record, 'nextActivityAt'), true)}</time>}</button>)}<button className={s.boardAdd} onClick={() => create('cases', { stage, journey: filters.journey || (['Avaliação', 'Captado'].includes(stage) ? 'Captação' : 'Negociação'), purpose: filters.purpose || 'Venda' })}><Icon name="plus" size={14} />Adicionar</button></section>; })}</div> : recordTable(filteredRecords, kind)}
+      {kind === 'cases' && view === 'board' ? <div className={s.board}>{stages.map(stage => { const cards = filteredRecords.filter(record => v(record, 'stage') === stage); return <section className={s.boardColumn} key={stage}><header><span>{stage}</span><b>{cards.length}</b></header>{cards.slice(0, recordLimit).map(record => <button className={s.boardCard} key={record.id} onClick={() => setSelectedId(record.id)}><small>{v(record, 'purpose')} · {v(record, 'source')}</small><strong>{label(record)}</strong><span>{String(refName(v(record, 'personId')))}</span><div><Pill>{v(record, 'status')}</Pill><i title={memberName(v(record, 'assignedTo'))}>{initials(memberName(v(record, 'assignedTo')))}</i></div>{v(record, 'nextActivityAt') && <time><Icon name="clock" size={12} />{date(v(record, 'nextActivityAt'), true)}</time>}</button>)}{cards.length > recordLimit && <button className={s.textButton} onClick={() => setRecordLimit(limit => limit + 40)}>Mostrar mais nesta etapa ({cards.length - recordLimit})</button>}<button className={s.boardAdd} onClick={() => create('cases', { stage, journey: filters.journey || (['Avaliação', 'Captado'].includes(stage) ? 'Captação' : 'Negociação'), purpose: filters.purpose || 'Venda' })}><Icon name="plus" size={14} />Adicionar</button></section>; })}</div> : recordTable(filteredRecords.slice(0, recordLimit), kind)}
+      {!(kind === 'cases' && view === 'board') && filteredRecords.length > 40 && <div className={s.tableFooter}><span>Mostrando {Math.min(recordLimit, filteredRecords.length)} de {filteredRecords.length} registros · a busca considera todos</span>{recordLimit < filteredRecords.length && <button className={s.textButton} onClick={() => setRecordLimit(limit => limit + 40)}>Mostrar mais 40</button>}</div>}
       <div className={s.tableFooter}><span>Dados salvos na plataforma · versão {state.version}</span><span>{mode === 'preview' ? 'Base fictícia isolada' : 'Sua carteira autorizada'}</span></div>
     </section>{kind === 'properties' && <div className={s.helpNote}><Icon name="shield" size={15} />{hasLiveOperation ? <>Os imóveis operacionais são consultados diretamente do catálogo existente. Fotos, características e divulgação são gerenciadas em <button className={s.textButton} onClick={() => navigate('portfolio')}>Catálogo e fotos</button>.</> : 'Os registros desta nova experiência não substituem o catálogo clássico. Fotos, anúncios e integrações já existentes continuam preservados.'}</div>}</>;
   }
@@ -600,7 +631,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     <header className={s.pageHead}>
       <button ref={mobileTriggerRef} className={s.mobileMenu} aria-label="Abrir navegação" aria-expanded={mobileNavOpen} aria-controls="evolution-navigation" onClick={() => setMobileNavOpen(true)}><Icon name="list" size={23} /></button>
       <div className={s.pageHeading}><h1 ref={pageHeadingRef} tabIndex={-1}>{title}</h1><p>{creatingLeadPage ? 'Organize o contato e o que ele procura, em um só lugar' : page === 'dashboard' ? 'Visão geral do seu negócio imobiliário' : page === 'conversations' ? 'Relacionamentos que se transformam em oportunidades' : 'Sua operação organizada, do início ao próximo passo'}</p></div>
-      <div className={s.headerTools}><div className={s.headerSearch}><Icon name="search" size={18} /><input aria-label="Busca global" placeholder="Pesquisar leads, imóveis, clientes…" value={globalQuery} onChange={event => setGlobalQuery(event.target.value)} />{globalQuery.length >= 2 && <div className={s.searchResults}>{globalResults.length ? globalResults.map(record => <button key={record.id} onClick={() => { setSelectedId(record.id); setGlobalQuery(''); }}><span>{label(record)}<small>{MODULES[record.kind].title}</small></span><Icon name="arrow" size={15} /></button>) : <p>Nenhum registro encontrado.</p>}</div>}</div><button className={s.iconButton} aria-label="Atualizar" title="Atualizar dados" onClick={() => void refresh()} disabled={busy}><Icon name="refresh" size={19} /></button><button className={s.iconButton} aria-label="Mural de avisos" title="Mural de avisos" onClick={() => navigate('notices')}><Icon name="bell" size={22} /></button><AccountMenu name={actor.name} role={actor.role} preview={mode === 'preview'} onOpen={() => setMenu(null)} /></div>
+      <div className={s.headerTools}><div className={s.headerSearch}><Icon name="search" size={18} /><input aria-label="Busca global" placeholder="Pesquisar leads, imóveis, clientes…" value={globalQuery} onChange={event => setGlobalQuery(event.target.value)} />{globalQuery.length >= 2 && <div className={s.searchResults}>{globalResults.length ? globalResults.map(record => <button key={record.id} onClick={() => { setSelectedId(record.id); setGlobalQuery(''); }}><span>{label(record)}<small>{MODULES[record.kind].title}</small></span><Icon name="arrow" size={15} /></button>) : <p>Nenhum registro encontrado.</p>}</div>}</div><button className={s.iconButton} aria-label="Atualizar" title="Atualizar dados" onClick={() => void refresh()} disabled={busy || refreshing} aria-busy={refreshing}><Icon name="refresh" size={19} /></button><button className={s.iconButton} aria-label="Mural de avisos" title="Mural de avisos" onClick={() => navigate('notices')}><Icon name="bell" size={22} /></button><AccountMenu name={actor.name} role={actor.role} preview={mode === 'preview'} onOpen={() => setMenu(null)} /></div>
     </header>
     <main className={s.main}>
       {mode === 'preview' && <div className={s.previewStrip}><Icon name="shield" size={14} /><strong>Prévia privada</strong><span>Dados fictícios · integrações desligadas · painel clássico preservado.</span></div>}
@@ -665,6 +696,14 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave, full
     prepared[field.key] = value;
   }
   const [data, setData] = useState<Values>(prepared);
+  const propertyOptions = useMemo(() => {
+    const names = new Map(state.records.map(record => [record.id, record.data.name]));
+    return state.records.filter(record => record.kind === 'properties').map(record => ({
+      id: record.id, name: label(record),
+      detail: [v(record, 'code'), v(record, 'propertyType'), v(record, 'district'), v(record, 'city'), v(record, 'purpose'), v(record, 'status')].filter(Boolean).join(' · '),
+      search: [v(record, 'address'), names.get(String(record.data.neighborhoodId)) || ''].join(' '),
+    }));
+  }, [state.records]);
   const [editedLeadFields, setEditedLeadFields] = useState<string[]>(() => Object.keys(editor.defaults || {}));
   const selectedPerson = editor.kind === 'leads' ? state.records.find(record => record.kind === 'people' && record.id === data.personId) : undefined;
   const existingSourceLead = !editor.record && ['leads', 'cases'].includes(editor.kind) ? state.records.find(record => record.kind === 'leads' && record.legacy?.table === 'leads' && record.data.personId === data.personId) : undefined;
@@ -736,7 +775,7 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave, full
       const hint = creatingProperty && field.control === 'count' && required ? 'Selecione uma quantidade. Informe 0 quando não houver.' : field.hint;
       return <div key={field.key} className={['choices', 'multi'].includes(field.control) ? s.fullField : ''}><GuidedRecordField id={id} label={fieldLabel} value={String(data[field.key] ?? '')} onChange={value => update(field, value)} mode={field.control} options={choices} required={required} disabled={locked || busy} hint={hint} allowCustom={field.key === 'propertyType'} /></div>;
     }
-    if (field.ref === 'properties') return <div key={field.key}><label htmlFor={id}><span>{fieldLabel}{required && <b> *</b>}</span></label><PropertySearchField id={id} value={String(data[field.key] ?? '')} required={required} disabled={locked || busy} onChange={value => update(field, value)} options={state.records.filter(record => record.kind === 'properties').map(record => ({ id: record.id, name: label(record), detail: [v(record, 'code'), v(record, 'propertyType'), v(record, 'district'), v(record, 'city'), v(record, 'purpose'), v(record, 'status')].filter(Boolean).join(' · '), search: [v(record, 'address'), state.records.find(item => item.id === record.data.neighborhoodId)?.data.name || ''].join(' ') }))} /></div>;
+    if (field.ref === 'properties') return <div key={field.key}><label htmlFor={id}><span>{fieldLabel}{required && <b> *</b>}</span></label><PropertySearchField id={id} value={String(data[field.key] ?? '')} required={required} disabled={locked || busy} onChange={value => update(field, value)} options={propertyOptions} /></div>;
     return <label key={field.key} htmlFor={id} className={field.type === 'textarea' ? s.fullField : ''}>
       <span>{fieldLabel}{required && <b> *</b>}</span>
       {storedPhoto ? <small>Foto existente preservada. Gerencie imagens em Catálogo e fotos.</small>

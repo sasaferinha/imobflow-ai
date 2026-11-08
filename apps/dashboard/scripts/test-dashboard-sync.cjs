@@ -87,4 +87,16 @@ const tick = () => { for(const fn of timers.values()) fn(); };
   stopStalled();
   assert.equal(deadlines.size,0);
   console.log('PASS stalled request abort, recovery, stale response rejection and timer cleanup');
+  const stableValues=[]; let stableFail=false,stableValue=1;
+  const stopStable=subscribeDashboardSync({entities:['stable'],skipUnchanged:true,
+    load:async()=>{if(stableFail)throw new Error('offline');return {value:stableValue};},
+    apply:value=>stableValues.push(value),onError:()=>{}});
+  await flush(); tick(); await flush(); tick(); await flush();
+  assert.equal(stableValues.length,1,'unchanged polling does not rerender');
+  stableValue=2;tick();await flush();assert.equal(stableValues.length,2,'changed data still applies');
+  stableFail=true;tick();await flush();stableFail=false;tick();await flush();
+  assert.equal(stableValues.length,3,'successful retry clears stale UI even with identical data');
+  announceDashboardChange('stable');await flush();assert.equal(stableValues.length,4,'explicit writes invalidate comparison');
+  stopStable();
+  console.log('PASS unchanged snapshot suppression, changes, recovery and explicit invalidation');
 })().catch(error => { console.error(error); process.exitCode=1; });

@@ -176,7 +176,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
       setHistoryPage({ leadId: id, cursor: null, ready: false });
       setLoadingOlder(false);
     });
-    const unsubscribe = subscribeDashboardSync({ entities: ['conversations'], interval: 10000,
+    const unsubscribe = subscribeDashboardSync({ skipUnchanged: true, entities: ['conversations'], interval: 10000,
       load: async signal => {
         // Capture the read boundary BEFORE loading messages. Arrivals during/after the read remain unread.
         const inboxResponse = await fetch(`/api/conversations/inbox?leadId=${encodeURIComponent(id)}`, {signal,cache:'no-store'});

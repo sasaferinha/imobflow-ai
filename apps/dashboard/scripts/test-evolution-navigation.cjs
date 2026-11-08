@@ -132,13 +132,13 @@ function navigationHarness(actor = owner, hash = '#conversations', browser = {})
   const isolated = runtime(hooks, {
     window: { location: { hash, pathname: '/painel', search: '' }, history: { replaceState() {} }, ...browser.window },
     document: browser.document,
-    fetch: async (url, options) => {
+    fetch: browser.fetch || (async (url, options) => {
       requests.push({ url, method: options?.method || 'GET' });
       return { ok: true, json: async () => ({ state }) };
-    },
+    }),
   });
   const Client = isolated.load(clientPath).default;
-  const props = { initialState: state, actor, mode: 'live', integrated: true, renderOperationalPanel: nativeHost };
+  const props = { initialState: browser.state || state, actor, mode: 'live', integrated: true, renderOperationalPanel: nativeHost };
   function render() {
     let attempts = 0;
     do {
@@ -232,7 +232,7 @@ assert(leadForm.includes('ao assumir ou devolver'));
 function editorHarness(editor, editorState = state) {
   let cursor = 0, tree;
   const slots = [], saves = [];
-  const hooks = { ...React, useState(initial) {
+  const hooks = { ...React, useMemo: compute => compute(), useState(initial) {
     const index = cursor++;
     if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
     return [slots[index], next => { slots[index] = typeof next === 'function' ? next(slots[index]) : next; }];

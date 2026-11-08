@@ -13,18 +13,19 @@ export function announceDashboardChange(entity: string) {
 }
 
 // A slow response must not overlap a newer read or overwrite a completed write.
-export function subscribeDashboardSync<T>({ entities, load, apply, onError, interval = 3000, timeout = 20000 }: {
+export function subscribeDashboardSync<T>({ entities, load, apply, onError, interval = 3000, timeout = 20000, skipUnchanged = false }: {
   entities: string[]; load: (signal: AbortSignal) => Promise<T>; apply: (data: T) => void;
-  onError?: (error: unknown) => void; interval?: number; timeout?: number;
+  onError?: (error: unknown) => void; interval?: number; timeout?: number; skipUnchanged?: boolean;
 }) {
   let stopped = false;
   let running = false;
   let generation = 0;
   let queued = false;
   let controller: AbortController | undefined;
+  let previous: string | undefined;
   const refresh = async (invalidate = false) => {
     if (stopped) return;
-    if (invalidate) { generation++; queued = true; }
+    if (invalidate) { generation++; queued = true; previous = undefined; }
     if (running || document.visibilityState === 'hidden') return;
     running = true;
     queued = false;
@@ -43,9 +44,13 @@ export function subscribeDashboardSync<T>({ entities, load, apply, onError, inte
           }, timeout);
         }),
       ]);
-      if (!stopped && started === generation) apply(result);
+      if (!stopped && started === generation) {
+        const signature = skipUnchanged ? JSON.stringify(result) : undefined;
+        if (!skipUnchanged || signature === undefined || signature !== previous) apply(result);
+        previous = signature;
+      }
     } catch (error) {
-      if (!stopped && started === generation) onError?.(error);
+      if (!stopped && started === generation) { previous = undefined; onError?.(error); }
     } finally {
       window.clearTimeout(deadline);
       running = false;
