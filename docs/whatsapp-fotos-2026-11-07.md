@@ -8,7 +8,8 @@
 - Imagens precisam estar no catálogo atual do imóvel, no armazenamento da mesma empresa, em JPG/PNG. WebP e URLs externas são recusados no envio direto.
 - Criação atômica do lote e chaves estáveis por tentativa evitam duplicação ao repetir a mesma solicitação. Resultados incertos do provedor não são reenviados automaticamente. Fechar e abrir novamente a oferta exige conferir o histórico antes de fazer outro envio.
 - Envios demorados ou recusados temporariamente permanecem na fila existente; recuperação depende do executor de mensagens configurado. O resultado de cada mensagem fica visível, sem prometer entrega do lote inteiro.
-- Compartilhamento manual continua em uma seção secundária, com indicação das limitações do navegador.
+- Após a preferência confirmada pelo usuário, o fluxo manual passou a ser o principal: fotos cadastradas pré-selecionadas, botão para baixar as selecionadas e atalho para WhatsApp Web com o texto editado. Links individuais permitem baixar cada foto caso o navegador bloqueie múltiplos downloads. Anexar e enviar no WhatsApp continua manual.
+- O envio pela integração e o compartilhamento pelo aparelho permanecem em “Outras opções de envio”. Nenhuma imagem é apresentada como anexada pelo atalho do WhatsApp Web.
 
 ## Banco
 

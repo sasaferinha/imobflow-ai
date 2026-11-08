@@ -92,7 +92,7 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId, prope
           });
         }}/>
         <OpportunityPhotos opportunityId={item.id} key={item.id} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName} whatsappUrl={draft.url} />
-        <p>Confira o texto e as fotos antes de confirmar. O envio direto aparece no histórico da aba Conversas.</p>
+        <p>Você pode editar a mensagem antes de abrir o WhatsApp. Confira o destinatário e anexe as fotos baixadas antes de enviar.</p>
       </div>}
       <footer className={styles.workflow}>
         <button type="button" disabled={pending || item.status === 'contacted'} onClick={() => void act(item.id, 'contacted')}>{item.status === 'contacted' ? 'Contato registrado' : 'Registrar contato'}</button>
