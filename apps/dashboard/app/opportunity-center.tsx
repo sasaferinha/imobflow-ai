@@ -91,7 +91,7 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId, prope
             return { ...current, message, url: url.toString() };
           });
         }}/>
-        <OpportunityPhotos key={item.id} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName} />
+        <OpportunityPhotos key={item.id} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName} whatsappUrl={draft.url} />
         <a className={styles.primary} href={draft.url} target="_blank" rel="noopener noreferrer">Continuar no WhatsApp <span aria-hidden="true">↗</span></a>
         <p>Você pode editar a mensagem antes de continuar. Após enviar no WhatsApp, registre o contato abaixo.</p>
       </div>}
