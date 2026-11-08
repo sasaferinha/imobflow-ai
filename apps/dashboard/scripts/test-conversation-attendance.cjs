@@ -41,9 +41,12 @@ function load(file, mocks = {}) {
     const other = describe({ snapshot: owned, currentBrokerId, hasMessages: true });
     assert.equal(other.canSend, false);
     assert.equal(other.canClaim, false);
-    assert.equal(other.canRelease, false, 'a different account, including the administrator, cannot release another owner');
+    assert.equal(other.canRelease, false, 'a different broker cannot release another owner');
     assert.doesNotMatch(renderToStaticMarkup(createElement(Banner, { attendance: other, ready: true, saving: false, release() {} })), /<button/);
   }
+  const admin = describe({ snapshot: owned, currentBrokerId: 'broker-admin', isAdministrator: true, hasMessages: true });
+  assert.equal(admin.canClaim, true); assert.equal(admin.canRelease, true); assert.equal(admin.canSend, true);
+  assert.match(renderToStaticMarkup(createElement(Banner, {attendance:admin, ready:true, saving:false, release(){}})), /Devolver ao bot/);
   const legacy = describe({ snapshot: { ...owned, assignedBrokerId: null }, currentBrokerId: 'broker-a', hasMessages: true });
   assert.equal(legacy.canRelease, false, 'a matching display name is never authorization');
   const waiting = describe({ snapshot: { attendanceMode: 'paused' }, currentBrokerId: 'broker-a', hasMessages: false });

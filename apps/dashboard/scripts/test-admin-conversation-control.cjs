@@ -1,0 +1,25 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {createDatabase,seedCompanies,id,migration,isolationMigration}=require('./helpers/tenant-test-database.cjs');
+(async()=>{const db=await createDatabase();try{
+ for(const file of fs.readdirSync(path.resolve(__dirname,'../../../supabase/migrations')).filter(f=>f.endsWith('.sql')&&f>isolationMigration&&f<='20261102120000_team_management.sql').sort())await db.exec(migration(file));
+ await seedCompanies(db);await db.exec(migration('20261108020000_admin_conversation_control.sql'));
+ for(const n of [12,13])await db.query("INSERT INTO broker_accounts(id,company_id,name,name_key,password_hash,role,active) VALUES($1,$2,$3,$3,'fixture','broker',true)",[id(n),id(1),'Broker '+n]);
+ const assign=()=>db.query("UPDATE conversations SET assigned_broker_id=$1,assigned_to='Broker 12',bot_paused=true WHERE id=$2",[id(12),id(501)]);
+ const change=async(actor,release,company=1)=>(await db.query('SELECT change_conversation_owner($1,$2,$3,$4) AS ok',[id(company),id(101),id(actor),release])).rows[0].ok;
+ await assign();assert.equal(await change(13,true),false,'broker cannot release a colleague');
+ assert.equal(await change(21,true),false,'foreign administrator denied');assert.equal(await change(11,true,2),false);
+ assert.equal(await change(11,true),true,'administrator releases another broker');
+ let c=(await db.query('SELECT * FROM conversations WHERE id=$1',[id(501)])).rows[0];assert.equal(c.assigned_broker_id,null);assert.equal(c.bot_paused,false);
+ let event=(await db.query('SELECT * FROM conversation_owner_events')).rows[0];assert.equal(event.actor_id,id(11));assert.equal(event.previous_broker_id,id(12));assert.equal(event.action,'release');
+ await assign();assert.equal(await change(11,false),true,'administrator takes over');
+ assert.equal((await db.query('SELECT assigned_broker_id FROM conversations WHERE id=$1',[id(501)])).rows[0].assigned_broker_id,id(11));
+ await assign();assert.equal(await change(12,true),true,'own broker release preserved');
+ await assign();await db.query('UPDATE broker_accounts SET active=false WHERE id=$1',[id(11)]);assert.equal(await change(11,true),false,'inactive owner denied');await db.query('UPDATE broker_accounts SET active=true WHERE id=$1',[id(11)]);
+ await db.query("INSERT INTO messages(id,company_id,conversation_id,direction,sender_type,content,delivery_status) VALUES($1,$2,$3,'outgoing','human','Fixture','pending')",[id(950),id(1),id(501)]);
+ await db.query("INSERT INTO message_outbox(id,company_id,conversation_id,request_key,state) VALUES($1,$2,$3,'fixture','sending')",[id(950),id(1),id(501)]);
+ assert.equal(await change(11,true),false,'in-flight send cannot race a handoff');
+ await db.query("UPDATE message_outbox SET state='pending' WHERE id=$1",[id(950)]);assert.equal(await change(11,true),true);
+ assert.equal((await db.query('SELECT state FROM message_outbox WHERE id=$1',[id(950)])).rows[0].state,'cancelled','old pending messages cannot send after handoff');
+ await db.exec('SET ROLE authenticated');await assert.rejects(db.query('SELECT change_conversation_owner($1,$2,$3,true)',[id(1),id(101),id(11)]),/permission denied/);
+ console.log('PASS administrator conversation control: own-company override, broker isolation, inactive/cross-company denial, audit, in-flight guard and pending cancellation; isolated database, no real sends.');
+}finally{await db.close()}})().catch(e=>{console.error(e);process.exitCode=1});

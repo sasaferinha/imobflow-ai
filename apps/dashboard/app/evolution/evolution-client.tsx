@@ -9,6 +9,7 @@ import AccountMenu from './account-menu';
 import OperationsCenter, { CatalogHealth, OperationsSettings } from './operations-center';
 import { operationsSettings, operationsSummary } from '@/lib/evolution/operations';
 import LeadSourcePicker from '../lead-source-picker';
+import PropertySearchField from '../property-search-field';
 import ConversationRegistration from '../conversation-registration';
 import { historicalFunnel } from '@/lib/evolution/historical-funnel';
 import GuidedRecordField from '../guided-record-field';
@@ -735,6 +736,7 @@ function RecordEditor({ editor, state, actor, busy, error, onClose, onSave, full
       const hint = creatingProperty && field.control === 'count' && required ? 'Selecione uma quantidade. Informe 0 quando não houver.' : field.hint;
       return <div key={field.key} className={['choices', 'multi'].includes(field.control) ? s.fullField : ''}><GuidedRecordField id={id} label={fieldLabel} value={String(data[field.key] ?? '')} onChange={value => update(field, value)} mode={field.control} options={choices} required={required} disabled={locked || busy} hint={hint} allowCustom={field.key === 'propertyType'} /></div>;
     }
+    if (field.ref === 'properties') return <div key={field.key}><label htmlFor={id}><span>{fieldLabel}{required && <b> *</b>}</span></label><PropertySearchField id={id} value={String(data[field.key] ?? '')} required={required} disabled={locked || busy} onChange={value => update(field, value)} options={state.records.filter(record => record.kind === 'properties').map(record => ({ id: record.id, name: label(record), detail: [v(record, 'code'), v(record, 'propertyType'), v(record, 'district'), v(record, 'city'), v(record, 'purpose'), v(record, 'status')].filter(Boolean).join(' · '), search: [v(record, 'address'), state.records.find(item => item.id === record.data.neighborhoodId)?.data.name || ''].join(' ') }))} /></div>;
     return <label key={field.key} htmlFor={id} className={field.type === 'textarea' ? s.fullField : ''}>
       <span>{fieldLabel}{required && <b> *</b>}</span>
       {storedPhoto ? <small>Foto existente preservada. Gerencie imagens em Catálogo e fotos.</small>

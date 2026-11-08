@@ -281,7 +281,7 @@ function ConversationWorkspace({ state, dispatch, notify, openAgenda, persistMes
   const assignedBroker = (demonstration ? thread.assignedTo : attendance.owner)?.trim() || null;
   const isCurrentBroker = demonstration ? Boolean(assignedBroker && normalize(assignedBroker) === normalize(currentBrokerName)) : attendance.isCurrentBroker;
   const dutyWaiting = !demonstration && dutyPriorityBlocked(summaries.get(lead.id));
-  const canClaim = demonstration ? !isCurrentBroker : attendance.canClaim && !dutyWaiting;
+  const canClaim = demonstration ? !isCurrentBroker : attendance.canClaim && (isAdministrator || !dutyWaiting);
   const canSend = demonstration || attendance.canSend;
   const latestIncomingId = thread.messages.filter(message => message.side === 'incoming').at(-1)?.id;
   const lastMessage = thread.messages.at(-1);
