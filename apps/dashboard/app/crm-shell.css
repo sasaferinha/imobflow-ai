@@ -46,16 +46,6 @@
 .app-shell.crm-workspace .header-actions .primary-button::after { content: none; }
 .app-shell.crm-workspace .header-actions .icon-button { display: inline-grid; place-items: center; width: 40px; min-width: 40px; height: 40px; padding: 0; }
 .app-shell.crm-workspace .header-actions .icon-button svg { width: 19px; height: 19px; }
-.app-shell.crm-workspace .embedded-account-options { position: relative; }
-.app-shell.crm-workspace .embedded-account-options > summary { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 40px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 600 12px/20px var(--crm-font); list-style: none; cursor: pointer; }
-.app-shell.crm-workspace .embedded-account-options > summary::-webkit-details-marker { display: none; }
-.app-shell.crm-workspace .embedded-account-options > summary:hover,
-.app-shell.crm-workspace .embedded-account-options[open] > summary { border-color: var(--accent); background: var(--selection); color: var(--accent-text); }
-.app-shell.crm-workspace .embedded-account-options[open] > summary svg { transform: rotate(180deg); }
-.app-shell.crm-workspace .embedded-account-menu { position: absolute; z-index: 45; top: calc(100% + 8px); right: 0; width: 220px; max-width: calc(100vw - 32px); padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); box-shadow: 0 12px 32px #10294b1c; }
-.app-shell.crm-workspace .header-actions .embedded-account-menu button { display: flex; width: 100%; min-height: 40px; justify-content: flex-start; padding: 9px 12px; border: 0; background: transparent; color: var(--ink); text-align: left; }
-.app-shell.crm-workspace .header-actions .embedded-account-menu button:hover { background: var(--selection); color: var(--accent-text); }
-.app-shell.crm-workspace .header-actions .embedded-account-menu button:last-child { margin-top: 5px; border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; }
 .app-shell.crm-workspace .notification-wrap { position: relative; }
 .app-shell.crm-workspace .popover { z-index: 50; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); box-shadow: 0 12px 32px #10294b14; font: 400 13px/1.5 var(--crm-font); }
 .app-shell.crm-workspace .popover > strong { display: block; padding: 10px; color: var(--muted); font-size: 11px; font-weight: 600; }
@@ -93,8 +83,6 @@
   .app-shell.crm-workspace .topbar h1 { font-size: 27px; }
   .app-shell.crm-workspace .header-actions { justify-content: flex-start; margin-left: 0; max-width: 100%; }
   .app-shell.crm-workspace .header-actions button { min-height: 42px; }
-  .app-shell.crm-workspace .embedded-account-options > summary { min-height: 42px; }
-  .app-shell.crm-workspace .embedded-account-menu { right: auto; left: 0; }
   .app-shell.crm-workspace .notification-menu { right: auto; left: 0; max-width: calc(100vw - 100px); }
   .app-shell.crm-workspace .toast { left: 16px; right: 16px; bottom: 20px; }
 }
