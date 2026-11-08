@@ -38,6 +38,7 @@ export async function sendQueuedMessage(companyId: string, id: string, deadline 
       Array<{
         conversation_id: string;
         attempts: number;
+        image_url?: string | null;
         template_payload: {
           name: string;
           language: string;
@@ -45,7 +46,7 @@ export async function sendQueuedMessage(companyId: string, id: string, deadline 
         } | null;
       }>
     >(
-      `message_outbox?${filter}&select=conversation_id,attempts,template_payload&limit=1`,
+      `message_outbox?${filter}&select=*&limit=1`,
     );
     attempts = outbox.attempts;
 
@@ -97,7 +98,7 @@ export async function sendQueuedMessage(companyId: string, id: string, deadline 
                 : {}),
             },
           }
-        : { type: "text", text: { body: message.content, preview_url: false } };
+        : outbox.image_url ? propertyImagePayload(companyId, outbox.image_url) : { type: "text", text: { body: message.content, preview_url: false } };
 
       // Leave time for the provider timeout and both receipt persistence tries.
       if (Date.now() + 24000 > deadline) throw new Error("Orçamento de envio esgotado.");
@@ -219,4 +220,10 @@ export async function recoverMessageOutbox(deadline: number) {
     catch { failed++; }
   }
   return { recovered, processed, failed, remaining: rows.length - processed - failed };
+}
+
+export function propertyImagePayload(companyId: string, imageUrl: string) {
+  const base = process.env.SUPABASE_URL?.replace(/\/$/, '');
+  if (!base || !imageUrl.startsWith(`${base}/storage/v1/object/public/property-images/${companyId}/`) || !/\.(jpe?g|png)$/.test(imageUrl)) throw new Error('invalid_property_image');
+  return { type: 'image', image: { link: imageUrl } };
 }

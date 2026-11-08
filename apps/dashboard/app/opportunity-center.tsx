@@ -91,9 +91,8 @@ export default function OpportunityCenter({ onLead, onProperty, focusedId, prope
             return { ...current, message, url: url.toString() };
           });
         }}/>
-        <OpportunityPhotos key={item.id} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName} whatsappUrl={draft.url} />
-        <a className={styles.primary} href={draft.url} target="_blank" rel="noopener noreferrer">Continuar no WhatsApp <span aria-hidden="true">↗</span></a>
-        <p>Você pode editar a mensagem antes de continuar. Após enviar no WhatsApp, registre o contato abaixo.</p>
+        <OpportunityPhotos opportunityId={item.id} key={item.id} images={properties.find(property => property.id === item.propertyId)?.images || []} message={draft.message} customer={item.leadName} whatsappUrl={draft.url} />
+        <p>Confira o texto e as fotos antes de confirmar. O envio direto aparece no histórico da aba Conversas.</p>
       </div>}
       <footer className={styles.workflow}>
         <button type="button" disabled={pending || item.status === 'contacted'} onClick={() => void act(item.id, 'contacted')}>{item.status === 'contacted' ? 'Contato registrado' : 'Registrar contato'}</button>

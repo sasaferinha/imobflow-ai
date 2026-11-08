@@ -16,6 +16,7 @@ function load(file, mocks, extra = {}) {
 
 async function senderTests() {
   for (const scenario of [
+    {status:200, receipt:{messages:[{id:"wamid.image"}]}, image:true, want:"sent"},
     {status:200, receipt:{messages:[{id:'wamid.success'}]}, want:'sent'},
     {status:429, receipt:{error:{code:130429}}, want:'pending'},
     {status:503, receipt:{error:{code:2}}, want:'pending'},
@@ -35,14 +36,14 @@ async function senderTests() {
       if(p==='rpc/claim_outbox_message_v2') return !scenario.unclaimed;
       if(p==='rpc/mark_outbox_provider_attempt') return !scenario.unmarked;
       if(p==='rpc/finish_outbox_attempt') { saves++; if(scenario.persistenceFailure && saves===1) throw Error('transient'); writes.push(o.body); return true; }
-      if(p.startsWith('message_outbox?')) return [{conversation_id:id(501),attempts:scenario.attempts||1,template_payload:null}];
+      if(p.startsWith('message_outbox?')) return [{conversation_id:id(501),attempts:scenario.attempts||1,template_payload:null,image_url:scenario.image?`https://example.supabase.co/storage/v1/object/public/property-images/${id(1)}/photo.jpg`:null}];
       if(p.startsWith('messages?')) { if(scenario.lookupFailure) throw Error('temporary db outage'); return [{content:'Fixture only'}]; }
       if(p.startsWith('conversations?')) return [{external_conversation_id:'whatsapp:5535999990001',phone_number_id:'12345'}];
       throw Error(p);
     };
     const api=load('lib/message-outbox.ts', {'./supabase':{supabaseServiceRequest:db}, './meta-whatsapp-connections':{
       loadMetaWhatsAppConnectionForCompany:async()=>[{enabled:true,phoneNumberId:'12345',apiVersion:'v26.0',accessToken:'fixture'}],
-    }}, {fetch:async()=>{posts++; if(scenario.timeout) throw Error('timeout'); return {ok:scenario.status===200,status:scenario.status,json:async()=>scenario.receipt};}});
+    }}, {process:{env:{SUPABASE_URL:"https://example.supabase.co"}},fetch:async(url,options)=>{const payload=JSON.parse(options.body); if(scenario.image) { assert.equal(payload.type,"image"); assert.equal(payload.image.link,`https://example.supabase.co/storage/v1/object/public/property-images/${id(1)}/photo.jpg`); assert.equal(payload.text,undefined); } posts++; if(scenario.timeout) throw Error('timeout'); return {ok:scenario.status===200,status:scenario.status,json:async()=>scenario.receipt};}});
     await api.sendQueuedMessage(id(1),id(701));
     assert.equal(writes.at(-1)?.p_state||null,scenario.want,JSON.stringify(scenario));
     assert.equal(posts,scenario.lookupFailure||scenario.unclaimed||scenario.unmarked?0:1);
