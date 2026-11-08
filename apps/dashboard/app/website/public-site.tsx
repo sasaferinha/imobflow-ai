@@ -56,12 +56,14 @@ function PropertyDialog({ property, content, companySlug, demo, preview, close }
     if (submitting.current || sent) return;
     if (demo || preview) { setSent(true); return; }
     const data = new FormData(event.currentTarget);
+    const query = new URLSearchParams(window.location.search);
+    const attribution = Object.fromEntries(Object.entries({ utm_source:100, utm_medium:100, utm_campaign:150, utm_content:150, utm_term:150 }).flatMap(([key,limit]) => { const value = query.get(key); return value && value.length <= limit && !/[\u0000-\u001f\u007f]/u.test(value) ? [[key,value]] : []; }));
     submitting.current = true;
     setBusy(true); setError('');
     try {
       const response = await fetch(`/api/site/${encodeURIComponent(companySlug)}/inquiry`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ propertyId: property.id, name: String(data.get('name') || ''), phone: String(data.get('phone') || ''), email: String(data.get('email') || ''), details: String(data.get('details') || '') }),
+        body: JSON.stringify({ attribution, propertyId: property.id, name: String(data.get('name') || ''), phone: String(data.get('phone') || ''), email: String(data.get('email') || ''), details: String(data.get('details') || '') }),
       });
       const result = await response.json().catch(() => ({})) as { error?: unknown };
       if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Não foi possível enviar seu interesse. Tente novamente.');

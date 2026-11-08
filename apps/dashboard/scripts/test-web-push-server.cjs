@@ -67,6 +67,9 @@ const request=(method='GET',body,origin='https://example.test',authenticated=tru
  assert.throws(()=>policy.validatePushSubscription({...subscription,keys:{...subscription.keys,p256dh:Buffer.alloc(65).toString('base64url')}}));
  Object.assign(testEnv,{WEB_PUSH_ENABLED:'true',VAPID_PUBLIC_KEY:publicKey,VAPID_PRIVATE_KEY:privateKey,VAPID_SUBJECT:'mailto:test@example.test',CRON_SECRET:'synthetic-cron'});
  assert.equal(policy.webPushConfig().schedulerConfigured,false);
+ testEnv.VAPID_SUBJECT='https://www.imobflow.net.br';assert.equal(policy.webPushConfig().subject,testEnv.VAPID_SUBJECT,'public HTTPS service contact is valid VAPID');
+ for(const invalid of ['http://www.imobflow.net.br','https://user:pass@www.imobflow.net.br','https://www.imobflow.net.br/#fragment','https://localhost']){testEnv.VAPID_SUBJECT=invalid;assert.equal(policy.webPushConfig(),null);}
+ testEnv.VAPID_SUBJECT='https://www.imobflow.net.br';
  const api=load('app/api/notifications/push/route');
  assert.equal((await api.GET(request('GET',undefined,undefined,false))).status,401);
  const status=await(await api.GET(request())).json();assert.equal(status.configured,true);assert.equal(status.publicKey,publicKey);assert.equal(status.subscribed,true);assert(!JSON.stringify(status).includes(privateKey));
@@ -133,5 +136,16 @@ const request=(method='GET',body,origin='https://example.test',authenticated=tru
  const cron=load('app/api/notifications/push/dispatch/route');
  assert.equal((await cron.GET(new NextRequest('https://example.test/api/notifications/push/dispatch'))).status,401);
  testEnv.WEB_PUSH_ENABLED='false';assert.equal((await(await cron.GET(new NextRequest('https://example.test/api/notifications/push/dispatch',{headers:{authorization:'Bearer synthetic-cron'}}))).json()).configured,false);
+ const dedicated='dedicated-worker-key-'.repeat(3);testEnv.WEB_PUSH_SCHEDULER_SECRET=dedicated;
+ assert.equal((await cron.GET(new NextRequest('https://example.test/api/notifications/push/dispatch',{headers:{authorization:'Bearer synthetic-cron'}}))).status,401,'dedicated deployment no longer accepts the general cron key');
+ const workerRequest=()=>new NextRequest('https://example.test/api/notifications/push/dispatch',{headers:{authorization:'Bearer '+dedicated}});
+ assert.equal((await cron.GET(workerRequest())).status,200);
+ delete testEnv.CRON_SECRET;testEnv.WEB_PUSH_ENABLED='true';assert.equal(policy.webPushConfig().schedulerConfigured,true,'dedicated scheduler does not need the old cron secret');testEnv.WEB_PUSH_ENABLED='false';
+ assert.equal((await cron.GET(workerRequest())).status,200);
+ testEnv.CRON_SECRET='synthetic-cron';testEnv.WEB_PUSH_SCHEDULER_SECRET='short';
+ assert.equal(policy.webPushSchedulerSecret(),null,'invalid dedicated key must not silently fall back to the old credential');
+ assert.equal((await cron.GET(workerRequest())).status,503);
+ delete testEnv.WEB_PUSH_SCHEDULER_SECRET;assert.equal(policy.webPushSchedulerSecret(),'synthetic-cron','legacy deployments retain the original route contract');
+ assert.equal(transportCalls,1,'credential checks and disabled worker never send to a real or synthetic device');
  console.log('PASS web push server: tenant hours/holidays/DST/closing, policy marker, paged eligibility, 2/5 arrival thresholds, authenticated consent, scope revalidation, expiring private payload and synthetic encryption/transport only.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

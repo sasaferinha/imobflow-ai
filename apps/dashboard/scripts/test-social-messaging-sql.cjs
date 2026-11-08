@@ -1,0 +1,42 @@
+const assert=require('node:assert/strict');
+const {createDatabase,seedCompanies,id,migration}=require('./helpers/tenant-test-database.cjs');
+(async()=>{
+ const db=await createDatabase();try{
+  await seedCompanies(db);await db.exec('CREATE TABLE crm_evolution_workspaces(company_id uuid PRIMARY KEY REFERENCES companies(id),document jsonb NOT NULL)');await db.exec(migration('20261108121000_social_messaging.sql'));
+  const scalar=async(sql,args=[])=>Object.values((await db.query(sql,args)).rows[0])[0];
+  const bind=async(company,channel,external,page)=>scalar('SELECT bind_social_account($1,$2,$3,$4,$5,$6,$7,$8)',[id(company),id(company*10+1),channel,external,page,'Synthetic','ciphertext','v26.0']);
+  const instagram=await bind(1,'instagram','456','123'),facebook=await bind(1,'facebook','123','123');await bind(2,'instagram','654','321');
+  await assert.rejects(()=>bind(2,'facebook','123','123'),/social_account_bound/);
+  const receive=(account,lead,mid,at=new Date().toISOString())=>scalar('SELECT receive_social_message($1,$2,$3,$4,$5,$6,$7,$8)',[account,id(lead),'777',mid,'Olá','[]',null,at]);
+  const first=await receive(instagram,501,'ig-1');assert.equal(first.saved,true);assert.equal((await receive(instagram,501,'ig-1')).saved,false);
+  const fb=await receive(facebook,502,'fb-1');assert.notEqual(first.threadId,fb.threadId);assert.notEqual(first.leadId,fb.leadId);
+  assert.equal(await scalar('SELECT source FROM leads WHERE id=$1',[id(502)]),'Facebook Messenger');
+  assert.equal(await scalar('SELECT count(*)::int FROM messages WHERE conversation_id IN(SELECT id FROM conversations WHERE lead_id IN($1,$2))',[id(501),id(502)]),0);
+  const enqueue=(thread,key,parts=[{content:'Resposta',media:[]}],source='human',actor=id(11),reply=null)=>scalar('SELECT enqueue_social_batch($1,$2,$3,$4,$5,$6,$7)',[id(1),thread,actor,key,JSON.stringify(parts),source,reply]);
+  await db.query("INSERT INTO broker_accounts(id,company_id,name,name_key,password_hash,role,active,email,email_key) VALUES($1,$2,'Corretor teste','corretor teste','scrypt-v1$fixture','broker',true,'broker@fixture.invalid','broker@fixture.invalid')",[id(12),id(1)]);
+  assert.equal(await scalar('SELECT crm_evolution_can_edit_lead($1,$2,$3)',[id(1),id(12),id(502)]),false,'canonical CRM editing does not bypass social claim/duty admission');
+  await scalar('SELECT social_handoff($1,$2,$3,$4)',[id(1),id(12),fb.threadId,'human']);const revoked=await enqueue(fb.threadId,'reassigned',[{content:'Portfolio',media:[]}],'human',id(12));
+  assert.equal(await scalar('SELECT crm_evolution_can_edit_lead($1,$2,$3)',[id(1),id(12),id(502)]),true,'claimed social attendance authorizes canonical feedback/portfolio workflows');
+  await db.query("UPDATE leads SET assigned_to='Outro corretor' WHERE id=$1",[id(502)]);assert.equal(await scalar('SELECT claim_social_message($1,$2)',[id(1),revoked[0]]),null,'CRM reassignment cancels pending delivery');await assert.rejects(()=>enqueue(fb.threadId,'reassigned',[{content:'Portfolio',media:[]}],'human',id(12)),/social_forbidden/);
+  assert.equal(await scalar('SELECT crm_evolution_can_edit_lead($1,$2,$3)',[id(1),id(12),id(502)]),false,'reassignment revokes the stale social UUID');assert.equal(await scalar('SELECT crm_evolution_can_edit_lead($1,$2,$3)',[id(1),id(11),id(502)]),true);assert.equal(await scalar('SELECT crm_evolution_can_edit_lead($1,$2,$3)',[id(2),id(21),id(502)]),false);
+  await assert.rejects(()=>enqueue(first.threadId,'before-claim'),/social_claim_required/);
+  await scalar('SELECT social_handoff($1,$2,$3,$4)',[id(1),id(11),first.threadId,'human']);
+  const parts=[{content:'Resposta',media:[]},{content:'',media:['https://cdn.facebook.com/synthetic.jpg']}];
+  const ids=await enqueue(first.threadId,'request-1',parts);assert.equal(ids.length,2);assert.deepEqual(await enqueue(first.threadId,'request-1',parts),ids);
+  await assert.rejects(()=>enqueue(first.threadId,'request-1'),/social_idempotency_conflict/);
+  const claim=await scalar('SELECT claim_social_message($1,$2)',[id(1),ids[0]]);assert.equal(claim.recipientId,'777');assert.equal(claim.accountId,instagram);assert.equal(await scalar('SELECT claim_social_message($1,$2)',[id(1),ids[0]]),null,'provider dispatch claimed only once');
+  await assert.rejects(()=>scalar('SELECT social_handoff($1,$2,$3,$4)',[id(1),id(11),first.threadId,'automatic']),/social_sending/);
+  await db.query("UPDATE social_messages SET updated_at=now()-interval '3 minutes' WHERE id=$1",[ids[0]]);assert.equal(await scalar('SELECT claim_social_message($1,$2)',[id(1),ids[0]]),null);assert.equal(await scalar('SELECT status FROM social_messages WHERE id=$1',[ids[0]]),'unknown');
+  await scalar('SELECT social_handoff($1,$2,$3,$4)',[id(1),id(11),first.threadId,'automatic']);
+  const newest=await receive(instagram,501,'ig-2');await assert.rejects(()=>enqueue(first.threadId,'stale-ai',[{content:'Old',media:[]}],'ai',null,first.messageId),/social_handoff/);const ai=await enqueue(first.threadId,'new-ai',[{content:'Current',media:[]}],'ai',null,newest.messageId);assert.equal(ai.length,1);
+  await db.query('INSERT INTO crm_evolution_workspaces(company_id,document) VALUES($1,$2)',[id(1),JSON.stringify({settings:{ai:{automaticMode:'human'}}})]);assert.equal(await scalar('SELECT claim_social_message($1,$2)',[id(1),ai[0]]),null,'global AI stop is rechecked before provider dispatch');await assert.rejects(()=>enqueue(first.threadId,'global-off',[{content:'Blocked',media:[]}],'ai',null,newest.messageId),/social_handoff/);
+  await scalar('SELECT social_handoff($1,$2,$3,$4)',[id(1),id(11),first.threadId,'human']);assert.equal(await scalar('SELECT claim_social_message($1,$2)',[id(1),ai[0]]),null);
+  await db.query("UPDATE social_threads SET last_inbound_at=now()-interval '25 hours' WHERE id=$1",[first.threadId]);await assert.rejects(()=>enqueue(first.threadId,'expired'),/social_window_closed/);
+  await assert.rejects(()=>scalar('SELECT social_handoff($1,$2,$3,$4)',[id(2),id(21),first.threadId,'human']),/social_forbidden/);
+  await assert.rejects(()=>db.query('INSERT INTO social_threads(company_id,account_id,lead_id,recipient_id) VALUES($1,$2,$3,$4)',[id(2),instagram,id(201),'999']),/foreign key/);
+  const inbox=await scalar('SELECT read_social_inbox($1,$2,$3)',[id(1),id(11),'instagram']);assert.equal(inbox.length,1);assert.equal(inbox[0].leadId,id(501));assert.equal((await scalar('SELECT read_social_inbox($1,$2,$3)',[id(2),id(21),'instagram'])).length,0);
+  await scalar('SELECT configure_social_account($1,$2,$3,$4,$5)',[id(1),id(11),'instagram','disconnect',null]);await assert.rejects(()=>receive(instagram,501,'disabled'),/social_connection_unavailable/);await assert.rejects(()=>scalar('SELECT bind_social_account($1,NULL,$2,$3,$4,$5,$6,$7)',[id(1),'instagram','456','123','Old env','old','v26.0']),/social_connection_unavailable/);
+  await db.exec('SET ROLE anon');await assert.rejects(()=>db.query('SELECT * FROM social_messages'),/permission denied/);await assert.rejects(()=>db.query('SELECT read_social_inbox($1,$2,$3)',[id(1),id(11),'instagram']),/permission denied/);await db.exec('RESET ROLE');
+  console.log('PASS social SQL: two tenants/channels, inbound dedup, atomic batch/replay conflict, claims, 24h window, stale AI/handoff, uncertain dispatch, no WhatsApp, FK/RLS and disconnect.');
+ }finally{await db.close();}
+})().catch(error=>{console.error(error);process.exit(1);});

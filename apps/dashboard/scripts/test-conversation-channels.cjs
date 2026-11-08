@@ -144,7 +144,7 @@ const lead = (id, source = 'WhatsApp') => ({
   scoreReasons: [], recoverySelected: false, createdAt: '2026-10-20T12:00:00.000Z',
 });
 const leads = [lead('wa'), lead('dm', 'Instagram Direct'), lead('generic', 'Instagram'), lead('ads', 'Facebook Lead Ads'),
-  lead('variant', 'instagram direct'), lead('spaced', 'Instagram Direct '), lead('dm2', 'Instagram Direct')];
+  lead('variant', 'instagram direct'), lead('spaced', 'Instagram Direct '), lead('dm2', 'Instagram Direct'), lead('fb', 'Facebook Messenger')];
 function conversationProps() {
   let state = reducer.demoConversationReducer(reducer.createLiveConversationState(), { type: 'sync', contacts: leads.map(item => ({ id: `lead-${item.id}` })) });
   state = reducer.demoConversationReducer(state, { type: 'select', id: 'lead-wa' });
@@ -171,7 +171,7 @@ function centerHarness(initial = {}) {
     dialog(value) { dialogOpen = value; },
     switch(channel) { const result = component(instance.tree, 'ConversationChannels').props.onChange(channel); this.update(); return result; },
     workspace() { return component(instance.tree, 'ConversationWorkspace'); },
-    instagram() { return component(instance.tree, 'InstagramConversations'); },
+    instagram() { return component(instance.tree, 'SocialConversations'); },
   });
 }
 const inboxData = {
@@ -200,11 +200,11 @@ async function run() {
   const Instagram = pure.load(instagramFile).default;
   const Center = pure.load(centerFile).default;
   const changed = [];
-  for (const channel of ['whatsapp', 'instagram']) {
+  for (const channel of ['whatsapp', 'instagram', 'facebook']) {
     const tree = Channels({ channel, onChange: value => changed.push(value) });
     const html = renderToStaticMarkup(tree);
     assert(html.includes('role="group" aria-label="Canal de conversas"'));
-    for (const [value, label] of [['whatsapp', 'WhatsApp'], ['instagram', 'Instagram']]) {
+    for (const [value, label] of [['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['facebook', 'Facebook']]) {
       const item = button(tree, label);
       assert.equal(item.props['aria-pressed'], value === channel);
       assert.equal(item.props['aria-controls'], 'conversation-channel-content');
@@ -215,9 +215,10 @@ async function run() {
       item.props.onClick();
     }
   }
-  assert.deepEqual(changed, ['whatsapp', 'instagram', 'whatsapp', 'instagram']);
+  assert.deepEqual(changed, ['whatsapp', 'instagram', 'facebook', 'whatsapp', 'instagram', 'facebook', 'whatsapp', 'instagram', 'facebook']);
   const busyChannels = Channels({ channel: 'whatsapp', onChange() {}, busy: true });
   assert.equal(button(busyChannels, 'Instagram').props.disabled, true);
+  assert.equal(button(busyChannels, 'Facebook').props.disabled, true);
   assert.equal(button(busyChannels, 'WhatsApp').props.disabled, false);
   assert(text(busyChannels).includes('Aguarde a operação'));
   for (const props of [{ demonstration: true }, {}]) {
@@ -231,7 +232,7 @@ async function run() {
   const igProps = conversationProps();
   igProps.state = reducer.demoConversationReducer(igProps.state, { type: 'select', id: 'lead-dm' });
   const igSSR = renderToStaticMarkup(React.createElement(Center, igProps));
-  assert(igSSR.includes('Instagram na demonstração') && !igSSR.includes('full-composer'));
+  assert(igSSR.includes('A demonstração não envia mensagens.') && !igSSR.includes('full-composer'));
   assert.equal((igSSR.match(/id="conversation-channel-content"/g) || []).length, 1);
 
   const center = centerHarness();
@@ -245,8 +246,8 @@ async function run() {
   options.props.onKeyDown({ key: 'Escape', currentTarget: disclosure });
   assert.equal(disclosure.open, false);
   assert(returnedFocus, 'Closing options with Escape returns focus to its summary');
-  const expectedWA = ['wa', 'generic', 'ads', 'variant', 'spaced'];
-  assert.deepEqual(Array.from(center.workspace().props.leads, item => item.id), expectedWA, 'Only exact Instagram Direct is a separate source');
+  const expectedWA = ['wa', 'ads'];
+  assert.deepEqual(Array.from(center.workspace().props.leads, item => item.id), expectedWA, 'Social chat sources never enter WhatsApp; acquisition forms may have a phone contact');
   assert.deepEqual(Array.from(center.workspace().props.inbox, item => item.leadId), expectedWA);
   assert.deepEqual(Array.from(component(center.tree, 'ConversationAlerts').props.inbox, item => item.leadId), expectedWA);
   assert.deepEqual(Array.from(component(center.tree, 'ConversationUrgentAlert').props.visibleLeadIds), expectedWA);
@@ -279,7 +280,12 @@ async function run() {
   const firstInstagramKey = center.instagram().key;
   center.select('dm2');
   assert.equal(center.instagram().props.initialLeadId, 'dm2');
-  assert.notEqual(center.instagram().key, firstInstagramKey, 'External Instagram navigation remounts with the new selection');
+  assert.equal(center.instagram().key, firstInstagramKey, 'External navigation preserves per-thread drafts and history within the channel');
+  const socialMemory = center.instagram().props.memory;
+  assert.equal(center.switch('facebook'), true);
+  assert.equal(center.instagram().props.channel, 'facebook');
+  assert.equal(center.instagram().props.memory, socialMemory, 'Changing social channels preserves draft memory without changing the destination');
+  assert.equal(center.switch('instagram'), true);
   center.dialog(true);
   assert.equal(center.switch('whatsapp'), false);
   const beforeAlert = center.actions.length;

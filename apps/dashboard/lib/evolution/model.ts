@@ -4,7 +4,7 @@ import { DEFAULT_OPERATIONS_SETTINGS, captureReminderCandidates, captureGoalProg
 import { validLeadSource } from '../lead-sources';
 import { validateTenantAISettings, TenantAISettingsValidationError, type StoredTenantAISettings, type TenantAISettings } from '../ai/tenant-settings';
 import { validateWebsiteSettings, WebsiteSettingsValidationError, type StoredWebsiteSettings, type WebsiteSettings } from './website-settings';
-import { validatePropertyWorkflow, visitProgressData, type VisitProgressCommand } from './property-workflows';
+import { validatePropertyWorkflow, visitProgressData, type VisitProgressCommand, type VisitStartCommand } from './property-workflows';
 import { brokerComplianceIssues, commissionForClosing, validateManagementSettings, type CommissionSnapshot, type ManagementSettings } from './management';
 
 export type Value = string | number | boolean;
@@ -15,7 +15,7 @@ export type CrmRecord = { id: string; kind: Kind; data: Record<string, Value>; c
 export type CrmEvent = { id: string; recordId: string; caseId?: string; at: string; actorId: string; actorName: string; type: string; summary: string; changes?: Record<string, { from: Value; to: Value }>; registration?: { requestId: string; fingerprint: string; action: RegistrationAction; resultCaseId?: string } };
 export type CrmSettings = { inactivityDays: Record<string, number>; sources: string[]; categories: string[]; lossReasons: string[]; distributionEnabled: boolean; operations?: OperationsSettings; ai?: StoredTenantAISettings; website?: StoredWebsiteSettings; management?: ManagementSettings; buyerReportFrequency?: 'weekly' | 'monthly' };
 export type CrmState = { companyId: string; version: number; records: CrmRecord[]; events: CrmEvent[]; members: CrmMember[]; settings: CrmSettings; sourceRevision?: string };
-export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<Omit<CrmSettings, 'ai' | 'website'>> & { ai?: TenantAISettings; website?: WebsiteSettings } } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | { type: 'capture-reminders' } | RegistrationCommand | VisitProgressCommand;
+export type CrmCommand = { type: 'save'; kind: Kind; id?: string; data: Record<string, Value> } | { type: 'comment'; id: string; text: string } | { type: 'settings'; settings: Partial<Omit<CrmSettings, 'ai' | 'website'>> & { ai?: TenantAISettings; website?: WebsiteSettings } } | { type: 'member'; id: string; specialization: CrmMember['specialization']; teamId?: string; permissions?: CrmMember['permissions'] } | { type: 'capture-reminders' } | RegistrationCommand | VisitProgressCommand | VisitStartCommand;
 export type CaseFilter = { purpose?: string; assignedTo?: string; from?: string; to?: string; stage?: string; freshness?: string; journey?: string; status?: string; query?: string };
 export class CrmError extends Error { constructor(message: string, public status = 400) { super(message); this.name = 'CrmError'; } }
 const deny = () => { throw new CrmError('Você não tem permissão para acessar ou alterar este registro.', 403); };
@@ -480,11 +480,22 @@ function applyRegistration(original: CrmState, actor: Actor, command: Registrati
   return state;
 }
 /** Pure transaction: all validation succeeds before caller atomically persists version+1. */
+export function visitStartReplay(state: CrmState, actor: Actor, command: CrmCommand): boolean {
+  if (command.type !== 'visit-start') return false;
+  checkActor(state, actor);
+  if (Object.keys(command).some(key => !['type', 'caseId', 'propertyId', 'requestId'].includes(key)) || typeof command.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(command.requestId)) throw new CrmError('Registro de visita inválido.');
+  const parent = editable(state, actor, text(command.caseId), 'cases');
+  const existing = state.records.find(record => record.id === command.requestId || record.id === `appointment:${command.requestId}`);
+  if (!existing) return false;
+  if (existing.kind !== 'tasks' || existing.data.caseId !== parent.id || existing.data.propertyId !== command.propertyId || existing.data.visitBrokerId !== actor.brokerId || existing.data.visitPersonId !== parent.data.personId || !existing.data.visitStartedAt || !canAccess(state, actor, existing, 'write')) throw new CrmError('Este registro já foi usado em outra operação.', 409);
+  return true;
+}
 export function applyCommand(original: CrmState, actor: Actor, command: CrmCommand, now = new Date().toISOString()): CrmState {
   checkActor(original, actor);
   if (!command || typeof command !== 'object') throw new CrmError('Comando inválido.');
   if (original.events.length > 30000 || original.records.length > 5000) throw new CrmError('Limite de armazenamento desta versão atingido. Seus dados foram preservados; entre em contato com o suporte antes de continuar.', 413);
   if (command.type === 'register') return applyRegistration(original, actor, command, now);
+  if (visitStartReplay(original, actor, command)) return structuredClone(original);
   if (command.type === 'capture-reminders') {
     if (actor.role !== 'owner') deny();
     if (Object.keys(command).some(key => key !== 'type')) throw new CrmError('Comando de lembretes inválido.');
@@ -502,12 +513,30 @@ export function applyCommand(original: CrmState, actor: Actor, command: CrmComma
     return { ...structuredClone(next), version: original.version + 1 };
   }
   const state: CrmState = structuredClone(original);
-  if (command.type === 'visit-progress') {
+  if (command.type === 'visit-start') {
+    if (Object.keys(command).some(key => !['type', 'caseId', 'propertyId', 'requestId'].includes(key)) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(command.requestId)) throw new CrmError('Registro de visita inválido.');
+    const parent = editable(state, actor, text(command.caseId), 'cases');
+    const property = find(state, text(command.propertyId), 'properties');
+    if (!canAccess(state, actor, property)) deny();
+    if (parent.data.status !== 'Aberto') throw new CrmError('Selecione um atendimento aberto para iniciar a visita.');
+    if (!['Disponível', 'Reservado'].includes(String(property.data.status))) throw new CrmError('Este imóvel não está disponível para visita.');
+    if (parent.data.purpose && parent.data.purpose !== property.data.purpose) throw new CrmError('A finalidade do imóvel deve corresponder ao atendimento.');
+    const active = state.records.find(record => record.kind === 'tasks' && record.data.caseId === parent.id && record.data.propertyId === property.id && record.data.visitStartedAt && !record.data.visitEndedAt && ['Pendente', 'Confirmada'].includes(String(record.data.status)));
+    if (active) throw new CrmError('Já existe uma visita em andamento para este cliente e imóvel. Abra a visita para encerrá-la.', 409);
+    const data = validateData(state, actor, 'tasks', { name: `Visita · ${String(property.data.name).slice(0, 150)}`, caseId: parent.id, propertyId: property.id, assignedTo: actor.brokerId, type: 'Visita', priority: 'Normal', status: 'Pendente', dueAt: now }, undefined);
+    const task: CrmRecord = { id: command.requestId, kind: 'tasks', data, createdBy: actor.brokerId, createdAt: now, updatedAt: now };
+    validateBusiness(state, actor, task);
+    task.data = { ...task.data, ...visitProgressData(task, { type: 'visit-progress', id: task.id, action: 'start' }, now), visitBrokerId: actor.brokerId, visitPersonId: parent.data.personId };
+    state.records.push(task);
+    addEvent(state, actor, task, now, 'created', 'Visita iniciada no imóvel');
+  } else if (command.type === 'visit-progress') {
     const task = editable(state, actor, text(command.id), 'tasks');
+    const parent = editable(state, actor, text(task.data.caseId), 'cases');
     let updates: Record<string, Value>;
     try { updates = visitProgressData(task, command, now); } catch (error) { throw new CrmError(error instanceof Error ? error.message : 'Não foi possível registrar a visita.'); }
+    if (command.action === 'start') updates = { ...updates, visitBrokerId: actor.brokerId, visitPersonId: parent.data.personId };
     validateBusiness(state, actor, { ...task, data: { ...task.data, ...updates } }, task);
-    change(state, actor, task, updates, now, command.action === 'start' ? 'Visita iniciada' : 'Visita encerrada com relatório');
+    change(state, actor, task, updates, now, command.action === 'start' ? 'Visita iniciada' : 'Visita encerrada');
   } else if (command.type === 'save') {
     const previous = command.id ? editable(state, actor, text(command.id), command.kind) : undefined;
     const data = validateData(state, actor, command.kind, command.data, previous);

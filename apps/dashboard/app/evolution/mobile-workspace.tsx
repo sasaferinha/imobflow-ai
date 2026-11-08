@@ -1,0 +1,34 @@
+'use client';
+import { useMemo, useState } from 'react';
+import type { Actor, CrmRecord, CrmState } from '@/lib/evolution/model';
+import { mobileWorkspace } from '@/lib/evolution/mobile-workspace';
+import s from './mobile-workspace.module.css';
+
+type Props = { state: CrmState; actor: Actor; onSelect: (id: string) => void; onConversations?: () => void; onProperties: () => void; onNewLead: () => void; onFullFunnel: () => void };
+const displayDate = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Sem horário definido';
+export default function MobileWorkspace({ state, actor, onSelect, onConversations, onProperties, onNewLead, onFullFunnel }: Props) {
+  const [tab, setTab] = useState<'today' | 'visits' | 'funnel'>('today');
+  const [broker, setBroker] = useState('');
+  const [limit, setLimit] = useState(8);
+  const data = useMemo(() => mobileWorkspace(state, actor, broker), [state, actor, broker]);
+  const name = (record: CrmRecord) => String(record.data.name || 'Atendimento');
+  const customer = (record: CrmRecord) => {
+    const deal = record.kind === 'cases' ? record : state.records.find(row => row.kind === 'cases' && row.id === record.data.caseId);
+    return String(state.records.find(row => row.kind === 'people' && row.id === deal?.data.personId)?.data.name || deal?.data.name || record.data.name);
+  };
+  const visitRow = (record: CrmRecord) => <button className={s.row} key={record.id} onClick={() => onSelect(record.id)}><span><strong>{customer(record)}</strong><small>{String(state.records.find(row => row.kind === 'properties' && row.id === record.data.propertyId)?.data.name || name(record))}</small><small>{displayDate(record.data.visitStartedAt || record.data.dueAt)}</small></span><span className={s.action}>{record.data.visitEndedAt || record.data.status === 'Realizada' ? 'Ver avaliação' : record.data.visitStartedAt ? 'Encerrar' : 'Iniciar'}<b aria-hidden="true">→</b></span></button>;
+  const switchTab = (next: typeof tab) => { setTab(next); setLimit(8); };
+  return <section className={s.workspace} aria-label="Atendimento no celular">
+    <nav className={s.tabs} aria-label="Área de trabalho do corretor">{([['today','Hoje'],['visits','Visitas'],['funnel','Funil']] as const).map(([key,label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => switchTab(key)}>{label}</button>)}</nav>
+    {actor.role === 'owner' && <label className={s.ownerFilter}>Responsável<select value={broker} onChange={event => setBroker(event.target.value)}><option value="">Toda a equipe</option>{state.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>}
+    {tab === 'today' && <>
+      <header className={s.heading}><div><span>Seu próximo passo</span><h2>Vamos atender?</h2></div><small>{data.open.length} negociações abertas</small></header>
+      <div className={s.quickActions}>{onConversations && <button className={s.primary} onClick={onConversations}>Abrir conversas <span aria-hidden="true">→</span></button>}<button onClick={onNewLead}>Cadastrar cliente</button></div>
+      <section className={s.block}><h3>{data.activeVisits[0]?.data.visitStartedAt ? 'Visita em andamento' : 'Próxima visita'}</h3>{data.activeVisits.length ? visitRow(data.activeVisits[0]) : <p className={s.empty}>Nenhuma visita pendente por aqui.</p>}<button className={s.textButton} onClick={() => switchTab('visits')}>Ver visitas</button></section>
+      <section className={s.block}><h3>Atendimentos a revisar <span>{data.review.length}</span></h3>{data.review.slice(0,4).map(record => <button key={record.id} className={s.row} onClick={() => onSelect(record.id)}><span><strong>{customer(record)}</strong><small>{String(record.data.stage)} · confira o próximo contato</small></span><b aria-hidden="true">→</b></button>)}{!data.review.length && <p className={s.empty}>Nenhum atendimento com revisão vencida.</p>}{data.review.length > 4 && <button className={s.textButton} onClick={() => switchTab('funnel')}>Ver todos no funil</button>}</section>
+      {data.pending.length > 0 && <details className={s.block}><summary>Tarefas pendentes <span>{data.pending.length}</span></summary>{data.pending.slice(0,8).map(record => <button key={record.id} className={s.row} onClick={() => onSelect(record.id)}><span><strong>{name(record)}</strong><small>{displayDate(record.data.dueAt)}</small></span><b aria-hidden="true">→</b></button>)}</details>}
+    </>}
+    {tab === 'visits' && <><header className={s.heading}><div><span>Do encontro ao retorno</span><h2>Suas visitas</h2></div></header><button className={s.primary} onClick={onProperties}>Escolher imóvel para visitar <span aria-hidden="true">→</span></button><p className={s.help}>Abra a visita para iniciar ou encerrar. Depois, copie o link de avaliação e envie ao cliente.</p><div className={s.block}>{data.activeVisits.slice(0,limit).map(visitRow)}{!data.activeVisits.length && <p className={s.empty}>Nenhuma visita pendente. Você pode iniciar uma pela ficha do imóvel.</p>}{data.activeVisits.length > limit && <button className={s.textButton} onClick={() => setLimit(value => value + 8)}>Mostrar mais visitas</button>}</div><details className={s.block}><summary>Visitas encerradas <span>{data.completedVisits.length}</span></summary>{data.completedVisits.slice(0,limit).map(visitRow)}{data.completedVisits.length > limit && <button className={s.textButton} onClick={() => setLimit(value => value + 8)}>Mostrar mais encerradas</button>}{!data.completedVisits.length && <p className={s.empty}>As visitas concluídas aparecerão aqui.</p>}</details></>}
+    {tab === 'funnel' && <><header className={s.heading}><div><span>Um passo de cada vez</span><h2>{actor.role === 'owner' ? 'Funil da equipe' : 'Meu funil'}</h2></div><small>{data.open.length} abertas</small></header><p className={s.help}>Abra uma etapa para ver os clientes e registrar o próximo passo.</p><div className={s.stageList}>{data.stages.filter(group => group.stage !== 'Negociado').map(group => <details className={s.stage} key={group.stage}><summary>{group.stage}<span>{group.records.length}</span></summary>{group.records.map(record => <button className={s.row} key={record.id} onClick={() => onSelect(record.id)}><span><strong>{customer(record)}</strong><small>{String(record.data.purpose)}{record.data.nextActivityAt ? ` · ${displayDate(record.data.nextActivityAt)}` : ''}</small></span><b aria-hidden="true">→</b></button>)}{!group.records.length && <p className={s.empty}>Nenhum cliente nesta etapa.</p>}</details>)}</div><p className={s.help}>{data.won} negociações concluídas na carteira consultada.</p><button className={s.textButton} onClick={onFullFunnel}>Abrir funil completo e filtros</button></>}
+  </section>;
+}

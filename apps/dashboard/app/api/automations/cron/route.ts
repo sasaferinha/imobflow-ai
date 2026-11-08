@@ -7,6 +7,7 @@ import { sweepOpportunities } from '@/lib/opportunities';
 import {sweepMessageOutbox} from '@/lib/message-outbox';
 import {removeExpiredConversationMedia} from '@/lib/whatsapp-media';
 import {runEvolutionScheduler} from '@/lib/evolution/scheduler';
+import {recoverSocialAI} from '@/lib/social-ai';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -19,9 +20,13 @@ export async function GET(request: NextRequest) {
   const expected = Buffer.from(`Bearer ${secret}`);
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   try {
+    const deadline = Date.now() + 45_000;
+    // Inbound jobs commit with each message, before the webhook returns 200.
+    let socialAI: { processed: number; deferred: number; failed: number } | { unavailable: true };
+    try { socialAI = await recoverSocialAI(Math.min(deadline-20000,Date.now()+20000)); }
+    catch { socialAI = { unavailable: true }; }
     const companies = await supabaseRequest<Array<{ company_id: string; name: string }>>('account_companies?select=company_id,name&order=company_id.asc&limit=1000');
     const executions = [];
-    const deadline = Date.now() + 45_000;
     for (const company of companies) {
       try {
         await sweepMessageOutbox(company.company_id,deadline);
@@ -47,7 +52,7 @@ export async function GET(request: NextRequest) {
       } catch { executions.push({ companyId: company.company_id, complete: false, generated: 0, failed: true }); }
       if (Date.now() >= deadline) break;
     }
-    const failed = companies.length === 1000 || executions.length !== companies.length || executions.some((item) => item.failed || !item.complete);
-    return NextResponse.json({ executions }, { status: failed ? 500 : 200 });
+    const failed = 'unavailable' in socialAI || socialAI.failed > 0 || companies.length === 1000 || executions.length !== companies.length || executions.some((item) => item.failed || !item.complete);
+    return NextResponse.json({ executions, socialAI }, { status: failed ? 500 : 200 });
   } catch { return NextResponse.json({ error: 'Falha na execução agendada.' }, { status: 500 }); }
 }

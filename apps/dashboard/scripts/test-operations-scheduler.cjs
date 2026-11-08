@@ -111,7 +111,7 @@ function load(file){
   console.log('PASS operations scheduler: legacy opt-in fails closed for missing/false/failed readiness, independent capture/report routines continue, ready pool still executes, active owner/tenant context, deadline, CAS and review deduplication. Synthetic only.');
   // Exercise the real cron handler: a swallowed snapshot storage error must
   // surface to monitoring even when opportunity/outbox processing succeeded.
-  let buyerStatus='unavailable';const cronRuns=[];const cronModule={exports:{}};
+  let buyerStatus='unavailable',socialStatus='ready';const cronRuns=[];const cronModule={exports:{}};
   const cronDependencies={
     'node:crypto':require('node:crypto'),
     'next/server':{NextResponse:{json:Response.json}},
@@ -121,6 +121,7 @@ function load(file){
     '@/lib/opportunities':{sweepOpportunities:async()=>({complete:true,generated:0,processed:0,busy:false})},
     '@/lib/message-outbox':{sweepMessageOutbox:async()=>{}},
     '@/lib/whatsapp-media':{removeExpiredConversationMedia:async()=>{}},
+    '@/lib/social-ai':{recoverSocialAI:async()=>{if(socialStatus==='unavailable')throw Error('Synthetic social recovery outage');return{processed:0,deferred:0,failed:socialStatus==='failed'?1:0};}},
     '@/lib/evolution/scheduler':{runEvolutionScheduler:async companyId=>{cronRuns.push(companyId);return{report:'disabled',...(buyerStatus?{buyerReport:{status:companyId===company?buyerStatus:'already-generated'}}:{})};}},
   };
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../app/api/automations/cron/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,
@@ -130,5 +131,6 @@ function load(file){
   assert.equal(unavailable.status,500,'Snapshot failure must not report a healthy cron');assert.equal(unavailableBody.executions[0].failed,true);
   assert.equal(unavailableBody.executions[0].crm.buyerReport.status,'unavailable');assert.equal(unavailableBody.executions[1].failed,false);assert.equal(cronRuns.length,2,'Other tenants continue after snapshot failure');
   for(const status of ['generated','already-generated',null]){buyerStatus=status;const healthy=await cronModule.exports.GET(cronRequest());assert.equal(healthy.status,200);assert((await healthy.json()).executions.every(item=>item.failed===false));}
-  console.log('PASS cron report monitoring: unavailable snapshot returns 500 with tenant detail; other tenants continue; generated, already-generated and disabled remain healthy.');
+  for(const status of ['failed','unavailable']){socialStatus=status;const response=await cronModule.exports.GET(cronRequest());assert.equal(response.status,500,'social recovery failure must reach monitoring');assert((await response.json()).executions.every(item=>item.failed===false),'company routines continue independently');}
+  console.log('PASS cron report monitoring: unavailable snapshots and social recovery failures return 500; independent tenant routines continue; generated, already-generated and disabled remain healthy.');
 })().catch(error=>{console.error(error);process.exit(1);});

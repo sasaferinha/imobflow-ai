@@ -17,20 +17,22 @@ import ConversationAlerts from './conversation-alerts';
 import ConversationUrgentAlert from './conversation-urgent-alert';
 import BrowserPushSettings from './browser-push-settings';
 import ConversationChannels, { type ConversationChannel } from './conversation-channels';
-import InstagramConversations from './instagram-conversations';
+import SocialConversations, { createSocialDraftMemory } from './social-conversations';
+import { leadChannel } from '@/lib/lead-channel';
 import { isWhatsAppWindowError } from '@/lib/whatsapp-handoff';
 import { ConversationAttendanceBadge, ConversationAttendanceBanner, describeConversationAttendance } from './conversation-attendance';
 import { inboxByLead, compareInboxActivity, dutyPriorityBlocked, type ConversationInboxItem, type ConversationReadPosition } from '@/lib/conversation-inbox';
 
-const isInstagramLead = (lead: Pick<LeadProfile, 'source'>) => lead.source === 'Instagram Direct';
+const isSocialLead = (lead: Pick<LeadProfile, 'source'>) => leadChannel(lead.source) !== 'whatsapp';
 
 export default function ConversationCenter(props: Omit<ComponentProps<typeof ConversationWorkspace>, 'onBusyChange'>) {
   const selectedLead = props.leads?.find(lead => `lead-${lead.id}` === props.state.selectedId);
-  const [channel, setChannel] = useState<ConversationChannel>(() => selectedLead && isInstagramLead(selectedLead) ? 'instagram' : 'whatsapp');
+  const [channel, setChannel] = useState<ConversationChannel>(() => selectedLead ? leadChannel(selectedLead.source) : 'whatsapp');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [socialDrafts] = useState(createSocialDraftMemory);
   const selection = useRef(selectedLead?.id);
-  const whatsappLeads = useMemo(() => props.leads?.filter(lead => !isInstagramLead(lead)), [props.leads]);
-  const whatsappInbox = useMemo(() => props.inbox?.filter(item => !props.leads?.some(lead => lead.id === item.leadId && isInstagramLead(lead))), [props.inbox, props.leads]);
+  const whatsappLeads = useMemo(() => props.leads?.filter(lead => !isSocialLead(lead)), [props.leads]);
+  const whatsappInbox = useMemo(() => props.inbox?.filter(item => !props.leads?.some(lead => lead.id === item.leadId && isSocialLead(lead))), [props.inbox, props.leads]);
   useEffect(() => {
     if (!selectedLead || selection.current === selectedLead.id || workspaceBusy) return;
     if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
@@ -38,7 +40,7 @@ export default function ConversationCenter(props: Omit<ComponentProps<typeof Con
     queueMicrotask(() => {
       if (!active) return;
       selection.current = selectedLead.id;
-      if (isInstagramLead(selectedLead)) setChannel('instagram');
+      setChannel(leadChannel(selectedLead.source));
     });
     return () => { active = false; };
   }, [selectedLead, workspaceBusy]);
@@ -63,7 +65,7 @@ export default function ConversationCenter(props: Omit<ComponentProps<typeof Con
         <summary>Alertas e horários</summary>
         {/* Native disclosure keeps alert subscriptions and preferences mounted when closed. */}
         <div className="conversation-tools" role="group" aria-label="Avisos do WhatsApp">
-          {channel === 'instagram' && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Avisos do WhatsApp</span>}
+          {channel !== 'whatsapp' && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Avisos do WhatsApp</span>}
           <ConversationAlerts inbox={whatsappInbox} ready={props.ready} demonstration={props.demonstration} />
           <BrowserPushSettings key={`${props.currentBrokerId || 'no-account'}-${Boolean(props.ready)}`} ready={props.ready} demonstration={props.demonstration} />
           {channel === 'whatsapp' && <ConversationSettings/>}
@@ -75,7 +77,7 @@ export default function ConversationCenter(props: Omit<ComponentProps<typeof Con
       onOpen={leadId => { if (changeChannel('whatsapp')) props.dispatch({ type: 'select', id: `lead-${leadId}` }); }} />
     {channel === 'whatsapp'
       ? <ConversationWorkspace {...props} leads={whatsappLeads} inbox={whatsappInbox} onBusyChange={setWorkspaceBusy} />
-      : <InstagramConversations key={`${props.currentBrokerId || 'preview'}:${selectedLead && isInstagramLead(selectedLead) ? selectedLead.id : ''}`} demonstration={props.demonstration} initialLeadId={selectedLead?.id} />}
+      : <SocialConversations memory={socialDrafts} key={`${props.currentBrokerId || 'preview'}:${channel}`} channel={channel} demonstration={props.demonstration} initialLeadId={selectedLead && isSocialLead(selectedLead) ? selectedLead.id : undefined} currentBrokerId={props.currentBrokerId} isAdministrator={props.isAdministrator} properties={props.properties} onBusyChange={setWorkspaceBusy} notify={props.notify} />}
   </>;
 }
 

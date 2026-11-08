@@ -1,3 +1,4 @@
+import { opportunityMessageDestination } from './lead-channel-server';
 import { currentAccount } from './tenant-context';
 import { supabaseServiceRequest as db } from './supabase';
 import { loadMetaWhatsAppConnectionForCompany } from './meta-whatsapp-connections';
@@ -6,6 +7,7 @@ import { sendQueuedMessage } from './message-outbox';
 export async function propertyWhatsAppContext(opportunityId: string) {
   const actor = currentAccount();
   if (!actor) throw new Error('unauthorized');
+  if ((await opportunityMessageDestination(opportunityId)).channel !== 'whatsapp') throw new Error('social_channel_required');
   const context = await db<{ conversationId: string; phoneNumberId: string | null; recipient: string; phone: string }>('rpc/property_whatsapp_context', { method: 'POST', body: { p_company_id: actor.companyId, p_broker_id: actor.brokerId, p_opportunity_id: opportunityId } });
   const connections = (await loadMetaWhatsAppConnectionForCompany(actor.companyId)).filter(item => item.enabled && item.accessToken);
   const connection = context.phoneNumberId ? connections.find(item => item.phoneNumberId === context.phoneNumberId) : connections.length === 1 ? connections[0] : undefined;
@@ -43,6 +45,7 @@ export async function propertyOfferStatus(requestId: string) {
 
 export function propertyOfferError(reason: unknown) {
   const text = reason instanceof Error ? reason.message : '';
+  if (text.includes('social_channel_required')) return 'Este cliente deve receber o imóvel pelo canal de origem, sem redirecionamento para WhatsApp.';
   if (text.includes('template_required')) return 'Este cliente está fora da janela de 24 horas. Retome o contato com um modelo aprovado e aguarde a resposta antes de enviar as fotos.';
   if (text.includes('claim_required')) return 'Assuma este atendimento na aba Conversas antes de enviar.';
   if (text.includes('whatsapp_conversation_required')) return 'É necessária uma conversa WhatsApp recebida deste cliente na ImobFlow.';

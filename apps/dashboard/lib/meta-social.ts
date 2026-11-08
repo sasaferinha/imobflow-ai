@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { supabaseServiceRequest as db } from './supabase';
 import { analyzeLead, explainProfile, type LeadInput } from './leads';
 import { importPhone } from './lead-import';
+import { socialImageUrl } from './social-model';
 
 type ObjectValue = Record<string, unknown>;
 const object = (value: unknown): ObjectValue => value && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : {};
@@ -9,8 +10,8 @@ const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const clean = (value: unknown, max = 500) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const id = (value: unknown) => /^\d{1,40}$/.test(clean(value)) ? clean(value) : '';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export type SocialConnection = { companyId: string; pageId?: string; instagramId?: string; accessToken?: string; enabled: boolean; apiVersion: string };
-export type SocialEvent = { kind: 'facebook' | 'instagram'; connection: SocialConnection; externalId: string; senderId?: string; text?: string; occurredAt?: string };
+export type SocialConnection = { companyId: string; pageId?: string; instagramId?: string; accessToken?: string; enabled: boolean; apiVersion: string; channel?: 'facebook' | 'instagram'; databaseId?: string };
+export type SocialEvent = { kind: 'facebook' | 'instagram'; connection: SocialConnection; externalId: string; senderId?: string; text?: string; occurredAt?: string; mediaUrls?: string[]; mediaType?: string };
 
 /** Bindings are server-managed. A webhook can never select an arbitrary tenant. */
 export function socialConnections(raw = process.env.META_SOCIAL_CONNECTIONS): SocialConnection[] {
@@ -35,22 +36,24 @@ export function parseSocialEvents(payload: unknown, connections: SocialConnectio
     const entry = object(rawEntry), entryId = id(entry.id);
     if (!entryId) continue;
     if (root.object === 'page') {
-      const connection = connections.find(c => c.enabled && c.pageId === entryId);
+      const connection = connections.find(c => c.enabled && c.pageId === entryId && c.channel !== 'instagram');
       if (!connection) continue;
       for (const rawChange of list(entry.changes)) {
         const change = object(rawChange), value = object(change.value), externalId = id(value.leadgen_id);
         if (change.field === 'leadgen' && externalId && (!value.page_id || id(value.page_id) === entryId)) result.push({ kind: 'facebook', connection, externalId });
       }
     }
-    if (root.object === 'instagram') {
-      const connection = connections.find(c => c.enabled && c.instagramId === entryId);
+    if (root.object === 'instagram' || root.object === 'page') {
+      const instagram = root.object === 'instagram';
+      const connection = connections.find(c => c.enabled && (instagram ? c.instagramId === entryId && c.channel !== 'facebook' : c.pageId === entryId && c.channel !== 'instagram'));
       if (!connection) continue;
       for (const rawMessage of list(entry.messaging)) {
         const event = object(rawMessage), message = object(event.message), senderId = id(object(event.sender).id), recipient = id(object(event.recipient).id);
-        const externalId = clean(message.mid, 255), text = clean(message.text, 2000);
+        const externalId = clean(message.mid, 255), attachment = object(list(message.attachments)[0]), mediaType = clean(attachment.type, 30);
+        const image = mediaType === 'image' ? socialImageUrl(object(attachment.payload).url) : null;
+        const text = clean(message.text, 2000) || (image ? '[Foto recebida]' : mediaType ? `[Mídia recebida: ${mediaType}. Consulte o canal para abrir.]` : '');
         const occurred = typeof event.timestamp === 'number' && event.timestamp > 0 && event.timestamp <= Date.now() + 300000 ? new Date(event.timestamp).toISOString() : undefined;
-        // Text intake only: no echoes, read receipts, media downloads or automatic replies.
-        if (recipient === entryId && senderId && senderId !== entryId && externalId && text && message.is_echo !== true) result.push({ kind: 'instagram', connection, externalId, senderId, text, occurredAt: occurred });
+        if (recipient === entryId && senderId && senderId !== entryId && externalId && text && message.is_echo !== true) result.push({ kind: instagram ? 'instagram' : 'facebook', connection, externalId, senderId, text, occurredAt: occurred, ...(image ? { mediaUrls: [image] } : {}), ...(mediaType ? { mediaType } : {}) });
       }
     }
   }
@@ -61,7 +64,7 @@ export function parseSocialEvents(payload: unknown, connections: SocialConnectio
 }
 
 export function socialLeadId(event: SocialEvent) {
-  const hash = createHash('sha256').update([event.connection.companyId, event.kind, event.kind === 'instagram' ? event.connection.instagramId : event.connection.pageId, event.kind === 'instagram' ? event.senderId : event.externalId].join(':')).digest('hex');
+  const hash = createHash('sha256').update([event.connection.companyId, event.senderId && event.kind === 'facebook' ? 'facebook-messenger' : event.kind, event.kind === 'instagram' ? event.connection.instagramId : event.connection.pageId, event.senderId || event.externalId].join(':')).digest('hex');
   return `${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`;
 }
 
@@ -83,6 +86,10 @@ export function mapFacebookLead(payload: unknown): LeadInput {
 }
 
 export async function saveSocialEvent(event: SocialEvent) {
+  if (event.senderId) {
+    const { receiveSocialMessage } = await import('./social-messaging');
+    return receiveSocialMessage(event);
+  }
   const companyId = event.connection.companyId, leadId = socialLeadId(event);
   let input: LeadInput;
   if (event.kind === 'facebook') {

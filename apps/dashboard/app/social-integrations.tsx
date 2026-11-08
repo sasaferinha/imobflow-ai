@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { dashboardFetch } from '@/lib/dashboard-transport';
 import styles from './social-integrations.module.css';
+import SocialConnections from './social-connections';
 
 type Intake = {id:string;name:string;source:string;createdAt:string;details:string|null;messages:Array<{id:string;text:string;at:string}>};
 type Status = {facebook:boolean;instagram:boolean;webhookConfigured:boolean;inbox:Intake[]};
@@ -15,7 +16,7 @@ export default function SocialIntegrations(){
     return()=>abort.abort();
   },[attempt]);
   const record=status?.inbox.find(r=>r.id===selected);
-  return <section className={styles.root} aria-label="Instagram e formulários do Facebook">
+  return <><SocialConnections/><details><summary>Formulários e entradas anteriores</summary><section className={styles.root} aria-label="Instagram e formulários do Facebook">
     <header><div><span className={styles.eyebrow}>CANAIS DE ENTRADA</span><h2>Instagram e Facebook</h2><p>Novos contatos chegam ao catálogo de leads. Sem disparos automáticos.</p></div><button type="button" onClick={()=>{setError('');setAttempt(a=>a+1);}}>Atualizar canais</button></header>
     {error&&<p role="alert">{error}</p>}
     <div className={styles.cards}>{(['facebook','instagram'] as const).map(channel=><article key={channel}>
@@ -28,9 +29,9 @@ export default function SocialIntegrations(){
       <li>Conceder acesso aos leads dos formulários e às mensagens da conta profissional. A Meta pode exigir análise do aplicativo.</li>
       <li>Vincular cada Página/conta à imobiliária no servidor e cadastrar o webhook de entrada. Credenciais nunca devem ser enviadas por conversa ou colocadas em campos de cadastro.</li>
       <li>Enviar um formulário e uma mensagem de teste autorizados. A configuração salva não confirma o recebimento real.</li>
-    </ol><p>Webhook: <code>/api/integrations/meta/social</code>. O WhatsApp continua com sua conexão própria acima. O Instagram aqui é somente leitura: responda pelo aplicativo da Meta. Mídias, respostas pelo painel e sincronização retroativa não estão habilitadas.</p></details>
+    </ol><p>Webhook: <code>/api/integrations/meta/social</code>. O WhatsApp continua com sua conexão própria acima. Para mensagens da Página e do Instagram, use a conexão acima e atenda na área Conversas. O histórico abaixo preserva entradas da integração anterior.</p></details>
     <div className={styles.inbox}><h3>Entradas recentes <small>Até 30 contatos</small></h3>
       {!status?<p>Carregando entradas…</p>:!status.inbox.length?<p>Nenhuma entrada social recebida. Novos contatos aparecerão após a configuração e o primeiro recebimento.</p>:<div className={styles.columns}><div className={styles.list}>{status.inbox.map(item=><button type="button" key={item.id} aria-pressed={selected===item.id} onClick={()=>setSelected(item.id)}><strong>{item.name}</strong><span>{item.source} · {new Date(item.createdAt).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'})}</span></button>)}</div><div className={styles.detail}>{record?<><h4>{record.name}</h4><p>Contato disponível também no catálogo de leads, para revisão e atribuição.</p>{record.messages.length?record.messages.map(m=><blockquote key={m.id}><time>{new Date(m.at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})}</time><p>{m.text}</p></blockquote>):<p className={styles.answers}>{record.details||'Sem respostas adicionais.'}</p>}</>:<p>Selecione uma entrada para consultar.</p>}</div></div>}
     </div>
-  </section>;
+  </section></details></>;
 }

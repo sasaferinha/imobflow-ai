@@ -4,10 +4,13 @@ import { useEffect, useState } from 'react';
 import DashboardClient from '../dashboard-client';
 import { installProductDemoTransport } from '@/lib/dashboard-transport';
 import { createProductDemoTransport, productDemoAccount } from '@/lib/product-demo-data';
+import type { PropertyRecord } from '@/lib/operations';
+import PropertyVisitDemo from './property-visit-demo';
 import './product-demo.css';
 
 export default function ProductDemo() {
   const [ready, setReady] = useState(false);
+  const [visitingProperty, setVisitingProperty] = useState<PropertyRecord | null>(null);
   const [adminPresentation, setAdminPresentation] = useState(false);
   const [embedded, setEmbedded] = useState(false);
   const [notice, setNotice] = useState('Explore o painel. Os dados são fictícios e as alterações não são salvas.');
@@ -38,6 +41,7 @@ export default function ProductDemo() {
 
   return <div className={`public-product-demo${adminPresentation ? ' admin-presentation-demo' : ''}${adminPresentation && embedded ? ' embedded-admin-demo' : ''}`}>
     <div className="public-demo-notice" role="status"><strong>Demonstração · Administrador</strong><span>{notice}</span></div>
-    {ready ? <DashboardClient publicDemo account={productDemoAccount} initialView={adminPresentation ? 'overview' : 'conversations'} /> : <p className="public-demo-loading">Carregando o painel demonstrativo…</p>}
+    {ready ? <DashboardClient publicDemo account={productDemoAccount} initialView={adminPresentation ? 'overview' : 'conversations'} onVisitProperty={setVisitingProperty} /> : <p className="public-demo-loading">Carregando o painel demonstrativo…</p>}
+    {visitingProperty && <PropertyVisitDemo key={visitingProperty.id} property={visitingProperty} close={() => setVisitingProperty(null)} />}
   </div>;
 }

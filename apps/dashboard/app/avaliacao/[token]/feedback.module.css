@@ -1,16 +1,28 @@
 .page { min-height: 100dvh; padding: 40px 18px; box-sizing: border-box; background: #eef3f7; display: grid; place-items: start center; color: #193148; font-family: Arial,sans-serif; }
 .card { width: 100%; max-width: 580px; box-sizing: border-box; background: white; border-radius: 20px; padding: 36px; box-shadow: 0 12px 40px #16334c12; }
-.brand { color: #1174a9; font-size: 12px; letter-spacing: .18em; font-weight: 800; }
+.brand { display: flex; gap: 12px; align-items: center; color: #193148; font-size: 16px; font-weight: 800; border-top: 4px solid var(--feedback-brand,#147bb6); padding-top: 18px; }
+.brand img { object-fit: contain; }
 .card h1 { font-size: 28px; line-height: 1.2; margin: 20px 0 12px; }
 .card p { font-size: 14px; line-height: 1.65; color: #5a6e80; }
 .property { background: #f0f7fb; padding: 14px; border-radius: 9px; margin: 20px 0; font-weight: 600; }
+.property small { display: block; margin-top: 6px; }
 .card form { display: grid; gap: 20px; }
 .card label { display: grid; gap: 8px; font-size: 14px; font-weight: 600; }
 .card select,.card textarea { width: 100%; box-sizing: border-box; border: 1px solid #c9d6e1; border-radius: 8px; padding: 12px; background: white; color: #193148; font: inherit; }
 .card textarea { resize: vertical; }
 .card small { font-size: 12px; font-weight: 400; color: #6d8090; }
 .card .notice { font-size: 12px; margin: 0; }
-.card button { border: 0; background: #147bb6; color: white; border-radius: 9px; padding: 15px; font: inherit; font-weight: 700; cursor: pointer; }
+.card button { border: 0; background: #193148; color: white; border-radius: 9px; padding: 15px; font: inherit; font-weight: 700; cursor: pointer; }
 .card button:disabled { opacity: .6; }
 .card .error { color: #af3540; }
+.rating { border: 0; margin: 0; padding: 0; min-width: 0; }
+.rating legend { font-weight: 600; font-size: 14px; }
+.stars { display: flex; gap: 8px; margin-top: 12px; }
+.stars label { position: relative; cursor: pointer; display: grid; place-items: center; width: 48px; height: 52px; border: 1px solid #ccd7df; border-radius: 9px; color: #768897; font-size: 32px; }
+.stars input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.stars .selectedStar { color: #9a6700; background: #fff8e3; border-color: #d7b253; }
+.stars label:focus-within,.card button:focus-visible { outline: 3px solid #3487c6; outline-offset: 3px; }
+.card .ratingHint { font-size: 12px; margin: 8px 0 0; min-height: 20px; }
+.check { display: block; width: 48px; height: 48px; line-height: 48px; text-align: center; border-radius: 50%; background: #eaf6ef; color: #24684b; margin-top: 26px; font-size: 27px; }
+.footer { font-size: 11px; color: #647789; text-align: center; margin-top: 26px; }
 @media(max-width:600px) { .page { padding: 16px 10px; } .card { padding: 25px 20px; } }

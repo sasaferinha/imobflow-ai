@@ -198,7 +198,7 @@ async function run() {
   };
   const hubHtml = renderToStaticMarkup(React.createElement(Hub, hubProps));
   for (const label of ['WhatsApp da empresa', 'IA de atendimento', 'Site da imobiliária', 'Somente administrador', 'Regras e opções da operação']) assert(hubHtml.includes(label), label);
-  assert.equal([...hubHtml.matchAll(/<details\b[^>]*>/g)].length, 2);
+  assert.equal([...hubHtml.matchAll(/<details\b[^>]*>/g)].length, 3);
   assert(!/<details\b[^>]*\sopen(?:=|\s|>)/.test(hubHtml), 'Advanced operations start closed');
   assert(hubHtml.includes('INTERNAL_ADVANCED_OPTIONS'), 'Existing operation forms remain mounted');
   assert(!visibleNodes(Hub(hubProps)).some(node => node.props?.['data-advanced-test']), 'Mounted advanced options are not initially visible');

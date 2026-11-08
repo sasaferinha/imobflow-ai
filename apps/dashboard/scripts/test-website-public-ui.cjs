@@ -20,7 +20,7 @@ function runtime(react = React, environment = {}) {
     if (relative.replaceAll('\\', '/') === publicFile) source += '\nexport { SiteView, PropertyDialog };';
     const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
     vm.runInNewContext(code, {
-      module, exports: module.exports, URL, console, Intl, structuredClone, AbortController,
+      module, exports: module.exports, URL, URLSearchParams, console, Intl, structuredClone, AbortController,
       fetch: () => { networkCalls++; throw Error('Unexpected network request'); },
       require(id) {
         if (environment.dependencies && Object.hasOwn(environment.dependencies, id)) return environment.dependencies[id];
@@ -120,8 +120,9 @@ async function main() {
   assert.equal(networkCalls, 0, 'Demonstration and preview never contact a tenant or create a lead');
   let inquiryRequests = 0, finishInquiry;
   const liveInquiry = harness('PropertyDialog', { ...props, demo: false, property: props.properties[0], preview: false, close() {} }, {
+    window: { location: { search: '?utm_source=facebook&utm_campaign=123456&utm_content=987654&company_id=foreign' } },
     FormData: class { get(key) { return ({ name: 'Contato fictício', phone: '35999999999' })[key] || ''; } },
-    fetch: async () => { inquiryRequests++; return new Promise(resolve => { finishInquiry = resolve; }); },
+    fetch: async (_url,options) => { inquiryRequests++;const body=JSON.parse(options.body);assert.deepEqual(body.attribution,{utm_source:'facebook',utm_campaign:'123456',utm_content:'987654'});assert.equal(body.company_id,undefined);return new Promise(resolve => { finishInquiry = resolve; }); },
   });
   const sendInquiry = nodes(liveInquiry.tree).find(node => node.type === 'form').props.onSubmit;
   const firstSubmit = sendInquiry({ preventDefault() {}, currentTarget: {} });
@@ -153,9 +154,11 @@ async function main() {
   assert.equal(normalized.features, ''); assert.equal(normalized.description, '');
   assert.doesNotThrow(() => renderToStaticMarkup(React.createElement(publicUi.PropertyDialog, { ...props, property: normalized, close() {} })), 'Partial demo records must not crash details');
 
-  let hasPublication = true;
+  let hasPublication = true, pageHost = 'imobflow.net.br';
   const Landing = () => React.createElement('div', {}, 'LEGACY CONTACT FORM');
-  const page = runtime(React, { dependencies: {
+  const page = runtime(React, { process: { env: { NODE_ENV: 'production' } }, dependencies: {
+    'next/headers': { headers: async () => new Headers({ host: pageHost }) },
+    '@/lib/website/domains-routing': { assertPublicWebsiteHost: async (headers,slug) => { assert.equal(slug,demo.DEMO_COMPANY.slug);if(!['imobflow.net.br','imobiliaria.example.com'].includes(headers.get('host')))throw Error('unknown host'); } },
     '@/lib/website/server': { getPublicWebsite: async () => null, hasWebsitePublication: async () => hasPublication },
     '@/lib/public-company': { publicCompany: async () => ({ id: demo.DEMO_COMPANY.id, name: demo.DEMO_COMPANY.name, slug: demo.DEMO_COMPANY.slug }) },
     'next/navigation': { notFound() { throw Error('404'); } },
@@ -167,6 +170,8 @@ async function main() {
   assert.equal((await page.generateMetadata(pageProps)).robots.index, false);
   hasPublication = false;
   assert.equal(renderToStaticMarkup(await page.default(pageProps)), '<div>LEGACY CONTACT FORM</div>', 'A tenant that never published retains its previous contact page');
+  pageHost='imobiliaria.example.com';const customUnpublished=renderToStaticMarkup(await page.default(pageProps));assert(customUnpublished.includes('Site temporariamente indisponível')&&!customUnpublished.includes('LEGACY CONTACT FORM'),'custom domain without first publication cannot expose a legacy form that posts into the CRM');assert.equal((await page.generateMetadata(pageProps)).robots.index,false);
+  pageHost='unknown.example.com';await assert.rejects(()=>page.default(pageProps),/404/);assert.equal((await page.generateMetadata(pageProps)).robots.index,false);
 
   let visibility, interval, cleared = false, requests = 0;
   let response = { ok: true, status: 200, json: async () => ({ content: props.content, properties: props.properties.slice(1) }) };

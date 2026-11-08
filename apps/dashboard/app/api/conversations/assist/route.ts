@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { leadMessageDestination } from '@/lib/lead-channel-server';
+import { readSocialInbox } from '@/lib/social-messaging';
+import { transcribeSocialAudio } from '@/lib/social-audio';
+import { SocialError } from '@/lib/social-model';
 import { isDeepStrictEqual } from 'node:util';
 import { protectedRoute } from '@/lib/accounts';
 import { currentAccount } from '@/lib/tenant-context';
@@ -45,6 +49,23 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     if (!await consumeRateLimit(request, bucket, 6, 60) || !await consumeRateLimit(request, `${bucket}:hour`, 60, 3600)) {
       return NextResponse.json({ error: 'Limite de análises atingido. Aguarde antes de solicitar novamente.' }, { status: 429 });
     }
+    let audioUnavailable = 0;
+    let messages: AssistantMessage[] = [];
+    const destination = await leadMessageDestination(leadId);
+    if (destination.channel !== 'whatsapp' && destination.threadId) {
+      const inbox = await readSocialInbox({ channel: destination.channel, threadId: destination.threadId });
+      const contact = inbox.contacts.find(item => item.id === destination.threadId && item.leadId === leadId);
+      if (!contact) return NextResponse.json({ error: 'Conversa indisponível neste canal.' }, { status: 409 });
+      const audioDeadline = Date.now()+20000;
+      for (const row of contact.messages) {
+        let text = row.text;
+        if (row.direction === 'incoming' && row.mediaType === 'audio') {
+          text = await transcribeSocialAudio(actor.companyId,contact.id,row.id,audioDeadline) || '';
+          if (!text) audioUnavailable++;
+        }
+        if (text.trim()) messages.push({ id: row.id, side: row.direction, text: text.slice(0,6000) });
+      }
+    } else {
     const company = encodeURIComponent(actor.companyId);
     const conversations = await supabaseRequest<Array<{ id: string; company_id: string; lead_id: string }>>(`conversations?company_id=eq.${company}&lead_id=eq.${leadId}&select=id,company_id,lead_id&limit=101`);
     if (!Array.isArray(conversations) || conversations.length > 100 || conversations.some(row => !uuid.test(row.id) || row.company_id !== actor.companyId || row.lead_id !== leadId)) throw new Error('scope');
@@ -52,7 +73,7 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     const conversationIds = new Set(conversations.map(row => row.id));
     const rows = await supabaseRequest<Array<{ id: string; company_id: string; conversation_id: string; direction: string; content: string }>>(`messages?company_id=eq.${company}&conversation_id=in.(${[...conversationIds].join(',')})&select=id,company_id,conversation_id,direction,content&order=created_at.desc,id.desc&limit=40`);
     if (!Array.isArray(rows) || rows.length > 40 || rows.some(row => !uuid.test(row.id) || row.company_id !== actor.companyId || !conversationIds.has(row.conversation_id))) throw new Error('scope');
-    let audioUnavailable = 0;
+
     const audioDeadline = Date.now() + 20000;
     for (const row of rows) {
       if (!['incoming', 'Entrada'].includes(row.direction) || typeof row.content !== 'string') continue;
@@ -64,12 +85,16 @@ export const POST = protectedRoute(async (request: NextRequest) => {
         else { audioUnavailable++; row.content = ''; }
       }
     }
-    const messages: AssistantMessage[] = rows.slice().reverse().filter(row => typeof row.content === 'string' && row.content.trim()).map(row => ({ id: row.id, side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing', text: row.content.slice(0, 6000) }));
+    messages = rows.slice().reverse().filter(row => typeof row.content === 'string' && row.content.trim()).map(row => ({ id: row.id, side: row.direction === 'incoming' || row.direction === 'Entrada' ? 'incoming' : 'outgoing', text: row.content.slice(0, 6000) }));
+    }
     const assistance = await generateBrokerAssistance({ sector, profile: lead.data, messages, settings });
     // Recheck access after the external request; never return stale review data after reassignment.
     const fresh = await getEvolutionSnapshot(actor);
     const current = fresh.state.records.find(record => record.id === lead.id && record.kind === 'leads');
     if (!current || !canAccess(fresh.state, actor, current, 'write')) return NextResponse.json({ error: 'Seu acesso a este cliente mudou. Atualize a conversa.' }, { status: 403 });
+    // Social thread ownership can change independently of the CRM record.
+    const currentDestination = await leadMessageDestination(leadId);
+    if (currentDestination.channel !== destination.channel || currentDestination.threadId !== destination.threadId) return NextResponse.json({ error: 'O canal ou a conversa mudou durante a análise. Atualize e analise novamente.' }, { status: 409 });
     if (!isDeepStrictEqual(settings, await readTenantAISettings(actor.companyId))) return NextResponse.json({ error: 'A configuração da IA mudou durante a análise. Analise novamente com as regras atuais.' }, { status: 409 });
     // Another customer's update must not discard this analysis. Compare the
     // complete target (including ownership/source metadata), then return the
@@ -77,7 +102,7 @@ export const POST = protectedRoute(async (request: NextRequest) => {
     if (!isDeepStrictEqual(current, lead)) return NextResponse.json({ error: 'A ficha foi atualizada durante a análise. Analise novamente para revisar os dados atuais.' }, { status: 409 });
     return NextResponse.json({ assistance, review: { record: current, expectedVersion: fresh.state.version, expectedSourceRevision: fresh.state.sourceRevision }, messageCount: messages.length, audioUnavailable });
   } catch (error) {
-    if (error instanceof BrokerAssistantError || error instanceof EvolutionServerError || error instanceof CrmError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error instanceof BrokerAssistantError || error instanceof EvolutionServerError || error instanceof CrmError || error instanceof SocialError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('broker_assistant_failed');
     return NextResponse.json({ error: 'Não foi possível analisar a conversa com segurança. Nada foi enviado ou alterado.' }, { status: 503 });
   }

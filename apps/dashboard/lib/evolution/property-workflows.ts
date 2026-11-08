@@ -19,6 +19,7 @@ export const VISIT_WORKFLOW_FIELDS: Field[] = [
 export const workflowFieldKeys = new Set(['valuationComparables', 'visitStartedAt', 'visitEndedAt']);
 export type Comparable = { source: string; area: number; price: number; observedOn: string };
 export type VisitProgressCommand = { type: 'visit-progress'; id: string; action: 'start' | 'finish'; feedback?: string };
+export type VisitStartCommand = { type: 'visit-start'; caseId: string; propertyId: string; requestId: string };
 
 const validDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 
@@ -73,12 +74,12 @@ export function validatePropertyWorkflow(record: CrmRecord, previous?: CrmRecord
     if (d.capturedAt && !validDay(String(d.capturedAt))) return 'Informe uma data de captação válida.';
   }
   if (record.kind === 'tasks') {
-    for (const key of ['visitStartedAt', 'visitEndedAt']) {
+    for (const key of ['visitStartedAt', 'visitEndedAt', 'visitBrokerId', 'visitPersonId']) {
       if ((d[key] || '') !== (previous?.data[key] || '')) return 'Use Iniciar visita ou Encerrar visita para registrar os horários.';
     }
-    if (previous?.data.visitStartedAt && (d.type !== previous.data.type || d.propertyId !== previous.data.propertyId || d.caseId !== previous.data.caseId)) return 'O imóvel e o cliente de uma visita iniciada são preservados.';
+    if (previous?.data.visitStartedAt && (d.type !== previous.data.type || d.propertyId !== previous.data.propertyId || d.caseId !== previous.data.caseId || d.assignedTo !== previous.data.assignedTo)) return 'O imóvel, cliente e responsável de uma visita iniciada são preservados.';
     if (previous?.data.visitEndedAt && d.status !== 'Realizada') return 'Uma visita encerrada permanece realizada; registre correções no histórico.';
-    if (previous?.data.visitStartedAt && !previous.data.visitEndedAt && d.status === 'Realizada') return 'Encerre a visita e registre o relato do cliente.';
+    if (previous?.data.visitStartedAt && !previous.data.visitEndedAt && d.status === 'Realizada') return 'Use Encerrar visita para registrar o término.';
   }
   return null;
 }
@@ -96,6 +97,7 @@ export function visitProgressData(record: CrmRecord, command: VisitProgressComma
   }
   if (!record.data.visitStartedAt) throw new Error('Inicie a visita antes de encerrá-la.');
   if (Date.parse(now) < Date.parse(String(record.data.visitStartedAt))) throw new Error('O encerramento deve ser posterior ao início.');
-  if (typeof command.feedback !== 'string' || !command.feedback.trim() || command.feedback.trim().length > 6000) throw new Error('Registre o que o cliente achou do imóvel (até 6.000 caracteres).');
-  return { visitEndedAt: now, status: 'Realizada', clientFeedback: command.feedback.trim(), reason: command.feedback.trim().slice(0, 500) };
+  if (command.feedback !== undefined && (typeof command.feedback !== 'string' || command.feedback.trim().length > 6000)) throw new Error('A observação da visita deve ter até 6.000 caracteres.');
+  const feedback = command.feedback?.trim() || '';
+  return { visitEndedAt: now, status: 'Realizada', clientFeedback: feedback, reason: feedback.slice(0, 500) };
 }

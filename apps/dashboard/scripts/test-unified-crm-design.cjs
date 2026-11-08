@@ -65,11 +65,13 @@ function runtime(react = React, services = {}) {
         if (id === 'react/jsx-runtime') return require(id);
         if (id.endsWith('.css')) return cssModule;
         if (id === './opportunity-whatsapp-send') return load('app/opportunity-whatsapp-send.tsx');
+        if (id === './opportunity-social-send') return load('app/opportunity-social-send.tsx');
         if (id === './opportunity-photos') return load('app/opportunity-photos.tsx');
         if (id === './password-input') return load('app/password-input.tsx');
         if (id === '@/lib/dashboard-transport') return { dashboardFetch: services.fetch || (() => { throw Error('Unexpected network call during render'); }) };
         if (id === '@/lib/dashboard-sync') return { announceDashboardChange: services.announce || (() => {}), subscribeDashboardSync: () => () => {} };
         if (id === '@/lib/leads') return { hasCommercialQualification: () => true };
+        if (id === '@/lib/lead-channel') return load('lib/lead-channel.ts');
         if (id === '@/lib/lead-import') return { IMPORT_BYTES: 2 * 1024 * 1024, leadImportTemplate: 'nome,telefone', parseLeadImport: () => [sampleLead] };
         if (id === '@/lib/plans') return { planNameForLimit: () => 'Teste' };
         throw Error(`Unexpected component dependency: ${id}`);

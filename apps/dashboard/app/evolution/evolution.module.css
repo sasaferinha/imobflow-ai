@@ -1,4 +1,9 @@
 /* The same tokens apply to the page and native top-layer dialogs. */
+.mobileDashboard { display: none; }
+.moduleFilters { margin: 0 0 16px; border: 1px solid var(--ev-line); border-radius: 10px; background: var(--ev-paper); }
+.moduleFilters > summary { padding: 11px 14px; min-height: 42px; box-sizing: border-box; cursor: pointer; color: var(--ev-muted); font-size: 13px; }
+.moduleFilters > .filterBar { margin: 0; border: 0; border-top: 1px solid var(--ev-line); }
+.moduleFilters > summary:focus-visible { outline: 3px solid var(--ev-brand); outline-offset: 2px; }
 .app,
 .dialog {
   --ev-font: var(--crm-font, Inter, Arial, sans-serif);
@@ -1313,4 +1318,16 @@
   .app[data-operational-page="conversations"] > .workspace > .pageHead .pageHeading > p { display: none; }
   .app[data-operational-page="conversations"] .headerTools { padding-top: 0; }
   .app[data-operational-page="conversations"] .headerTools .headerUser { min-height: 40px; }
+}
+
+/* The compact home is confined to small screens; the conversation layout is unchanged. */
+@media (max-width: 700px) {
+  .mobileDashboard { display: block; }
+  .desktopDashboard { display: none; }
+  .app[data-view="dashboard"] .integrationNote { display: none; }
+  .app[data-view="dashboard"] .pageHeading p { display: none; }
+  .app[data-view="dashboard"] .headerTools .headerSearch { display: none; }
+  .app[data-view="dashboard"] .headerTools { width: auto; margin-left: auto; }
+  .app[data-view="dashboard"] .footer { display: none; }
+  .app[data-view="dashboard"] .main { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
 }

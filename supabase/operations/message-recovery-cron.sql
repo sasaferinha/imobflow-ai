@@ -27,7 +27,8 @@ BEGIN
  -- No browser traffic and no daily Vercel cron dependency; no idle HTTP calls.
  IF NOT EXISTS(SELECT 1 FROM public.message_outbox WHERE state='pending' AND next_attempt_at<=now())
  AND NOT EXISTS(SELECT 1 FROM public.message_outbox WHERE state='sending' AND updated_at<now()-interval '2 minutes')
- AND NOT EXISTS(SELECT 1 FROM public.inbound_reply_jobs WHERE state='pending' AND next_attempt_at<=now()) THEN RETURN; END IF;
+ AND NOT EXISTS(SELECT 1 FROM public.inbound_reply_jobs WHERE state='pending' AND next_attempt_at<=now())
+ AND NOT EXISTS(SELECT 1 FROM public.social_ai_jobs WHERE (status='pending' AND next_attempt_at<=now()) OR (status='running' AND lease_until<now())) THEN RETURN; END IF;
  SELECT decrypted_secret INTO worker_secret FROM vault.decrypted_secrets WHERE name='imobflow_message_recovery_secret';
  IF worker_secret IS NULL OR length(worker_secret)<32 THEN RAISE EXCEPTION 'message_recovery_secret_missing'; END IF;
  SELECT net.http_post(

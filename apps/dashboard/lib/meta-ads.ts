@@ -6,7 +6,7 @@ export const ADS_COOKIE = 'imobflow_meta_ads_state';
 export class AdsError extends Error {
   constructor(message: string, public status = 422) { super(message); }
 }
-type Connection = { company_id: string; token_ciphertext: string; account_id: string | null; account_name: string | null; currency: string | null; expires_at: string | null };
+export type Connection = { company_id: string; token_ciphertext: string; account_id: string | null; account_name: string | null; currency: string | null; expires_at: string | null };
 export type AdAccount = { id: string; name: string; currency: string; account_status: number };
 export type Campaign = { id: string; name: string; status: string; objective: string; daily_budget?: string };
 export type Insight = { campaign_id: string; campaign_name: string; spend: string; impressions: string; clicks: string; reach: string; ctr: string; cpc: string; actions?: Array<{ action_type: string; value: string }> };
@@ -47,6 +47,7 @@ async function graph<T>(path: string, token: string, params: Record<string, stri
   const payload = await response.json().catch(() => null) as ({ error?: { code?: number } } & T) | null;
   if (!response.ok || !payload || payload.error) {
     if (payload?.error?.code === 190) throw new AdsError('A autorização expirou. Conecte novamente sua conta de anúncios.', 401);
+    if (response.status === 429 || [4,17,32,613].includes(Number(payload?.error?.code))) throw new AdsError('A Meta limitou as solicitações. Aguarde antes de tentar novamente.',429);
     throw new AdsError('A Meta não autorizou esta operação. Confira as permissões e a situação da conta no Gerenciador de Anúncios.', 502);
   }
   return payload as T;
@@ -70,7 +71,7 @@ export async function beginAdsOAuth(companyId: string, brokerId: string, redirec
   const state = randomBytes(32).toString('hex');
   await db('meta_ads_oauth_requests', { method: 'POST', body: { state_hash: hash(state), company_id: companyId, broker_id: brokerId, redirect_uri: redirectUri, expires_at: new Date(Date.now() + 600000).toISOString() } });
   const url = new URL(`https://www.facebook.com/${VERSION}/dialog/oauth`);
-  url.search = new URLSearchParams({ client_id: process.env.META_APP_ID!, redirect_uri: redirectUri, state, response_type: 'code', scope: 'ads_read,ads_management' }).toString();
+  url.search = new URLSearchParams({ client_id: process.env.META_APP_ID!, redirect_uri: redirectUri, state, response_type: 'code', scope: 'ads_read,ads_management,pages_show_list,pages_read_engagement' }).toString();
   return { state, url: url.toString() };
 }
 export async function finishAdsOAuth(state: string, cookie: string | undefined, code: string) {
@@ -160,4 +161,53 @@ export async function updateAdCampaign(connection: Connection, input: { campaign
   const result = await graph<{ success: boolean }>(input.campaignId, token, params, 'POST');
   if (result.success !== true) throw new AdsError('A Meta não confirmou a alteração. Atualize os dados antes de tentar novamente.', 502);
   return { id: input.campaignId, status: params.status };
+}
+
+export type AdDraftInput = { requestId?: unknown; campaignId?: unknown; pageId?: unknown; name?: unknown; message?: unknown; title?: unknown; destinationUrl?: unknown; imageUrl?: unknown; dailyBudget?: unknown; confirmBudget?: unknown };
+export type AdDraft = { requestId: string; campaignId: string; adsetId: string | null; creativeId: string | null; adId: string | null; name: string; state: 'creating' | 'complete' | 'uncertain'; step: string; error: string | null; status: 'PAUSED' };
+function adPublicUrl(value: unknown): string {
+  if(typeof value!=='string'||value.length>2048||/[\s\\\u0000-\u001f]/u.test(value))throw new AdsError('Use um endereço público HTTPS válido.');
+  try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.port||!u.hostname.includes('.')||/^(?:\d{1,3}\.){3}\d{1,3}$/.test(u.hostname)||/(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion)$/.test(u.hostname))throw new Error();return u.href;}catch{throw new AdsError('Use um endereço público HTTPS válido.');}
+}
+export function adDraftParameters(input: AdDraftInput, currency: string | null) {
+  const text=(value:unknown,max:number)=>{if(typeof value!=='string'||!value.trim()||value.trim().length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(value))throw new AdsError('Confira o nome, o título e o texto do anúncio.');return value.trim();};
+  if(typeof input.requestId!=='string'||!/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(input.requestId)||typeof input.campaignId!=='string'||!/^\d{3,30}$/.test(input.campaignId)||typeof input.pageId!=='string'||!/^\d{3,30}$/.test(input.pageId))throw new AdsError('Escolha a campanha e a Página do anúncio.');
+  if(input.confirmBudget!==true)throw new AdsError('Confirme o orçamento diário da campanha antes de criar o rascunho.');
+  const budget=campaignParameters({name:'draft',dailyBudget:input.dailyBudget,objective:'OUTCOME_TRAFFIC'},currency).daily_budget;
+  return {requestId:input.requestId,campaignId:input.campaignId,pageId:input.pageId,name:text(input.name,150),message:text(input.message,2000),title:text(input.title,100),destinationUrl:adPublicUrl(input.destinationUrl),imageUrl:adPublicUrl(input.imageUrl),budget};
+}
+export async function listAdsPages(connection: Connection) {
+  const pages=await graphList<{id:string;name:string}>('me/accounts',tokenFor(connection),{fields:'id,name'});
+  return pages.filter(page=>/^\d{3,30}$/.test(page.id)).map(page=>({id:page.id,name:page.name}));
+}
+type DraftRow = { request_id:string;request_hash:string;campaign_id:string;adset_id:string|null;creative_id:string|null;ad_id:string|null;name:string;state:AdDraft['state'];step:string;error_message:string|null };
+const mapDraft=(row:DraftRow):AdDraft=>({requestId:row.request_id,campaignId:row.campaign_id,adsetId:row.adset_id,creativeId:row.creative_id,adId:row.ad_id,name:row.name,state:row.state,step:row.step,error:row.error_message,status:'PAUSED'});
+export async function listAdDrafts(connection: Connection):Promise<AdDraft[]> {
+ if(!connection.account_id)return[];
+ const rows=await db<DraftRow[]>(`meta_ads_build_requests?company_id=eq.${connection.company_id}&account_id=eq.${connection.account_id}&select=request_id,campaign_id,adset_id,creative_id,ad_id,name,state,step,error_message&order=created_at.desc&limit=100`);return rows.map(mapDraft);
+}
+/** Creates only paused objects; activating an existing campaign never activates these ad sets or ads. */
+export async function createPausedAdDraft(connection: Connection,actorId:string,input:AdDraftInput):Promise<AdDraft>{
+ if(!connection.account_id)throw new AdsError('Escolha a conta de anúncios.');
+ const p=adDraftParameters(input,connection.currency),token=tokenFor(connection);
+ const campaign=await graph<{id:string;account_id:string;status:string;objective:string;daily_budget?:string;lifetime_budget?:string;special_ad_categories?:string[]}>(p.campaignId,token,{fields:'id,account_id,status,objective,daily_budget,lifetime_budget,special_ad_categories'});
+ if(campaign.id!==p.campaignId||`act_${campaign.account_id}`!==connection.account_id)throw new AdsError('A campanha não pertence à conta selecionada.',403);
+ if(campaign.status!=='PAUSED'||campaign.objective!=='OUTCOME_TRAFFIC'||!campaign.special_ad_categories?.includes('HOUSING'))throw new AdsError('Escolha uma campanha pausada de Tráfego na categoria Moradia. Outros objetivos continuam disponíveis no Gerenciador da Meta.');
+ if(Number(campaign.lifetime_budget||0)>0||String(campaign.daily_budget)!==p.budget)throw new AdsError('O orçamento diário mudou ou não está definido na campanha. Atualize os dados e confirme o valor atual.');
+ if(!(await listAdsPages(connection)).some(page=>page.id===p.pageId))throw new AdsError('A Página não pertence à autorização conectada.',403);
+ const requestHash=hash(JSON.stringify({account:connection.account_id,...p}));
+ const claimed=await db<boolean>('rpc/claim_meta_ads_build',{method:'POST',body:{p_company_id:connection.company_id,p_actor_id:actorId,p_request_id:p.requestId,p_account_id:connection.account_id,p_hash:requestHash,p_campaign_id:p.campaignId,p_name:p.name}});
+ const path=`meta_ads_build_requests?company_id=eq.${connection.company_id}&request_id=eq.${p.requestId}`;
+ if(!claimed){const [existing]=await db<DraftRow[]>(`${path}&select=*&limit=1`);if(existing?.request_hash!==requestHash)throw new AdsError('Esta solicitação já foi usada para outro anúncio. Atualize e confira os rascunhos.',409);if(existing.state==='complete')return mapDraft(existing);throw new AdsError('A criação anterior ainda não foi confirmada. Confira os IDs do rascunho e o Gerenciador da Meta antes de criar outro.',409);}
+ const record:DraftRow={request_id:p.requestId,request_hash:requestHash,campaign_id:p.campaignId,adset_id:null,creative_id:null,ad_id:null,name:p.name,state:'creating',step:'adset',error_message:null};
+ const checkpoint=async()=>db(path,{method:'PATCH',body:{adset_id:record.adset_id,creative_id:record.creative_id,ad_id:record.ad_id,state:record.state,step:record.step,error_message:record.error_message,updated_at:new Date().toISOString()}});
+ const confirmed=(value:unknown)=>{if(typeof value!=='string'||!/^\d{3,30}$/.test(value))throw new AdsError('A Meta não confirmou o identificador criado.',502);return value;};
+ try{
+  const adset=await graph<{id:string}>(`${connection.account_id}/adsets`,token,{name:`${p.name} · conjunto`,campaign_id:p.campaignId,status:'PAUSED',optimization_goal:'LINK_CLICKS',billing_event:'IMPRESSIONS',destination_type:'WEBSITE',targeting:JSON.stringify({geo_locations:{countries:['BR']},age_min:18,age_max:65,publisher_platforms:['facebook'],facebook_positions:['feed'],device_platforms:['mobile','desktop']})},'POST');
+  record.adset_id=confirmed(adset.id);record.step='creative';await checkpoint();
+  const creative=await graph<{id:string}>(`${connection.account_id}/adcreatives`,token,{name:`${p.name} · criativo`,object_story_spec:JSON.stringify({page_id:p.pageId,link_data:{message:p.message,name:p.title,picture:p.imageUrl,link:p.destinationUrl,call_to_action:{type:'LEARN_MORE',value:{link:p.destinationUrl}}}}),url_tags:'utm_source=facebook&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_content={{ad.id}}'},'POST');
+  record.creative_id=confirmed(creative.id);record.step='ad';await checkpoint();
+  const ad=await graph<{id:string}>(`${connection.account_id}/ads`,token,{name:p.name,adset_id:record.adset_id,creative:JSON.stringify({creative_id:record.creative_id}),status:'PAUSED'},'POST');
+  record.ad_id=confirmed(ad.id);record.state='complete';record.step='complete';await checkpoint();return mapDraft(record);
+ }catch{record.state='uncertain';record.error_message='Não foi possível confirmar toda a criação. Os objetos confirmados permanecem pausados. Confira os IDs e a Meta antes de iniciar outro rascunho.';try{await checkpoint();}catch{/* Preserve the initial claim even if checkpoint storage is unavailable. */}throw new AdsError(record.error_message,502);}
 }

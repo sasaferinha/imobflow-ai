@@ -1,6 +1,6 @@
 import { supabaseRequest } from '../supabase';
 import { evolutionEnabled } from './feature';
-import { applyCommand, emptyState, registrationReplay, visibleState, type Actor, type CrmCommand, type CrmMember, type CrmState } from './model';
+import { applyCommand, emptyState, registrationReplay, visitStartReplay, visibleState, type Actor, type CrmCommand, type CrmMember, type CrmState } from './model';
 import { readLegacyBridge, mergeLegacyBridge, prepareLegacyCommand, planLegacyWrites, serializeLegacyWorkspace } from './legacy-bridge';
 
 export class EvolutionServerError extends Error {
@@ -68,7 +68,7 @@ export async function executeEvolutionCommand(actor: Actor, command: CrmCommand,
   const state = bridge ? mergeLegacyBridge(stored, bridge) : stored;
   // A response can be lost after SQL has committed. Replaying the exact human
   // registration acknowledges the existing event instead of creating another visit/proposal.
-  if (registrationReplay(state, actor, command)) return { state: visibleState(state, actor), actor, mode: 'live' as const };
+  if (registrationReplay(state, actor, command) || visitStartReplay(state, actor, command)) return { state: visibleState(state, actor), actor, mode: 'live' as const };
   if (state.version !== expectedVersion) throw new EvolutionServerError(409, 'Os dados foram atualizados por outra pessoa. Recarregue antes de salvar.');
   if (bridge && (!expectedSourceRevision || expectedSourceRevision !== bridge.sourceRevision)) {
     throw new EvolutionServerError(409, 'A base real foi atualizada. Recarregue e revise os dados antes de salvar.');
@@ -88,8 +88,9 @@ export async function executeEvolutionCommand(actor: Actor, command: CrmCommand,
   }
   const applied = applyCommand(state, actor, bridge ? prepareLegacyCommand(state, bridge, command) : command);
   const plan = bridge ? planLegacyWrites(state, applied, bridge, actor) : undefined;
-  if (plan && bridge && command.type === 'register') {
-    const registeredCase = state.records.find(record => record.kind === 'cases' && record.id === command.caseId);
+  if (plan && bridge && ['register', 'visit-start', 'visit-progress'].includes(command.type)) {
+    const caseId = command.type === 'register' || command.type === 'visit-start' ? command.caseId : command.type === 'visit-progress' ? state.records.find(record => record.kind === 'tasks' && record.id === command.id)?.data.caseId : undefined;
+    const registeredCase = state.records.find(record => record.kind === 'cases' && record.id === caseId);
     const contact = registeredCase && state.records.find(record => record.kind === 'people' && record.id === registeredCase.data.personId);
     const source = registeredCase?.legacy?.table === 'leads' ? registeredCase.legacy : contact?.legacy?.table === 'leads' ? contact.legacy : undefined;
     const row = source && bridge.leads.find(lead => lead.id === source.id);

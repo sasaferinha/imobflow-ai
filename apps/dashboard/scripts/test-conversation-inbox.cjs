@@ -101,7 +101,8 @@ function load(file,deps={},globals={},suffix='') {
     './conversation-urgent-alert':{default:()=>null},
     './browser-push-settings':{default:()=>null},
     './conversation-channels':{default:()=>null},
-    './instagram-conversations':{default:()=>null},
+    './social-conversations':{default:()=>{throw Error('WhatsApp inbox must never render a social inbox.');}},
+    '@/lib/lead-channel':load('lib/lead-channel.ts'),
     '@/lib/whatsapp-handoff':load('lib/whatsapp-handoff.ts'),
     './conversation-attendance':{describeConversationAttendance:()=>({canSend:true,owner:null})},
   },{window:events,document:doc,AbortController},'\nexport { ConversationWorkspace };');

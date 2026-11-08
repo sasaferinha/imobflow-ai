@@ -26,7 +26,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (Buffer.byteLength(text, 'utf8') > 12000) return reply({ error: 'Resposta muito grande.' }, 413);
     let answer;
     try { answer = validateFeedbackAnswer(JSON.parse(text)); } catch { answer = null; }
-    if (!answer) return reply({ error: 'Preencha as notas de 1 a 5 e informe seu interesse.' }, 400);
+    if (!answer) return reply({ error: 'Escolha de 1 a 5 estrelas para o imóvel. A observação é opcional e deve ter até 2.000 caracteres.' }, 400);
     const saved = await supabaseServiceRequest<boolean>('rpc/submit_property_feedback', { method: 'POST', body: { p_token_hash: feedbackTokenHash(token), p_visit_score: answer.visitScore, p_property_score: answer.propertyScore, p_interest: answer.interest, p_comment: answer.comment } });
     return saved ? reply({ saved: true }) : reply({ error: 'Esta avaliação já foi respondida ou o link expirou.' }, 409);
   } catch { return reply({ error: 'Não foi possível salvar. Tente novamente mais tarde.' }, 503); }
