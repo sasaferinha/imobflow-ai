@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..');
 const editorFile = 'app/website/site-editor.tsx';
 const demoFile = 'app/modelo-imobiliaria/editor/demo-editor.tsx';
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const plain = value => JSON.parse(JSON.stringify(value));
 function runtime(react = React, globals = {}) {
   const modules = new Map();
   function load(relative) {
@@ -52,12 +53,22 @@ function harness(initial, supplied = {}) {
   props = { initial, transport, ...supplied.props };
   function render() { let passes = 0; do { pending = false; cursor = 0; effects = []; tree = api[supplied.exportName || 'default'](props); effects.forEach(effect => effect()); assert(++passes < 20); } while (pending); return tree; }
   render();
-  return { api, commands, events, render, get tree() { return tree; }, setSaved(value) { saved = value; }, confirm(value) { confirm = value; },
+  return { api, commands, events, render, get tree() { return tree; }, get saved() { return structuredClone(saved); }, setSaved(value) { saved = value; }, confirm(value) { confirm = value; },
     change(label, value) { const input = field(tree, label); assert(input, label); input.props.onChange({ target: { value } }); render(); },
     click(label) { const target = button(tree, label); assert(target, label); target.props.onClick(); render(); },
+    chooseLayout(value) { const radio = find(tree, node => node.type === 'input' && node.props.type === 'radio' && node.props.name === 'site-layout' && node.props.value === value); assert(radio, `Layout ${value}`); radio.props.onChange(); render(); },
   };
 }
 async function run() {
+  // Generic editor control styles used to override the embedded site's hidden
+  // desktop menu and button geometry. Assert the preview boundary for every
+  // generic editor descendant rule, including hover, disabled and focus states.
+  const editorCss = fs.readFileSync(path.join(root, 'app/website/site-editor.module.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const cssRules = [...editorCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(match => ({ selectors: match[1].split(',').map(selector => selector.trim()), declarations: match[2] }));
+  const editorDescendants = cssRules.flatMap(rule => rule.selectors.filter(selector => /^\.editor\s+(?:button|\*|:focus-visible)/.test(selector)).map(selector => ({ selector, declarations: rule.declarations })));
+  assert(editorDescendants.length >= 6, 'Editor base, hover, disabled and focus styling remains present');
+  for (const { selector } of editorDescendants) assert(selector.includes(':where(:not(.preview *))'), `Editor styling must not leak into the public preview: ${selector}`);
+  assert(editorDescendants.some(rule => /^\.editor button:where\(:not\(\.preview \*\)\)$/.test(rule.selector) && /display\s*:\s*inline-flex/.test(rule.declarations)), 'Editor controls retain their layout outside the preview');
   const pure = runtime();
   const model = pure.load('lib/website/model.ts');
   const demo = pure.load(demoFile);
@@ -89,6 +100,24 @@ async function run() {
   assert.equal(restoredStorage.snapshot.properties[0].area, 0);
   assert.equal(restoredStorage.snapshot.properties[0].description, '');
   assert.equal(restoredStorage.snapshot.properties[0].images.length, 0, 'Restored browser state is normalized before preview rendering');
+  const legacy = structuredClone(initial);
+  legacy.site.draft.heroTitle = 'Título personalizado antes dos modelos';
+  legacy.site.draft.logoUrl = '/logo-personalizado.png';
+  legacy.site.draft.heroImageUrl = '/capa-personalizada.webp';
+  legacy.site.draft.promotion.title = 'Campanha já configurada';
+  legacy.site.draft.video = { enabled: true, title: 'Vídeo já configurado', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' };
+  legacy.site.published = structuredClone(legacy.site.draft);
+  legacy.site.previous = structuredClone(initial.site.draft);
+  for (const content of [legacy.site.draft, legacy.site.published, legacy.site.previous]) delete content.layout;
+  const legacyPayload = { site: legacy.site, properties: legacy.properties.slice(1), unavailable: [legacy.properties[0]] };
+  const migrated = runtime(React, { localStorage: { getItem: () => JSON.stringify(legacyPayload) } }).load(demoFile).readDemo();
+  for (const content of [migrated.snapshot.site.draft, migrated.snapshot.site.published, migrated.snapshot.site.previous]) assert.equal(content.layout, 'classic');
+  for (const key of ['draft', 'published', 'previous']) assert.deepEqual(plain(migrated.snapshot.site[key]), { ...plain(legacy.site[key]), layout: 'classic' }, `Legacy ${key} receives only the classic layout default`);
+  assert.equal(migrated.snapshot.site.published.heroTitle, legacy.site.published.heroTitle);
+  assert.deepEqual(plain(migrated.snapshot.site.published.promotion), plain(legacy.site.published.promotion));
+  assert.deepEqual(plain(migrated.snapshot.site.published.video), plain(legacy.site.published.video));
+  assert.deepEqual(plain(migrated.snapshot.properties), plain(legacyPayload.properties));
+  assert.deepEqual(plain(migrated.unavailable), plain(legacyPayload.unavailable), 'A sold demo property is not restored when older content gains a layout default');
 
   const ownerMarkup = renderToStaticMarkup(React.createElement(api.default, { initial }));
   const marketingMarkup = renderToStaticMarkup(React.createElement(api.default, { initial: { ...initial, role: 'marketing' } }));
@@ -96,6 +125,41 @@ async function run() {
   assert(!marketingMarkup.includes('Acesso da equipe de marketing') && !marketingMarkup.includes('Gerenciar imóveis'), 'Marketing does not receive CRM controls or access management');
   assert(marketingMarkup.includes('Sair do editor'));
   assert(ownerMarkup.includes('Seções do editor') && ownerMarkup.includes('Publicação e histórico'));
+  for (const markup of [ownerMarkup, marketingMarkup]) {
+    assert.equal((markup.match(/type="radio"/g) || []).length, 3);
+    for (const name of ['Clássico', 'Moderno', 'Vitrine']) assert(markup.includes(`aria-label="${name}"`), `${name} is an accessible native radio option`);
+  }
+
+  const layouts = harness(initial);
+  layouts.change('Título principal', 'Rascunho em andamento');
+  layouts.chooseLayout('modern');
+  assert.equal(layouts.commands.length, 0, 'Choosing a model neither saves nor publishes automatically');
+  assert.equal(field(layouts.tree, 'Título principal').props.value, 'Rascunho em andamento', 'Choosing a model preserves current unsaved edits');
+  layouts.click('Salvar rascunho'); await tick(); layouts.render();
+  assert.deepEqual(plain(layouts.commands[0].content), plain({ ...initial.site.draft, heroTitle: 'Rascunho em andamento', layout: 'modern' }), 'Model selection changes only layout and preserves brand, media, campaigns and contact');
+  assert.equal(layouts.saved.site.draft.layout, 'modern');
+  assert.equal(layouts.saved.site.published.layout, 'classic', 'A saved model stays unpublished until publication');
+  layouts.click('Recarregar dados'); await tick(); layouts.render();
+  assert(find(layouts.tree, node => node.type === 'input' && node.props.value === 'modern' && node.props.checked), 'Reload retains the saved model');
+  layouts.click('Ver prévia');
+  const layoutPreview = find(layouts.tree, node => node.props?.preview === true);
+  assert(layoutPreview && layoutPreview.props.content.layout === 'modern', 'Preview receives the selected layout');
+  assert.deepEqual(layoutPreview.props.properties, initial.properties);
+  layouts.click('Voltar à edição');
+  layouts.click('Publicar alterações'); await tick(); layouts.render();
+  assert.equal(layouts.saved.site.published.layout, 'modern');
+  assert.equal(layouts.saved.site.previous.layout, 'classic');
+  layouts.chooseLayout('catalog'); layouts.click('Publicar alterações'); await tick(); layouts.render();
+  assert.equal(layouts.saved.site.published.layout, 'catalog');
+  layouts.click('Restaurar publicação anterior'); await tick(); layouts.render();
+  assert.equal(layouts.saved.site.published.layout, 'modern');
+  assert.deepEqual(layouts.saved.properties, initial.properties, 'Changing and restoring a model never modifies the catalogue');
+  for (const configuration of [{ role: 'marketing', demo: false }, { role: 'owner', demo: true }]) {
+    const scoped = harness({ ...initial, role: configuration.role }, { props: { demo: configuration.demo } });
+    scoped.chooseLayout('catalog'); scoped.click('Salvar rascunho'); await tick(); scoped.render();
+    assert.equal(scoped.commands[0].content.layout, 'catalog', 'Marketing and demonstration use the same model picker');
+    assert.deepEqual(plain(scoped.commands[0].content), plain({ ...initial.site.draft, layout: 'catalog' }));
+  }
 
   const ui = harness(initial);
   assert(button(ui.tree, 'Salvar rascunho').props.disabled);
@@ -113,8 +177,10 @@ async function run() {
 
   const conflict = harness(initial, { mutate: async (_command, module) => { throw new module.WebsiteRequestError('Alterado por outra pessoa.', 409); } });
   conflict.change('Nome da imobiliária', 'Meu rascunho preservado');
+  conflict.chooseLayout('catalog');
   conflict.click('Publicar alterações'); await tick(); conflict.render();
   assert.equal(field(conflict.tree, 'Nome da imobiliária').props.value, 'Meu rascunho preservado');
+  assert(find(conflict.tree, node => node.type === 'input' && node.props.value === 'catalog' && node.props.checked), 'CAS conflict retains the unsaved model choice');
   assert(button(conflict.tree, 'Publicar alterações').props.disabled);
   assert(button(conflict.tree, 'Carregar versão atual'));
   conflict.confirm(false); conflict.click('Carregar versão atual'); await tick(); conflict.render();
@@ -158,6 +224,6 @@ async function run() {
   assert.deepEqual(resetRequests[0].body, { action: 'reset-password', id: account.id, password: 'synthetic-passphrase' });
   assert(passwordCleared && text(access.tree).includes('As sessões anteriores dessa pessoa foram encerradas.'));
   assert(!find(access.tree, node => node.props?.['aria-label'] === 'Nova senha para Marketing sintético'), 'Reset password is unmounted after success');
-  console.log('PASS website editor: draft/publication separation, CAS conflict preservation and reload, rollback without stock changes, role-limited controls, dirty guard, duplicate-submit prevention, media validation, explicit marketing transport, and owner password reset.');
+  console.log('PASS website editor: accessible model selection without data loss, legacy demo preservation, model save/preview/publish/rollback, draft/publication separation, CAS conflict preservation, role-limited controls, dirty guard, duplicate-submit prevention, media validation, explicit marketing transport, and owner password reset.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

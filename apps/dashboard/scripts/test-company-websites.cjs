@@ -9,6 +9,22 @@ function load(file, dependencies = {}) {
 }
 const model = load('lib/website/model.ts'), content = model.defaultSiteContent('Horizonte · empresa fictícia');
 assert.equal(model.validateSiteContent(content).brandName, content.brandName);
+const plain = value => JSON.parse(JSON.stringify(value));
+const legacyContent = { ...content, heroImageUrl: 'https://images.example.com/preserved.jpg', promotion: { enabled: true, title: 'Campanha preservada', text: 'Texto existente', imageUrl: 'https://images.example.com/banner.jpg', linkUrl: 'https://example.com/campaign', linkLabel: 'Conhecer' }, video: { enabled: true, title: 'Vídeo existente', url: 'https://youtu.be/dQw4w9WgXcQ' } };
+delete legacyContent.layout;
+assert.equal(content.layout, 'classic');
+assert.deepEqual(plain(model.SITE_LAYOUTS).map(item => [item.id, item.name]), [['classic','Clássico'],['modern','Moderno'],['catalog','Vitrine']]);
+const legacyBefore = JSON.stringify(legacyContent);
+assert.deepEqual(plain(model.validateSiteContent(legacyContent)), { layout: 'classic', ...legacyContent }, 'legacy normalization adds only the default layout');
+assert.equal(JSON.stringify(legacyContent), legacyBefore, 'validation never mutates saved legacy content');
+for (const layout of ['classic','modern','catalog']) {
+  const input = { ...legacyContent, layout };
+  assert.deepEqual(plain(model.validateSiteContent(JSON.parse(JSON.stringify(input)))), input, 'each layout survives JSON roundtrip without changing brand/content');
+}
+for (const layout of [null, undefined, '', 'unknown', 'Classic', ' classic ', 0, false, {}, []]) assert.throws(() => model.validateSiteContent({ ...legacyContent, layout }), /modelo de site válido/);
+const missingRequired = { ...legacyContent }; delete missingRequired.heroTitle;
+assert.throws(() => model.validateSiteContent(missingRequired), 'compatibility must not relax existing required fields');
+assert.throws(() => model.validateSiteContent({ ...legacyContent, extra: true }), 'compatibility must not allow unknown fields');
 for (const url of ['javascript:alert(1)','data:text/html,test','http://example.com','https://127.0.0.1/x','https://user:password@example.com','//example.com','https://localhost/x','https://sub.internal/x']) assert.throws(() => model.safeWebsiteUrl(url));
 assert.equal(model.videoEmbedUrl('https://youtu.be/dQw4w9WgXcQ'), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
 assert.equal(model.videoEmbedUrl('https://vimeo.com/12345'), 'https://player.vimeo.com/video/12345');
@@ -34,12 +50,15 @@ for (const status of ['Vendido','Alugado','Reservado','Arquivado','Desconhecido'
     await assert.rejects(() => command('publish',1,21),/website_forbidden/);
     const first = (await command('publish',1)).rows[0].result;
     assert.equal(first.published.brandName,content.brandName); assert.equal(first.version,2);
-    const changed = {...content,heroTitle:'Uma nova campanha'};
+    const changed = {...content,layout:'modern',heroTitle:'Uma nova campanha'};
     const draft = (await command('save',2,11,'owner',1,changed)).rows[0].result;
     assert.equal(draft.published.heroTitle,content.heroTitle,'saving keeps public snapshot unchanged');
+    assert.equal(draft.draft.layout,'modern'); assert.equal(draft.published.layout,'classic','saving a layout never publishes it implicitly');
     const second = (await command('publish',3,11,'owner',1,changed)).rows[0].result;
     assert.equal(second.previous.heroTitle,content.heroTitle);
+    assert.equal(second.published.layout,'modern'); assert.equal(second.previous.layout,'classic');
     const restore = (await command('restore',4)).rows[0].result; assert.equal(restore.published.heroTitle,content.heroTitle);
+    assert.equal(restore.published.layout,'classic','restore includes the former layout');
     const stopped = (await command('unpublish',5)).rows[0].result; assert.equal(stopped.published,null); assert.equal(stopped.published_at,null);
     await command('restore',6);
     const ph = `scrypt-v1$${'a'.repeat(32)}$${'b'.repeat(128)}`;
@@ -91,6 +110,19 @@ for (const status of ['Vendido','Alugado','Reservado','Arquivado','Desconhecido'
     assert.equal((await db.query('SELECT * FROM read_website_session($1)',[resetToken])).rows.length,0,'reset revokes every old session');
     assert.equal((await db.query('SELECT issue_website_session($1,$2,$3) ok',[id(901),ph,'8'.repeat(64)])).rows[0].ok,false,'old password hash cannot issue session after reset');
     assert.equal((await db.query('SELECT issue_website_session($1,$2,$3) ok',[id(901),newHash,'7'.repeat(64)])).rows[0].ok,true,'new password hash can authenticate');
+    // Existing JSON rows need no migration. Their absent layout stays intact
+    // until edited, and each read normalizes it without replacing any content.
+    const legacySaved=(await command('save',0,21,'owner',2,legacyContent)).rows[0].result;
+    assert.deepEqual(legacySaved.draft,legacyContent);
+    const legacyPublished=(await command('publish',1,21,'owner',2,legacyContent)).rows[0].result;
+    assert.equal(model.validateSiteContent(legacyPublished.published).layout,'classic');
+    const catalogContent={...legacyContent,layout:'catalog'};
+    const catalogDraft=(await command('save',2,21,'owner',2,catalogContent)).rows[0].result;
+    assert.equal(catalogDraft.draft.layout,'catalog'); assert.deepEqual(catalogDraft.published,legacyContent);
+    const catalogLive=(await command('publish',3,21,'owner',2,catalogContent)).rows[0].result;
+    assert.equal(catalogLive.published.layout,'catalog'); assert.deepEqual(catalogLive.previous,legacyContent);
+    const restoredLegacy=(await command('restore',4,21,'owner',2)).rows[0].result;
+    assert.deepEqual(restoredLegacy.published,legacyContent); assert.deepEqual(plain(model.validateSiteContent(restoredLegacy.published)),{layout:'classic',...legacyContent});
     for(const role of ['anon','authenticated']) { await db.exec(`RESET ROLE; SET ROLE ${role}`); await assert.rejects(()=>db.query('SELECT * FROM company_websites'),e=>e.code==='42501'); await assert.rejects(()=>command('publish',8),e=>e.code==='42501'); await assert.rejects(()=>catalog(),e=>e.code==='42501'); await assert.rejects(()=>db.query('SELECT * FROM website_marketing_accounts'),e=>e.code==='42501'); }
     console.log('PASS websites SQL/model: fictitious tenants; draft/publish/restore, CAS, isolation, marketing login/revocation/no CRM access, live price/photos/sold status, public projection and URL validation.');
   } finally { await db.close(); }

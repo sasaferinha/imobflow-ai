@@ -1,4 +1,12 @@
+export type SiteLayout = 'classic' | 'modern' | 'catalog';
+export const SITE_LAYOUTS = [
+  { id: 'classic', name: 'Clássico', description: 'Apresentação acolhedora, com foto de capa e catálogo em destaque.' },
+  { id: 'modern', name: 'Moderno', description: 'Imagem ampla, contraste e uma apresentação marcante.' },
+  { id: 'catalog', name: 'Vitrine', description: 'Busca e imóveis em primeiro plano, com apresentação compacta.' },
+] as const satisfies readonly { id: SiteLayout; name: string; description: string }[];
+
 export type SiteContent = {
+  layout: SiteLayout;
   brandName: string; tagline: string; primaryColor: string; logoUrl: string; heroImageUrl: string;
   heroTitle: string; heroText: string; aboutTitle: string; aboutText: string;
   contactPhone: string; contactEmail: string; contactAddress: string; instagramUrl: string;
@@ -11,7 +19,7 @@ export type MarketingAccount = { id: string; name: string; email: string; active
 export type WebsiteSnapshot = { site: SiteDocument; company: { id: string; name: string; slug: string }; properties: PublicProperty[]; role: 'owner' | 'marketing'; marketingAccounts?: MarketingAccount[] };
 export class WebsiteError extends Error { constructor(message: string, public status = 400) { super(message); this.name = 'WebsiteError'; } }
 export function defaultSiteContent(companyName: string): SiteContent {
-  return { brandName: companyName, tagline: 'Imóveis para o seu próximo capítulo', primaryColor: '#174B42', logoUrl: '', heroImageUrl: '', heroTitle: 'Encontre um lugar para viver bem.', heroText: 'Conheça nossos imóveis e converse com quem entende da sua próxima conquista.', aboutTitle: 'Perto de você em cada escolha.', aboutText: '', contactPhone: '', contactEmail: '', contactAddress: '', instagramUrl: '', promotion: { enabled: false, title: '', text: '', imageUrl: '', linkUrl: '', linkLabel: 'Saiba mais' }, video: { enabled: false, title: '', url: '' }, showPrices: true };
+  return { layout: 'classic', brandName: companyName, tagline: 'Imóveis para o seu próximo capítulo', primaryColor: '#174B42', logoUrl: '', heroImageUrl: '', heroTitle: 'Encontre um lugar para viver bem.', heroText: 'Conheça nossos imóveis e converse com quem entende da sua próxima conquista.', aboutTitle: 'Perto de você em cada escolha.', aboutText: '', contactPhone: '', contactEmail: '', contactAddress: '', instagramUrl: '', promotion: { enabled: false, title: '', text: '', imageUrl: '', linkUrl: '', linkLabel: 'Saiba mais' }, video: { enabled: false, title: '', url: '' }, showPrices: true };
 }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const reject = (message: string): never => { throw new WebsiteError(message); };
@@ -40,7 +48,11 @@ export function videoEmbedUrl(raw: string): string {
 }
 export function validateSiteContent(input: unknown): SiteContent {
   const keys = Object.keys(defaultSiteContent(''));
-  const o = shape(input, keys, 'Site');
+  // Existing drafts and publications keep their original appearance. Only an
+  // absent field is legacy; explicit null, undefined or unknown layouts fail.
+  const compatible = object(input) && !Object.hasOwn(input, 'layout') ? { ...input, layout: 'classic' } : input;
+  const o = shape(compatible, keys, 'Site');
+  if (!SITE_LAYOUTS.some(item => item.id === o.layout)) reject('Escolha um modelo de site válido.');
   const p = shape(o.promotion, ['enabled', 'title', 'text', 'imageUrl', 'linkUrl', 'linkLabel'], 'Destaque');
   const v = shape(o.video, ['enabled', 'title', 'url'], 'Vídeo');
   if (typeof p.enabled !== 'boolean' || typeof v.enabled !== 'boolean' || typeof o.showPrices !== 'boolean') reject('Confira as opções de exibição.');
@@ -49,7 +61,7 @@ export function validateSiteContent(input: unknown): SiteContent {
   const phone = text(o.contactPhone, 30, 'Telefone'); if (phone && (!/^[+()\d\s-]{8,30}$/.test(phone) || !/^\d{8,15}$/.test(phone.replace(/\D/g, '')))) reject('Confira o telefone de contato.');
   const videoUrl = text(v.url, 2048, 'Vídeo'); if (videoUrl) videoEmbedUrl(videoUrl); if (v.enabled && !videoUrl) reject('Informe o endereço do vídeo.');
   const promotionTitle = text(p.title, 120, 'Título do destaque', p.enabled === true);
-  return { brandName: text(o.brandName, 120, 'Nome da imobiliária', true), tagline: text(o.tagline, 160, 'Frase da marca'), primaryColor: color, logoUrl: safeWebsiteUrl(o.logoUrl), heroImageUrl: safeWebsiteUrl(o.heroImageUrl), heroTitle: text(o.heroTitle, 160, 'Título principal', true), heroText: text(o.heroText, 600, 'Texto principal'), aboutTitle: text(o.aboutTitle, 160, 'Título sobre a empresa'), aboutText: text(o.aboutText, 3000, 'Sobre a empresa'), contactPhone: phone, contactEmail: email, contactAddress: text(o.contactAddress, 300, 'Endereço da empresa'), instagramUrl: safeWebsiteUrl(o.instagramUrl, false), promotion: { enabled: p.enabled as boolean, title: promotionTitle, text: text(p.text, 1200, 'Texto do destaque'), imageUrl: safeWebsiteUrl(p.imageUrl), linkUrl: safeWebsiteUrl(p.linkUrl), linkLabel: text(p.linkLabel, 60, 'Texto do botão') }, video: { enabled: v.enabled as boolean, title: text(v.title, 160, 'Título do vídeo'), url: videoUrl }, showPrices: o.showPrices as boolean };
+  return { layout: o.layout as SiteLayout, brandName: text(o.brandName, 120, 'Nome da imobiliária', true), tagline: text(o.tagline, 160, 'Frase da marca'), primaryColor: color, logoUrl: safeWebsiteUrl(o.logoUrl), heroImageUrl: safeWebsiteUrl(o.heroImageUrl), heroTitle: text(o.heroTitle, 160, 'Título principal', true), heroText: text(o.heroText, 600, 'Texto principal'), aboutTitle: text(o.aboutTitle, 160, 'Título sobre a empresa'), aboutText: text(o.aboutText, 3000, 'Sobre a empresa'), contactPhone: phone, contactEmail: email, contactAddress: text(o.contactAddress, 300, 'Endereço da empresa'), instagramUrl: safeWebsiteUrl(o.instagramUrl, false), promotion: { enabled: p.enabled as boolean, title: promotionTitle, text: text(p.text, 1200, 'Texto do destaque'), imageUrl: safeWebsiteUrl(p.imageUrl), linkUrl: safeWebsiteUrl(p.linkUrl), linkLabel: text(p.linkLabel, 60, 'Texto do botão') }, video: { enabled: v.enabled as boolean, title: text(v.title, 160, 'Título do vídeo'), url: videoUrl }, showPrices: o.showPrices as boolean };
 }
 /** Explicit allowlist: never serialize property owners, notes, address or CRM activity. */
 export function projectPublicProperty(raw: Record<string, unknown>): PublicProperty | null {
