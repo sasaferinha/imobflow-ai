@@ -41,12 +41,20 @@ export async function socialGraph<T>(path: string, token: string, params: Record
   }
   return payload as T;
 }
-export async function beginSocialOAuth(companyId: string, brokerId: string, redirectUri: string) {
+function assertOptionalChannel(channel: SocialChannel | undefined) {
+  if (channel !== undefined && channel !== 'facebook' && channel !== 'instagram') throw new SocialError('Canal inválido.', 400);
+}
+export async function beginSocialOAuth(companyId: string, brokerId: string, redirectUri: string, channel?: SocialChannel) {
+  assertOptionalChannel(channel);
   if (!socialAvailable()) throw new SocialError('A conexão Meta precisa ser habilitada pela ImobFlow.', 503);
   const state = randomBytes(32).toString('hex');
   await db('social_oauth_requests', { method: 'POST', body: { state_hash: hash(state), company_id: companyId, broker_id: brokerId, redirect_uri: redirectUri, expires_at: new Date(Date.now() + 600000).toISOString() } });
   const url = new URL(`https://www.facebook.com/${SOCIAL_VERSION}/dialog/oauth`);
-  url.search = new URLSearchParams({ client_id: process.env.META_APP_ID!, redirect_uri: redirectUri, state, response_type: 'code', scope: 'pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging,instagram_basic,instagram_manage_messages,leads_retrieval' }).toString();
+  // Facebook-only companies must not select an Instagram asset to authorize
+  // Messenger. Keep the linked-Page Instagram and legacy consent unchanged.
+  const permissions = ['pages_show_list', 'pages_read_engagement', 'pages_manage_metadata', 'pages_messaging', 'leads_retrieval'];
+  if (channel !== 'facebook') permissions.push('instagram_basic', 'instagram_manage_messages');
+  url.search = new URLSearchParams({ client_id: process.env.META_APP_ID!, redirect_uri: redirectUri, state, response_type: 'code', scope: permissions.join(',') }).toString();
   return { state, url: url.href };
 }
 export async function finishSocialOAuth(state: string, cookie: string | undefined, code: string) {
@@ -71,11 +79,13 @@ async function authorization(companyId: string) {
   return decryptSocialToken(row.token_ciphertext, companyId);
 }
 type ProviderPage = { id: string; name: string; access_token?: string; instagram_business_account?: { id: string; username?: string } };
-async function pages(companyId: string): Promise<ProviderPage[]> {
+async function pages(companyId: string, channel?: SocialChannel): Promise<ProviderPage[]> {
+  assertOptionalChannel(channel);
   const token = await authorization(companyId), result: ProviderPage[] = []; let after = '';
   const seen = new Set<string>();
+  const fields = channel === 'facebook' ? 'id,name,access_token' : 'id,name,access_token,instagram_business_account{id,username}';
   for (let page = 0; page < 10; page++) {
-    const response = await socialGraph<{ data: ProviderPage[]; paging?: { next?: string; cursors?: { after?: string } } }>('me/accounts', token, { fields: 'id,name,access_token,instagram_business_account{id,username}', limit: '100', ...(after ? { after } : {}) });
+    const response = await socialGraph<{ data: ProviderPage[]; paging?: { next?: string; cursors?: { after?: string } } }>('me/accounts', token, { fields, limit: '100', ...(after ? { after } : {}) });
     if (!Array.isArray(response.data)) throw new SocialError('A Meta retornou uma lista incompleta.', 502);
     result.push(...response.data.filter(p => socialId(p.id)));
     if (!response.paging?.next) return result;
@@ -83,15 +93,16 @@ async function pages(companyId: string): Promise<ProviderPage[]> {
   }
   throw new SocialError('Há muitas Páginas. Peça ao suporte para revisar a seleção.', 409);
 }
-export async function socialConnectionStatus(companyId: string, includePages = false) {
+export async function socialConnectionStatus(companyId: string, includePages = false, channel?: SocialChannel) {
+  assertOptionalChannel(channel);
   const accounts = await db<SocialAccountRow[]>(`social_accounts?company_id=eq.${companyId}&select=id,channel,account_id,page_id,name,enabled,default_mode&order=channel.asc`);
   const pending = await db<Array<{ expires_at: string | null }>>(`social_authorizations?company_id=eq.${companyId}&select=expires_at&limit=1`);
-  return { available: socialAvailable(), webhookConfigured: Boolean(process.env.META_APP_SECRET && process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN), authorized: Boolean(pending[0]), accounts: accounts.map(a => ({ id: a.id, channel: a.channel, accountId: a.account_id, pageId: a.page_id, name: a.name, enabled: a.enabled, defaultMode: a.default_mode })), ...(includePages ? { pages: (await pages(companyId)).map(p => ({ id: p.id, name: p.name, instagramId: p.instagram_business_account?.id || null, instagramName: p.instagram_business_account?.username || null })) } : {}) };
+  return { available: socialAvailable(), webhookConfigured: Boolean(process.env.META_APP_SECRET && process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN), authorized: Boolean(pending[0]), accounts: accounts.map(a => ({ id: a.id, channel: a.channel, accountId: a.account_id, pageId: a.page_id, name: a.name, enabled: a.enabled, defaultMode: a.default_mode })), ...(includePages ? { pages: (await pages(companyId, channel)).map(p => ({ id: p.id, name: p.name, instagramId: channel === 'facebook' ? null : p.instagram_business_account?.id || null, instagramName: channel === 'facebook' ? null : p.instagram_business_account?.username || null })) } : {}) };
 }
 export async function selectSocialPage(companyId: string, brokerId: string, pageId: string, channels: SocialChannel[]) {
   await requireSocialOwner(companyId, brokerId);
   if (!socialId(pageId) || !channels.length || channels.some(c => !['instagram','facebook'].includes(c))) throw new SocialError('Escolha uma Página e um canal válidos.');
-  const page = (await pages(companyId)).find(p => p.id === pageId);
+  const page = (await pages(companyId, channels.includes('instagram') ? 'instagram' : 'facebook')).find(p => p.id === pageId);
   if (!page?.access_token) throw new SocialError('A Página não pertence à autorização conectada.', 403);
   if (channels.includes('instagram') && !socialId(page.instagram_business_account?.id)) throw new SocialError('Vincule uma conta profissional do Instagram a esta Página.');
   // Do not subscribe a Page that is already bound to another company.
