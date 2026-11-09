@@ -1,6 +1,6 @@
 # ImobFlow — entrega integrada de 8 de novembro de 2026
 
-Este documento reúne os pedidos anteriores e os alinhamentos posteriores. “Implementado no código” significa que existe uma implementação identificável no repositório; não comprova funcionamento em produção, publicação, conexão de provedores ou entrega de mensagens. A montagem integrada passou pelas verificações locais registradas abaixo. A execução integral de `build:production`, a validação remota e a publicação ainda precisam ser concluídas e registradas com evidências.
+Este documento reúne os pedidos anteriores e os alinhamentos posteriores. “Implementado no código” significa que existe uma implementação identificável no repositório; não comprova conexão de provedores nem entrega de mensagens. A montagem integrada passou pelas verificações registradas abaixo e foi publicada em `main@e4360c71975f15cff730f6e078c1a9a3ffe528d6` pelo PR #17, com as seis migrations conferidas no banco remoto. O deployment inicial `dpl_CwahF6upAFPkn8vBCuXozb2gFkBk` foi seguido da atualização de ambiente `dpl_4SjtMUD1YWtjUywu5eUFLzG8vRaD`, sem alteração do código, para habilitar a verificação do webhook social. O estado operacional e as pendências de autorização estão em `conexao-meta-2026-11-08.md`.
 
 ## Os 15 pedidos originais
 
