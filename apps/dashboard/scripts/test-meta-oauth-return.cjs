@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
+const { createRequire } = require('node:module');
+const { pathToRegexp } = createRequire(require.resolve('vercel/package.json'))('path-to-regexp');
 const { renderToStaticMarkup } = require('react-dom/server');
 
 const root = path.resolve(__dirname, '..');
@@ -97,6 +99,25 @@ function walk(node, found = []) {
   assert.ok(returnHeaders, 'Public return has explicit response privacy headers');
   assert.match(returnHeaders.headers.find(header => header.key === 'Cache-Control').value, /private, no-store/);
   assert.equal(returnHeaders.headers.find(header => header.key === 'Referrer-Policy').value, 'no-referrer');
+  // Vercel edge configuration can override Next headers. Compile the actual
+  // source patterns with its path matcher and reject conflicting policies.
+  const vercel = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+  const edgeHeaders = vercel.headers.map(rule => ({ ...rule, match: pathToRegexp(rule.source, [], { sensitive: true, strict: true }) }));
+  for (const [url, expected] of [
+    ...['/integracoes/retorno', '/api/integrations/meta/social/callback', '/api/integrations/meta/ads/callback'].flatMap(pathname => [
+      [pathname, 'no-referrer'], [`${pathname}/`, 'no-referrer'],
+      [`${pathname}?state=synthetic&code=synthetic`, 'no-referrer'], [`${pathname}/?resultado=connected`, 'no-referrer'],
+    ]),
+    ['/integracoes/retorno?fluxo=social&resultado=connected', 'no-referrer'],
+    ['/integracoes/retorno?fluxo=ads&resultado=failed', 'no-referrer'],
+    ...['/', '/painel', '/painel/site', '/demonstracao', '/integracoes/retorno-extra', '/integracoes/retorno/child', '/Integracoes/Retorno', '/api/integrations/meta/social/callback-extra', '/api/integrations/meta/ads/callback/child', '/api/integrations/meta/instagram/callback', '/api/integrations/meta/Social/callback', '/_next/static/chunk.js'].map(url => [url, 'strict-origin-when-cross-origin']),
+  ]) {
+    const pathname = new URL(url, origin).pathname;
+    const headers = edgeHeaders.filter(rule => rule.match.test(pathname)).flatMap(rule => rule.headers);
+    assert.deepEqual(headers.filter(header => header.key.toLowerCase() === 'referrer-policy').map(header => header.value), [expected], `${pathname}: exactly one effective Vercel policy`);
+    assert.equal(headers.find(header => header.key === 'X-Content-Type-Options')?.value, 'nosniff');
+    assert.equal(headers.find(header => header.key === 'Permissions-Policy')?.value, 'camera=(), microphone=(), geolocation=()');
+  }
   for (const [query, destination, label] of [
     [{ fluxo: 'social', resultado: 'connected' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'ads', resultado: 'connected' }, '/painel?area=settings#settings', 'Voltar às campanhas'],
@@ -164,5 +185,5 @@ function walk(node, found = []) {
   const legacySocial = await panel({ searchParams: Promise.resolve({ area: 'integrations' }) });
   assert.equal(legacySocial.type, Dashboard);
   assert.equal(legacySocial.props.initialView, 'integrations');
-  console.log('PASS Meta OAuth public return: absent Strict session, both callbacks, failure, fixed native links, no credentials/session mutation and hostile queries');
+  console.log('PASS Meta OAuth public return: absent Strict session, both callbacks, failure, fixed native links, no credentials/session mutation, hostile queries and disjoint Vercel referrer policies');
 })().catch(error => { console.error(error); process.exitCode = 1; });
