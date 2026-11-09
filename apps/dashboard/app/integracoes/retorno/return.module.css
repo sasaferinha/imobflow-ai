@@ -1,0 +1,39 @@
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f3f7fc;
+  color: #173153;
+}
+
+.card {
+  width: min(100%, 480px);
+  padding: clamp(24px, 6vw, 40px);
+  border: 1px solid #dce6f3;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 36px #1731530a;
+}
+
+.brand { display: block; margin-bottom: 28px; color: #075bd8; font-size: 20px; font-weight: 750; }
+.card h1 { margin: 0; font-size: clamp(25px, 5vw, 31px); line-height: 1.2; letter-spacing: -.025em; }
+.card p { margin: 16px 0 28px; color: #526780; font-size: 16px; line-height: 1.65; }
+.continue {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 1px solid #075bd8;
+  border-radius: 10px;
+  background: #075bd8;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+  text-align: center;
+  text-decoration: none;
+}
+.continue:hover { background: #064db7; }
+.continue:focus-visible { outline: 3px solid #075bd8; outline-offset: 4px; }

@@ -85,7 +85,7 @@ function request(method,{body,query='',token=ownerToken,state,origin='https://ap
  await assert.rejects(()=>lib.finishSocialOAuth(state,'0'.repeat(64),'synthetic-code-123'));
  assert.equal(network.length,beforeCallback,'mismatched cookie cannot exchange an authorization code');assert.ok(oauth.has(digest(state)));
  const returned=await callback.GET(request('GET',{token:null,state,query:new URLSearchParams({state,code:'synthetic-code-123',companyId:foreign,channel:'instagram'}).toString()}));
- assert.equal(new URL(returned.headers.get('Location')).searchParams.get('social'),'connected');assert.equal(returned.testCookies[0].config.maxAge,0);assert.ok(authorizations.has(company));assert.ok(!authorizations.has(foreign));
+ const returnUrl=new URL(returned.headers.get('Location'));assert.equal(returnUrl.pathname,'/integracoes/retorno');assert.equal(returnUrl.searchParams.get('fluxo'),'social');assert.equal(returnUrl.searchParams.get('resultado'),'connected');assert.equal(returned.testCookies[0].config.maxAge,0);assert.ok(authorizations.has(company));assert.ok(!authorizations.has(foreign));
  assert.ok(!authorizations.get(company).token_ciphertext.includes('synthetic-user-token'));
  await assert.rejects(()=>lib.finishSocialOAuth(state,state,'synthetic-code-123'));
  assert.equal(network.length,beforeCallback+2,'consumed state cannot replay a token exchange');
