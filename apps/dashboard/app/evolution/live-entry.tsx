@@ -2,7 +2,7 @@ import LiveEvolutionClient from './legacy-panel';
 import { evolutionIntegrated, getEvolutionSnapshot } from '@/lib/evolution/server';
 import type { Actor } from '@/lib/evolution/model';
 
-export default async function EvolutionEntry({ actor, initialPage }: { actor: Actor & { company?: string }; initialPage?: 'integrations' | 'settings' }) {
+export default async function EvolutionEntry({ actor, initialPage }: { actor: Actor & { company?: string }; initialPage?: 'integrations' | 'settings' | 'campaigns' }) {
   let snapshot: Awaited<ReturnType<typeof getEvolutionSnapshot>>;
   try {
     snapshot = await getEvolutionSnapshot(actor);

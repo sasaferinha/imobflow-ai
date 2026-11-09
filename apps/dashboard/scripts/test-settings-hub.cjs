@@ -193,10 +193,13 @@ async function run() {
   const Website = pure.load(formFile).default;
   const actions = [];
   const hubProps = { state: stateWith(), isAdmin: true, integrated: true,
-    onWhatsApp: () => actions.push('whatsapp'), onAI: () => actions.push('ai'), onWebsite: () => actions.push('website'), onTeam: () => actions.push('team'),
+    onCampaigns: () => actions.push('campaigns'), onWhatsApp: () => actions.push('whatsapp'), onAI: () => actions.push('ai'), onWebsite: () => actions.push('website'), onTeam: () => actions.push('team'),
     children: React.createElement('p', { 'data-advanced-test': true }, 'INTERNAL_ADVANCED_OPTIONS'),
   };
   const hubHtml = renderToStaticMarkup(React.createElement(Hub, hubProps));
+  assert(!find(Hub(hubProps), node => node.type?.name === 'MetaAdsPanel'), 'Settings contains only a link to the independent campaign workspace');
+  button(Hub(hubProps), 'Abrir campanhas →').props.onClick();
+  assert.equal(actions.pop(), 'campaigns');
   for (const label of ['WhatsApp da empresa', 'IA de atendimento', 'Site da imobiliária', 'Somente administrador', 'Regras e opções da operação']) assert(hubHtml.includes(label), label);
   assert.equal([...hubHtml.matchAll(/<details\b[^>]*>/g)].length, 3);
   assert(!/<details\b[^>]*\sopen(?:=|\s|>)/.test(hubHtml), 'Advanced operations start closed');
@@ -221,7 +224,7 @@ async function run() {
     'The broker is told how to leave the current account through the name menu and use another account');
   assert(!/<(?:form|input|select|textarea|iframe)\b/.test(brokerHub), 'The broker settings page has no administrative forms or connection widgets');
   for (const forbidden of ['INTERNAL_ADVANCED_OPTIONS', 'Configurar WhatsApp', 'Configurar IA', 'Preparar conexão do site',
-    'Corretores e acessos', 'PRIVATE_PROVIDER_SENTINEL', 'PRIVATE_SOURCE_SENTINEL', 'PRIVATE_AI_SENTINEL', configured.url, 'Editar perfil']) {
+    'Abrir campanhas', 'Corretores e acessos', 'PRIVATE_PROVIDER_SENTINEL', 'PRIVATE_SOURCE_SENTINEL', 'PRIVATE_AI_SENTINEL', configured.url, 'Editar perfil']) {
     assert(!brokerHub.includes(forbidden), `Broker settings must not expose or open ${forbidden}`);
   }
   assert(accountButton(Hub(brokerHubProps)), 'The integrated informational page offers an explicit account action');
@@ -469,10 +472,11 @@ async function run() {
     reloaded.unmount();
   }
 
-  for (const protectedHash of ['#website-settings', '#ai-settings']) {
+  for (const protectedHash of ['#website-settings', '#ai-settings', '#campaigns']) {
     const denied = navigationHarness({ actor: broker, hash: protectedHash, settings: configured });
     assert.equal(denied.location.hash, '#dashboard', protectedHash);
-    assert(!denied.component('SettingsView') && !denied.component('WebsiteSettings') && !denied.component('AISettings'));
+    assert(!denied.component('SettingsView') && !denied.component('WebsiteSettings') && !denied.component('AISettings') && !denied.component('MetaAdsPanel'));
+    assert(!button(denied.tree, 'Campanhas'));
     const menu = find(denied.tree, node => node.props?.['aria-label'] === 'Opções de Configurações');
     assert(menu); menu.props.onClick(); denied.render();
     assert(!button(denied.tree, 'Site da imobiliária') && !button(denied.tree, 'Configurar IA'));
@@ -480,6 +484,31 @@ async function run() {
     assert.equal(denied.requests.length, 0, 'Denied settings hashes do not fetch configuration');
     denied.unmount();
   }
+  const campaignNav = navigationHarness();
+  campaignNav.component('SettingsView').props.onCampaigns(); campaignNav.render();
+  assert.equal(campaignNav.location.hash, '#campaigns');
+  assert(campaignNav.component('MetaAdsPanel')?.props.standalone);
+  const reportCampaignDraft = campaignNav.component('MetaAdsPanel').props.onDraftState;
+  reportCampaignDraft({ dirty: true, busy: false });
+  campaignNav.click('Campanhas');
+  assert.equal(campaignNav.confirmations.length, 0, 'Clicking the current campaign menu keeps the draft without a misleading exit prompt');
+  assert.equal(campaignNav.component('MetaAdsPanel').props.onDraftState, reportCampaignDraft, 'Draft-state reporting callback stays stable across renders');
+  campaignNav.click('Configurações');
+  assert(campaignNav.component('MetaAdsPanel'), 'Declining navigation preserves campaign drafts');
+  campaignNav.hash('#settings'); assert.equal(campaignNav.location.hash, '#campaigns');
+  campaignNav.hash('#dashboard', 'popstate'); assert.equal(campaignNav.location.hash, '#campaigns');
+  const campaignUnload = { prevented: false, preventDefault() { this.prevented = true; } };
+  campaignNav.dispatch('beforeunload', campaignUnload); assert.equal(campaignUnload.prevented, true);
+  campaignNav.confirm(true);
+  campaignNav.component('MetaAdsPanel').props.onDraftState({ dirty: true, busy: true });
+  campaignNav.click('Configurações'); assert(campaignNav.component('MetaAdsPanel'), 'Even confirmed navigation cannot interrupt an in-flight Ads request');
+  campaignNav.component('MetaAdsPanel').props.onDraftState({ dirty: true, busy: false });
+  campaignNav.click('Configurações'); assert(campaignNav.component('SettingsView'));
+  const cleanCampaignUnload = { prevented: false, preventDefault() { this.prevented = true; } };
+  campaignNav.dispatch('beforeunload', cleanCampaignUnload); assert.equal(cleanCampaignUnload.prevented, false);
+  campaignNav.click('Campanhas'); assert(campaignNav.component('MetaAdsPanel'));
+  assert.equal(campaignNav.requests.length, 0, 'Campaign route and draft guards issue no network requests');
+  campaignNav.unmount();
   const previewNav = navigationHarness({ mode: 'preview', integrated: false });
   assert.equal(previewNav.component('SettingsView').props.integrated, false);
   previewNav.component('SettingsView').props.onIntegrations(); previewNav.render();
