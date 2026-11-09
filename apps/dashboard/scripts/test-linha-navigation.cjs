@@ -11,7 +11,7 @@ const css = fs.readFileSync(path.join(root, 'app/evolution/evolution.module.css'
 const schema = runtime().load('lib/evolution/schema.ts');
 const nav = navigationHarness(owner, '#dashboard');
 const mainNav = () => find(nav.tree, node => node.type === 'nav' && node.props['aria-label'] === 'Navegação principal');
-const primary = ['Dashboard', 'Conversas', 'Leads', 'Imóveis', 'Agenda', 'Equipe', 'Relatórios', 'Configurações'];
+const primary = ['Dashboard', 'Conversas', 'Leads', 'Imóveis', 'Agenda', 'Equipe', 'Relatórios', 'Campanhas', 'Configurações'];
 const directButtons = mainNav().props.children.map(group => find(group, node => node.type === 'button' && node.props.className === 'navButton'));
 assert.deepEqual(Array.from(directButtons, text), primary);
 assert.equal(directButtons[0].props['aria-current'], 'page');
@@ -27,7 +27,8 @@ function expand(harness, title) {
   return open.props.children.map(text);
 }
 const reachable = new Set(primary);
-for (const name of primary.slice(1)) for (const label of expand(nav, name)) reachable.add(label);
+assert(!find(nav.tree, node => node.props?.['aria-label'] === 'Opções de Campanhas'), 'Campaigns opens directly without a redundant submenu');
+for (const name of primary.slice(1).filter(name => name !== 'Campanhas')) for (const label of expand(nav, name)) reachable.add(label);
 for (const definition of Object.values(schema.MODULES)) assert(reachable.has(definition.title), `${definition.title} remains reachable.`);
 for (const label of ['Oportunidades', 'Importar clientes', 'Carteira de clientes', 'Catálogo e fotos', 'Agenda de visitas', 'Corretores e acessos', 'Resultados da operação', 'Metas da operação', 'Integrações', 'Minha conta']) assert(reachable.has(label), `${label} remains reachable.`);
 assert(find(nav.tree, node => node.props?.className?.startsWith('workspaceShortcut')), 'Central de gestão remains available.');
@@ -83,4 +84,4 @@ const classes = new Set([...css.matchAll(/\.([a-zA-Z_][\w-]*)/g)].map(match => m
 for (const match of clientSource.matchAll(/\bs\.([a-zA-Z_]\w*)/g)) assert(classes.has(match[1]), `Missing stylesheet class ${match[1]}`);
 assert(nav.requests.every(request => request.method === 'GET'), 'Navigation performs no writes.');
 assert(state.records.every(record => record.id), 'Fixture contains only synthetic stable records.');
-console.log('PASS Linha: 8 primary routes; all secondary modules; owner/broker boundaries; mobile Escape, inert, focus restoration and cleanup; retained funnels/real metrics; CSS parse/contracts. No live requests.');
+console.log('PASS Linha: 9 primary routes; all secondary modules; owner/broker boundaries; mobile Escape, inert, focus restoration and cleanup; retained funnels/real metrics; CSS parse/contracts. No live requests.');

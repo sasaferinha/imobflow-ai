@@ -15,7 +15,7 @@ export default async function IntegrationReturnPage({ searchParams }: { searchPa
   const ads = query.fluxo === 'ads';
   const knownFlow = ads || query.fluxo === 'social';
   const result = knownFlow && (query.resultado === 'connected' || query.resultado === 'failed') ? query.resultado : null;
-  const destination = ads ? '/painel?area=settings#settings' : '/painel?area=integrations#integrations';
+  const destination = ads ? '/painel?area=campaigns#campaigns' : '/painel?area=integrations#integrations';
   const label = ads ? 'Voltar às campanhas' : 'Voltar às integrações';
 
   // Query parameters only select presentation. The destination authenticates

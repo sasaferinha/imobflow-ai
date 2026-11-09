@@ -34,7 +34,7 @@ function OperationalPanel({ actor, page, refreshKey, onNavigate, onOpenProperty 
 }
 
 /** The isolated preview never imports this production-only client boundary. */
-export default function LiveEvolutionClient({ initialState, actor, integrated = false, initialPage }: { initialState: CrmState; actor: LiveActor; integrated?: boolean; initialPage?: 'integrations' | 'settings' }) {
+export default function LiveEvolutionClient({ initialState, actor, integrated = false, initialPage }: { initialState: CrmState; actor: LiveActor; integrated?: boolean; initialPage?: 'integrations' | 'settings' | 'campaigns' }) {
   return <EvolutionClient initialState={initialState} actor={actor} mode="live" integrated={integrated} initialPage={initialPage}
     renderOperationalPanel={(page, refreshKey, onNavigate, onOpenProperty) => <OperationalPanel actor={actor} page={page} refreshKey={refreshKey} onNavigate={onNavigate} onOpenProperty={onOpenProperty} />}
   />;

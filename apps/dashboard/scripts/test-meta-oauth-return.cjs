@@ -120,9 +120,9 @@ function walk(node, found = []) {
   }
   for (const [query, destination, label] of [
     [{ fluxo: 'social', resultado: 'connected' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
-    [{ fluxo: 'ads', resultado: 'connected' }, '/painel?area=settings#settings', 'Voltar às campanhas'],
+    [{ fluxo: 'ads', resultado: 'connected' }, '/painel?area=campaigns#campaigns', 'Voltar às campanhas'],
     [{ fluxo: 'social', resultado: 'failed' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
-    [{ fluxo: 'ads', resultado: 'failed' }, '/painel?area=settings#settings', 'Voltar às campanhas'],
+    [{ fluxo: 'ads', resultado: 'failed' }, '/painel?area=campaigns#campaigns', 'Voltar às campanhas'],
     [{}, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: ['ads', 'social'], resultado: ['connected', 'failed'], next: 'https://attacker.test' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'https://attacker.test', resultado: '<script>bad</script>', code, state, next: 'https://attacker.test' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
@@ -159,7 +159,7 @@ function walk(node, found = []) {
     '@/lib/evolution/feature': { evolutionEnabled: () => rollout },
     '@/lib/evolution/server': { evolutionIntegrated: () => true },
   }).default;
-  for (const area of ['integrations', 'settings']) {
+  for (const area of ['integrations', 'settings', 'campaigns']) {
     const tree = await panel({ searchParams: Promise.resolve({ area }) });
     assert.equal(tree.type, Integrated);
     assert.equal(tree.props.initialPage, area, 'SSR selects the requested owner area before hash hydration');
@@ -170,16 +170,19 @@ function walk(node, found = []) {
   actor = { ...actor, role: 'broker' };
   assert.equal((await panel({ searchParams: Promise.resolve({ area: 'settings' }) })).props.initialPage, undefined);
   assert.equal((await panel({ searchParams: Promise.resolve({ area: 'integrations' }) })).props.initialPage, undefined);
+  assert.equal((await panel({ searchParams: Promise.resolve({ area: 'campaigns' }) })).props.initialPage, undefined, 'Broker cannot select campaigns through the query');
   actor = null;
-  assert.equal((await panel({ searchParams: Promise.resolve({ area: 'settings', social: 'connected' }) })).type, Login, 'Query does not authenticate');
+  assert.equal((await panel({ searchParams: Promise.resolve({ area: 'campaigns', social: 'connected' }) })).type, Login, 'Query does not authenticate');
   actor = { role: 'owner', companyId: 'synthetic-company', brokerId: 'synthetic-owner' };
   const classic = await panel({ searchParams: Promise.resolve({ area: 'integrations', experiencia: 'classica' }) });
   assert.equal(classic.type, Dashboard);
   assert.equal(classic.props.initialView, 'integrations');
-  const classicAds = await panel({ searchParams: Promise.resolve({ area: 'settings', experiencia: 'classica' }) });
-  assert.equal(walk(classicAds).find(node => node.type === 'a').props.href, '/painel?area=settings#settings');
+  const classicSettings = await panel({ searchParams: Promise.resolve({ area: 'settings', experiencia: 'classica' }) });
+  assert.equal(classicSettings.type, Dashboard, 'Settings no longer masquerades as the campaigns fallback');
+  const classicAds = await panel({ searchParams: Promise.resolve({ area: 'campaigns', experiencia: 'classica' }) });
+  assert.equal(walk(classicAds).find(node => node.type === 'a').props.href, '/painel?area=campaigns#campaigns');
   rollout = false;
-  const unavailableAds = await panel({ searchParams: Promise.resolve({ area: 'settings' }) });
+  const unavailableAds = await panel({ searchParams: Promise.resolve({ area: 'campaigns' }) });
   assert.ok(renderToStaticMarkup(unavailableAds).includes('ainda não está disponível'));
   assert.equal(walk(unavailableAds).find(node => node.type === 'a').props.href, '/painel?area=integrations#integrations');
   const legacySocial = await panel({ searchParams: Promise.resolve({ area: 'integrations' }) });
