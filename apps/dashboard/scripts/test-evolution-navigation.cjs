@@ -93,6 +93,12 @@ const live = renderClient({ mode: 'live', integrated: true, renderOperationalPan
 assert(live.includes('Sua operação real'));
 assert(live.includes('Operação real integrada'));
 assert(!live.includes('Prévia privada'));
+const initialIntegrations = renderClient({ mode: 'live', integrated: true, renderOperationalPanel: nativeHost, initialPage: 'integrations' });
+assert(initialIntegrations.includes('<native-host page="integrations"'), 'OAuth return must render integrations before hydration');
+const initialSettings = renderClient({ mode: 'live', integrated: true, renderOperationalPanel: nativeHost, initialPage: 'settings' });
+assert(initialSettings.includes('Prepare sua imobiliária para trabalhar'), 'OAuth Ads return must initially render settings');
+assert(!renderClient({ mode: 'preview', integrated: true, renderOperationalPanel: nativeHost, initialPage: 'integrations' }).includes('<native-host'));
+assert(!renderClient({ mode: 'live', integrated: true, renderOperationalPanel: nativeHost, initialPage: 'integrations', actor: { ...owner, role: 'broker' } }).includes('<native-host'), 'Owner return hint cannot select a broker configuration area');
 assert(!/from ['"].*(dashboard-client|legacy-panel)['"]/.test(clientSource));
 // The production-only checkout does not package the independent preview app.
 const previewSync = path.join(root, '../evolution-preview/scripts/sync-evolution.mjs');
@@ -142,7 +148,7 @@ function navigationHarness(actor = owner, hash = '#conversations', browser = {})
     }),
   });
   const Client = isolated.load(clientPath).default;
-  const props = { initialState: browser.state || state, actor, mode: 'live', integrated: true, renderOperationalPanel: browser.renderOperationalPanel || nativeHost };
+  const props = { initialState: browser.state || state, actor, mode: 'live', integrated: true, initialPage: browser.initialPage, renderOperationalPanel: browser.renderOperationalPanel || nativeHost };
   function render() {
     let attempts = 0;
     do {
@@ -180,6 +186,10 @@ function click(harness, label) {
   target.props.onClick(); harness.render();
 }
 const nav = navigationHarness();
+const returnNav = navigationHarness(owner, '', { initialPage: 'integrations' });
+assert.equal(find(returnNav.tree, node => node.type === 'native-host').props.page, 'integrations', 'No-hash hydration preserves the whitelisted initial area');
+const returnWithHash = navigationHarness(owner, '#conversations', { initialPage: 'integrations' });
+assert.equal(find(returnWithHash.tree, node => node.type === 'native-host').props.page, 'conversations', 'An explicit hash still controls subsequent navigation');
 const host = () => find(nav.tree, node => node.type === 'native-host');
 const container = () => find(nav.tree, node => node.props?.className === 'operationalPanel');
 assert.equal(host().props.page, 'conversations');

@@ -25,4 +25,16 @@ A correção separa a conexão por canal: Facebook deve poder autorizar, listar 
 - Testar recebimento, resposta, áudio e Match nos canais autorizados, com destinatário e conteúdo de teste escolhidos. Nenhuma mensagem real, convite de amizade ou campanha paga foi enviado ou ativado nesta configuração.
 - O usuário ainda não possui domínio próprio para o primeiro site. O endereço da ImobFlow permanece disponível.
 
+## Continuação da configuração
+
+A conexão separada por canal foi publicada em `main@b2ca3e4585ff1b3222462f79d5c0c329bf169522` pelo PR #18. O domínio de produção foi verificado no deployment `dpl_2tRAywW3UBCaciycppFem237KGPv`. A autorização somente do Facebook avançou até a confirmação final sem solicitar uma conta Instagram.
+
+Após confirmação explícita do usuário, as permissões da Página ImobFlow foram salvas na Meta e a Página foi vinculada no CRM, que exibiu **Conectado**, com atendimento humano como padrão. A leitura de metadados do banco confirmou uma autorização social não expirada e a conexão Facebook habilitada. Nenhum token foi lido ou incluído nesta documentação. O vínculo somente é gravado depois de a inscrição dos eventos da Página retornar sucesso; isso não confirma a verificação do callback do aplicativo nem entrega de mensagens.
+
+O retorno da autorização exibiu inicialmente a tela de cadastro, apesar da sessão existente; uma atualização de página recuperou o administrador sem novo login. A sessão principal usa `SameSite=Strict`, e o state OAuth usa cookie separado `Lax`. A correção mantém essas proteções e termina o retorno em uma página pública do próprio domínio, com navegação explícita para a área apropriada do painel. A página não autentica ninguém, não transporta código/token e não aceita destino arbitrário.
+
+A configuração pública do WhatsApp foi comparada com o painel da Meta: app `1215235061682650`, configuração `1079519511607694`, tipo Cadastro incorporado do WhatsApp, API `v26.0`. Login pelo SDK está habilitado e `https://www.imobflow.net.br/` é domínio permitido. A janela de reconexão não foi observada no navegador incorporado; não foi atribuída uma causa definitiva. HTTPS, modo estrito dos retornos e as demais proteções foram preservados. Nenhuma configuração nova de acesso foi concedida nesta conferência.
+
+Permanecem pendentes: a entrada e verificação do token de callback Page pela pessoa responsável, a conferência dos campos `messages` e `leadgen`, uma conta profissional Instagram real, a reconexão do WhatsApp e os testes de entrega autorizados. Os campos extras atualmente inscritos não são interpretados como mensagens pelo consumidor.
+
 Não apresentar uma Página criada, autorização iniciada ou webhook testado isoladamente como atendimento integrado concluído.

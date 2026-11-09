@@ -144,9 +144,10 @@ const COLUMNS: Partial<Record<Kind, string[]>> = {
   people: ['category', 'phone', 'email', 'assignedTo'], leads: ['source', 'purpose', 'temperature', 'status', 'assignedTo'], cases: ['personId', 'purpose', 'stage', 'status', 'assignedTo', 'nextActivityAt'], tasks: ['type', 'caseId', 'dueAt', 'priority', 'status', 'assignedTo'], proposals: ['caseId', 'propertyId', 'amount', 'status', 'expiresAt'], properties: ['code', 'purpose', 'price', 'status', 'assignedTo'], keys: ['propertyId', 'borrower', 'dueAt', 'status'], goals: ['assignedTo', 'month', 'purpose', 'amount'], neighborhoods: ['city', 'aliases'], condominiums: ['city', 'address'], messages: ['recipientId', 'text'], channels: ['url', 'dependency'], content: ['type', 'text'], teams: ['leaderId'],
 };
 
-export default function EvolutionClient({ initialState, actor, mode, integrated = false, renderOperationalPanel }: { initialState: CrmState; actor: Actor; mode: 'preview' | 'live'; integrated?: boolean; renderOperationalPanel?: (page: OperationalPage, refreshKey: number, onNavigate: (page: OperationalPage) => void, onOpenProperty: (id: string) => void) => ReactNode }) {
+export default function EvolutionClient({ initialState, actor, mode, integrated = false, initialPage, renderOperationalPanel }: { initialState: CrmState; actor: Actor; mode: 'preview' | 'live'; integrated?: boolean; initialPage?: 'integrations' | 'settings'; renderOperationalPanel?: (page: OperationalPage, refreshKey: number, onNavigate: (page: OperationalPage) => void, onOpenProperty: (id: string) => void) => ReactNode }) {
+  const firstPage = mode === 'live' && actor.role === 'owner' && (initialPage === 'settings' || initialPage === 'integrations' && integrated && Boolean(renderOperationalPanel)) ? initialPage : 'dashboard';
   const [state, setState] = useState(initialState);
-  const [page, setPage] = useState<Page>('dashboard');
+  const [page, setPage] = useState<Page>(firstPage);
   const [filters, setFilters] = useState<Filters>(INITIAL_FILTERS);
   const [query, setQuery] = useState('');
   const [globalQuery, setGlobalQuery] = useState('');
@@ -255,7 +256,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
 
   useEffect(() => {
     const syncHash = () => {
-      const hash = (window.location.hash.slice(1) || 'dashboard') as Page;
+      const hash = (window.location.hash.slice(1) || firstPage) as Page;
       if (['ai-settings', 'website-settings'].includes(hash) && !isAdmin) { setPage('dashboard'); window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#dashboard`); return; }
       if (!(hash in MODULES || ['dashboard', 'reports', 'members', 'settings', 'ai-settings', 'website-settings', 'operations', 'leads/new'].includes(hash) || (hasLiveOperation && isOperationalPage(hash) && (isAdmin || !['imports', 'brokers', 'operational-goals'].includes(hash))))) return;
       if (aiDraftRef.current.active && hash !== 'ai-settings') {
@@ -297,7 +298,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
       window.removeEventListener?.('hashchange', syncHash);
       window.removeEventListener?.('beforeunload', beforeUnload);
     };
-  }, [hasLiveOperation, isAdmin]);
+  }, [hasLiveOperation, isAdmin, firstPage]);
 
   useEffect(() => {
     if (creatingLeadPage) pageHeadingRef.current?.focus();
