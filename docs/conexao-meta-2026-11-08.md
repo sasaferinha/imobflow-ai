@@ -17,7 +17,7 @@ A correção separa a conexão por canal: Facebook deve poder autorizar, listar 
 
 ## Pendências de operação
 
-- Concluir a autorização limitada à Página escolhida e verificar seu vínculo no painel depois da publicação da correção.
+- Concluído: autorização limitada à Página ImobFlow e vínculo verificado no painel, com atendimento humano como padrão.
 - Na Meta, inserir e verificar o token do webhook de Page e assinar os eventos necessários. O segredo não deve ser salvo no Git ou informado em relatórios. O endpoint pronto no servidor, isoladamente, não confirma essa assinatura na Meta.
 - Vincular uma conta profissional real do Instagram à Página e realizar sua autorização, além da configuração do objeto Instagram no webhook.
 - Renovar a autorização do WhatsApp: a verificação no CRM informou token expirado ou revogado. A tentativa de reconexão ainda não foi concluída.
@@ -38,3 +38,9 @@ A configuração pública do WhatsApp foi comparada com o painel da Meta: app `1
 Permanecem pendentes: a entrada e verificação do token de callback Page pela pessoa responsável, a conferência dos campos `messages` e `leadgen`, uma conta profissional Instagram real, a reconexão do WhatsApp e os testes de entrega autorizados. Os campos extras atualmente inscritos não são interpretados como mensagens pelo consumidor.
 
 Não apresentar uma Página criada, autorização iniciada ou webhook testado isoladamente como atendimento integrado concluído.
+
+## Validação do retorno da autorização — 9 de novembro
+
+O PR #19 foi publicado em `main@c8a9f41c67afdf269c4b978c0d1cb79c83532905`, deployment `dpl_B8UWi2SWXEg5Q3hGXAM9odfui5Qk`, com 249 verificações aprovadas no build de produção. No navegador, a opção de continuar com as configurações anteriores da Meta levou à nova página de retorno. O clique em **Voltar às integrações** abriu diretamente o painel autenticado, sem recarregar a página ou pedir novo login. A Página ImobFlow permaneceu conectada; nenhuma mensagem foi enviada.
+
+A conferência HTTP encontrou a política global de referenciador da Vercel sobrepondo a exceção do Next. A configuração de implantação deve aplicar `no-referrer` ao retorno OAuth e aos dois callbacks de autorização social/anúncios, preservando `strict-origin-when-cross-origin` nas demais rotas. A validação inclui `node scripts/test-meta-oauth-return.cjs`, revisão independente e nova consulta HTTP após o alias de produção mudar para a revisão corrigida. Os resultados operacionais ficam nos arquivos ignorados `work/oauth-return-*-evidence.json`, sem credenciais.

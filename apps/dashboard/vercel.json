@@ -8,8 +8,19 @@
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
+    {
+      "source": "/((?!(?:integracoes/retorno|api/integrations/meta/(?:social|ads)/callback)/?$).*)",
+      "headers": [
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    },
+    {
+      "source": "/(integracoes/retorno|api/integrations/meta/(?:social|ads)/callback)(/?)",
+      "headers": [
+        { "key": "Referrer-Policy", "value": "no-referrer" }
       ]
     }
   ]
