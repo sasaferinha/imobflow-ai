@@ -77,7 +77,7 @@ export default function AccountMenu({ name, role, preview = false, onOpen }: Pro
       <span className={s.accountTriggerName}>{name}<small>{roleLabel}</small></span>
       <svg className={s.accountChevron} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
     </button>
-    {open && <div id={panelId} className={s.accountDropdown} role="region" aria-label="Opções da conta" aria-busy={pending}>
+    {open && <div id={panelId} data-motion-menu="account" className={s.accountDropdown} role="region" aria-label="Opções da conta" aria-busy={pending}>
       <div className={s.accountIdentity}><strong>{name}</strong><span>{roleLabel}</span></div>
       <div className={s.accountMenuBody}>
         <button ref={logoutButton} className={s.accountLogout} type="button" disabled={pending} onClick={logout}>

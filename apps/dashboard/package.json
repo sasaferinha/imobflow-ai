@@ -15,7 +15,7 @@
     "test:import": "node scripts/test-lead-import.cjs && node scripts/test-tenant-isolation-api.cjs",
     "test:tenant-ai": "node scripts/test-tenant-ai-settings.cjs && node scripts/test-tenant-ai-ui.cjs && node scripts/test-tenant-ai-runtime.cjs && pnpm run test:settings",
     "test:settings": "node scripts/test-website-settings.cjs && node scripts/test-settings-hub.cjs",
-    "test:crm-design": "node scripts/test-panel-performance.cjs && node scripts/test-property-search-field.cjs && node scripts/test-unified-crm-design.cjs && node scripts/test-public-identity.cjs && node scripts/test-linha-navigation.cjs && node scripts/test-attendance-cards.cjs && node scripts/test-lead-registration-page.cjs && pnpm run test:conversation-channels",
+    "test:crm-design": "node scripts/test-panel-performance.cjs && node scripts/test-panel-motion.cjs && node scripts/test-property-search-field.cjs && node scripts/test-unified-crm-design.cjs && node scripts/test-public-identity.cjs && node scripts/test-linha-navigation.cjs && node scripts/test-attendance-cards.cjs && node scripts/test-lead-registration-page.cjs && pnpm run test:conversation-channels",
     "test:conversation-layout": "node scripts/test-conversation-viewport.cjs && node scripts/test-conversation-inbox.cjs && pnpm run test:conversation-channels",
     "test:conversation-channels": "node scripts/test-instagram-inbox.cjs && node scripts/test-conversation-channels.cjs",
     "test:account-sql": "node scripts/test-account-sql.cjs",

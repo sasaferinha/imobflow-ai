@@ -16,6 +16,7 @@ import './conversation-workspace.css';
 import './crm-access.css';
 import './conversation-viewport.css';
 import './panel-motion.css';
+import PanelMotionController from './panel-motion-controller';
 
 const siteOrigin = process.env.SITE_URL ?? 'http://localhost:3000';
 
@@ -39,7 +40,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>{children}<PanelMotionController /></body>
     </html>
   );
 }

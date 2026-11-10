@@ -18,7 +18,7 @@ export default function MobileWorkspace({ state, actor, onSelect, onConversation
   };
   const visitRow = (record: CrmRecord) => <button className={s.row} key={record.id} onClick={() => onSelect(record.id)}><span><strong>{customer(record)}</strong><small>{String(state.records.find(row => row.kind === 'properties' && row.id === record.data.propertyId)?.data.name || name(record))}</small><small>{displayDate(record.data.visitStartedAt || record.data.dueAt)}</small></span><span className={s.action}>{record.data.visitEndedAt || record.data.status === 'Realizada' ? 'Ver avaliação' : record.data.visitStartedAt ? 'Encerrar' : 'Iniciar'}<b aria-hidden="true">→</b></span></button>;
   const switchTab = (next: typeof tab) => { setTab(next); setLimit(8); };
-  return <section className={s.workspace} aria-label="Atendimento no celular">
+  return <section data-motion-tabs className={s.workspace} aria-label="Atendimento no celular">
     <nav className={s.tabs} aria-label="Área de trabalho do corretor">{([['today','Hoje'],['visits','Visitas'],['funnel','Funil']] as const).map(([key,label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => switchTab(key)}>{label}</button>)}</nav>
     {actor.role === 'owner' && <label className={s.ownerFilter}>Responsável<select value={broker} onChange={event => setBroker(event.target.value)}><option value="">Toda a equipe</option>{state.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>}
     {tab === 'today' && <>
