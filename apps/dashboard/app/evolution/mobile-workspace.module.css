@@ -1,4 +1,8 @@
 .workspace { display: grid; gap: 18px; color: var(--ev-ink, #193148); }
+@keyframes tabEnter { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: no-preference) {
+  .workspace > :not(.tabs):not(.ownerFilter) { animation: tabEnter .5s ease; }
+}
 .tabs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 4px; background: var(--ev-toolbar,#edf3f8); border-radius: 12px; gap: 4px; }
 .tabs button { border: 0; border-radius: 9px; padding: 12px 8px; min-height: 44px; background: transparent; color: inherit; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
 .tabs button[aria-current] { background: var(--ev-paper,#fff); box-shadow: 0 1px 4px #18314916; }

@@ -4,8 +4,12 @@
   to { opacity: 1; translate: 0 0; }
 }
 @keyframes refreshSpin { to { rotate: 360deg; } }
+@keyframes sidebarEnter { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes recordEnter { from { opacity: 0; transform: translateY(20%); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: no-preference) {
-  .dialog[open] { animation: surfaceEnter 160ms ease-out; }
+  .recordCard, .attendanceCard { animation: recordEnter 600ms ease; }
+  .dialog[open] { animation: surfaceEnter 300ms ease; }
+  .sidebar.sidebarOpen { animation: sidebarEnter 300ms ease; }
   .searchResults { animation: surfaceEnter 120ms ease-out; }
   .app button, .dialog button { transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
   .app button:active:not(:disabled), .dialog button:active:not(:disabled) { translate: 0 1px; }

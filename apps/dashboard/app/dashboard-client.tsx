@@ -707,7 +707,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
 function PeriodLoadNotice({ month, changeMonth, loading, error, retry }: { month:string; changeMonth:(month:string)=>void; loading:boolean; error:string|null; retry:()=>void }) {
   return <section className="performance-loading panel" aria-busy={loading}>
     <label>Competência <input type="month" value={month} onChange={event => changeMonth(event.target.value)} /></label>
-    <p role={error ? 'alert' : 'status'}>{loading ? 'Carregando dados do mês selecionado...' : error || 'Não foi possível carregar os dados deste mês.'}</p>
+    {loading ? <PanelLoading /> : <p role={error ? 'alert' : 'status'}>{error || 'Não foi possível carregar os dados deste mês.'}</p>}
     {!loading && <button type="button" onClick={retry}>Tentar novamente</button>}
   </section>;
 }

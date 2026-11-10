@@ -1,23 +1,18 @@
-.panel-loading-page { padding: clamp(24px, 5vw, 72px); min-height: 75vh; background: #f4f8ff; }
-.panel-loading { width: 100%; padding: 20px; box-sizing: border-box; color: #526b8c; }
-.panel-loading-label { display: block; margin-bottom: 20px; font-size: 14px; }
-.panel-loading-heading, .panel-loading-stats > div, .panel-loading-body > div { background: #e6edf7; border-radius: 10px; animation: panel-skeleton 1.6s ease-in-out infinite alternate; }
-.panel-loading-heading { width: 38%; height: 26px; margin-bottom: 24px; }
-.panel-loading-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
-.panel-loading-stats > div { height: 88px; }
-.panel-loading-body { display: grid; gap: 14px; padding: 24px; background: #fff; border: 1px solid #e2ebf7; border-radius: 14px; }
-.panel-loading-body > div { height: 42px; }
-.panel-loading-body > div:last-child { width: 65%; }
-@keyframes panel-skeleton { from { opacity: .5; } to { opacity: 1; } }
-@keyframes panel-dialog-enter { from { opacity: .3; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+.panel-loading-page { min-height: 100vh; background: #f4f8ff; display: grid; place-items: center; }
+.panel-loading { width: 100%; min-height: 320px; display: grid; place-items: center; padding: 32px; box-sizing: border-box; color: #526b8c; background: rgb(16 41 75 / 5%); }
+.panel-loading-page .panel-loading { min-height: 100vh; }
+.panel-loading-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; min-width: 140px; min-height: 140px; padding: 20px; box-sizing: border-box; border-radius: 16px; background: #fff; box-shadow: 0 0 20px rgb(16 41 75 / 12%); }
+.panel-loading-label { font-size: 14px; }
+.panel-loading-spinner { width: 60px; height: 60px; box-sizing: border-box; border: 5px solid #edf0f4; border-top-color: #0066f5; border-radius: 50%; animation: panel-loading-spin .9s linear infinite; }
+@keyframes panel-loading-spin { to { transform: rotate(360deg); } }
+@keyframes panel-loading-appear { from { opacity: 0; } to { opacity: 1; } }
+@keyframes panel-dialog-enter { from { opacity: 0; translate: 0 16px; } to { opacity: 1; translate: 0 0; } }
+@keyframes panel-card-enter { from { opacity: 0; transform: translateY(20%); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: no-preference) {
-  .modal-card { animation: panel-dialog-enter 160ms ease-out; }
+  .panel-loading { animation: panel-loading-appear .5s ease; }
+  .modal-card { animation: panel-dialog-enter 300ms ease; }
+  .property-card { animation: panel-card-enter .6s ease; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .panel-loading * { animation: none !important; }
-}
-@media (max-width: 600px) {
-  .panel-loading-stats { gap: 8px; }
-  .panel-loading-stats > div { height: 64px; }
-  .panel-loading { padding: 12px; }
+  .panel-loading, .panel-loading * { animation: none !important; }
 }

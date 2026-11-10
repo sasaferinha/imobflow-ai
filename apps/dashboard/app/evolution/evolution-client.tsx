@@ -155,9 +155,9 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
     if (!surface?.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     // Animate the existing surface; never remount forms or conversation state.
     const animation = surface.animate([
-      { opacity: 0.65, transform: 'translateY(6px)' },
-      { opacity: 1, transform: 'translateY(0)' },
-    ], { duration: 180, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+      { opacity: 0 },
+      { opacity: 1 },
+    ], { duration: 500, easing: 'ease' });
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const stop = () => animation.cancel();
     preference.addEventListener('change', stop);
