@@ -113,6 +113,22 @@ async function main() {
   view.render({ properties: props.properties.slice(1) });
   assert(!nodes(view.tree).some(node => typeof node.type === 'function' && node.type.name === 'PropertyDialog'), 'A withdrawn property cannot remain open in a stale detail dialog');
 
+  const localVideo = 'blob:https://example.test/demo-video';
+  const demoVideoDialog = harness('PropertyDialog', { ...props, property: props.properties[0], preview: false, demoVideo: localVideo, close() {} });
+  const demoPlayer = nodes(demoVideoDialog.tree).find(node => node.type === 'video');
+  assert(demoPlayer && demoPlayer.props.controls && demoPlayer.props.preload === 'metadata' && !demoPlayer.props.autoPlay);
+  for (const context of [{ demo: false, preview: false }, { demo: false, preview: true }]) {
+    const realDialog = harness('PropertyDialog', { ...props, ...context, property: props.properties[0], demoVideo: localVideo, close() {} });
+    assert(!nodes(realDialog.tree).some(node => node.type === 'video'), 'Demo property videos never enter a live tenant or real editor preview');
+    const realSite = harness('SiteView', { ...props, ...context, demoPropertyVideos: { [props.properties[0].id]: localVideo } });
+    nodes(realSite.tree).find(node => node.type === 'button' && node.props['aria-label']?.startsWith('Ver detalhes:')).props.onClick(); realSite.render();
+    assert.equal(nodes(realSite.tree).find(node => node.type?.name === 'PropertyDialog').props.demoVideo, undefined, 'Parent drops all demo media before real property details');
+  }
+  for (const unsafeVideo of ['javascript:alert(1)', 'https://external.test/video.mp4', 'data:video/mp4;base64,AAAA']) {
+    const unsafeDialog = harness('PropertyDialog', { ...props, property: props.properties[0], demoVideo: unsafeVideo, close() {} });
+    assert(!nodes(unsafeDialog.tree).some(node => node.type === 'video'), 'Only local object URLs from the demo loader are accepted');
+  }
+
   const inquiry = harness('PropertyDialog', { ...props, property: props.properties[0], preview: false, close() {} });
   await nodes(inquiry.tree).find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
   inquiry.render();
