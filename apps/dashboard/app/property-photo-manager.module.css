@@ -21,3 +21,5 @@
 @media(max-width:520px){.backdrop{padding:12px}.dialog{border-radius:18px;max-height:94dvh}.header{padding:20px 18px;gap:10px}.header h2{font-size:20px}.icon{width:42px;height:42px}.body{padding:18px}.footer{padding:16px 18px;flex-wrap:wrap}.footer>div{margin-left:auto}.preview{height:125px}.photoFooter{flex-wrap:wrap}.grid{gap:10px}}
 
 .dropActive .upload{background:#e2efff;border:2px dashed #0865ed;box-shadow:0 0 0 4px #0865ed15}.dropActive .uploadIcon{background:#0865ed;color:#fff}
+
+.mediaDemo{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;background:#f1f7f5;border:1px solid #d6e6df;border-radius:10px;margin-top:16px}.mediaDemo strong{display:block;font-size:13px;color:#244f40}.mediaDemo span{display:block;font-size:11px;color:#647c70;margin-top:4px}.mediaDemo a{font-size:12px;white-space:nowrap;color:#245d45;text-underline-offset:3px}@media(max-width:600px){.mediaDemo{align-items:flex-start;flex-direction:column;gap:10px}}

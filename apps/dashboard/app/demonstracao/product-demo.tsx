@@ -29,7 +29,9 @@ export default function ProductDemo() {
     resize.observe(document.body);
     const blockNavigation = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('a[href]')) {
+      const link = target?.closest('a[href]');
+      if (link?.getAttribute('href') === '/modelo-imobiliaria/midias') return;
+      if (link) {
         event.preventDefault();
         event.stopPropagation();
         setNotice('Este é um exemplo do painel. Nenhum contato externo é realizado.');

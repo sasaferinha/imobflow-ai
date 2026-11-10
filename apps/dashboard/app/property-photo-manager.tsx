@@ -22,7 +22,7 @@ export default function PropertyPhotoManager({ title, images, busy, saving, prep
   return createPortal(<div className={s.backdrop} onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()} onKeyDown={event => {
     if (event.key === 'Escape' && !busy) onClose();
     if (event.key !== 'Tab') return;
-    const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)') || []).filter(node => node.offsetParent !== null);
+    const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]') || []).filter(node => node.offsetParent !== null);
     const first = controls[0], last = controls[controls.length - 1];
     if (!first) { event.preventDefault(); return; }
     if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
@@ -47,6 +47,7 @@ export default function PropertyPhotoManager({ title, images, busy, saving, prep
         <button type="button" className={s.upload} disabled={busy || images.length >= 5} onClick={() => input.current?.click()}><span className={s.uploadIcon} aria-hidden="true">＋</span><strong>{preparing ? 'Preparando imagens…' : images.length >= 5 ? 'Sua galeria está completa' : dragging && canAdd ? 'Solte as fotos aqui' : 'Adicionar fotos do imóvel'}</strong><span>Arraste as fotos aqui ou clique para selecionar</span><small>JPG, PNG ou WebP · até 5 fotos</small></button>
         </div>
         {error && <p className={s.error} role="alert">{error}</p>}
+        <div className={s.mediaDemo}><div><strong>Fotos e vídeos para valorizar seu imóvel</strong><span>Conheça o adicional com imóveis fictícios, sem alterar esta galeria.</span></div><a href="/modelo-imobiliaria/midias" target="_blank" rel="noopener noreferrer">Experimentar estúdio ↗</a></div>
         <div className={s.galleryHeading}><strong>Galeria</strong><span>{images.length} de 5 fotos</span></div>
         {images.length ? <div className={s.grid}>{images.map((image,index) => <article className={s.photo} key={image + index}><div className={s.preview}><img src={image} alt={`Foto ${index + 1} de ${title}`}/>{index === 0 && <span className={s.cover}>Capa do imóvel</span>}<button type="button" className={s.remove} aria-label={`Remover foto ${index + 1}`} disabled={busy} onClick={() => onRemove(index)}>×</button></div><div className={s.photoFooter}><span>Foto {index + 1}</span>{index > 0 ? <button type="button" disabled={busy} onClick={() => onCover(index)}>Usar como capa</button> : <span>Foto principal</span>}</div></article>)}</div> : <p className={s.empty}>Suas fotos aparecerão aqui. A primeira será a capa do imóvel.</p>}
       </div>

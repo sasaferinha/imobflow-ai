@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import { safeWebsiteUrl, videoEmbedUrl, type PublicProperty, type SiteContent } from '@/lib/website/model';
 import s from './public-site.module.css';
 
-type Props = { content: SiteContent; properties: PublicProperty[]; companySlug: string; demo?: boolean; preview?: boolean };
+type Props = { content: SiteContent; properties: PublicProperty[]; companySlug: string; demo?: boolean; preview?: boolean; demoPropertyVideos?: Record<string, string> };
 const money = (amount: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(amount);
 const searchText = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
 const safeLink = (url: string) => { try { return safeWebsiteUrl(url); } catch { return ''; } };
@@ -37,7 +37,7 @@ function Picture({ src, alt, className, priority = false }: { src?: string; alt:
   return <img src={image} alt={alt} className={className} loading={priority ? 'eager' : 'lazy'} decoding="async" onError={() => setFailed(image)} />;
 }
 
-function PropertyDialog({ property, content, companySlug, demo, preview, close }: { property: PublicProperty; content: SiteContent; companySlug: string; demo: boolean; preview: boolean; close: () => void }) {
+function PropertyDialog({ property, content, companySlug, demo, preview, demoVideo, close }: { property: PublicProperty; content: SiteContent; companySlug: string; demo: boolean; preview: boolean; demoVideo?: string; close: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [photo, setPhoto] = useState(0);
   const photoIndex = Math.min(photo, Math.max(0, property.images.length - 1));
@@ -78,6 +78,7 @@ function PropertyDialog({ property, content, companySlug, demo, preview, close }
       <div className={s.gallery}>
         <Picture key={property.images[photoIndex]} src={property.images[photoIndex]} alt={`${property.title} — foto ${photoIndex + 1}`} className={s.detailPhoto} priority />
         {property.images.length > 1 && <div className={s.thumbnails} aria-label="Fotos do imóvel">{property.images.map((src, index) => <button type="button" key={`${src}-${index}`} aria-label={`Ver foto ${index + 1}`} aria-pressed={photoIndex === index} onClick={() => setPhoto(index)}><Picture src={src} alt="" /></button>)}</div>}
+        {demo && demoVideo?.startsWith('blob:') && <section aria-label="Vídeo demonstrativo do imóvel" style={{ padding: '16px 24px' }}><p>Vídeo aprovado nesta demonstração</p><video key={demoVideo} controls preload="metadata" src={demoVideo} aria-label={`Vídeo demonstrativo de ${property.title}`} style={{ display: 'block', width: '100%', maxHeight: 480, background: '#111', borderRadius: 8 }} /><small>Arquivo local deste navegador. Nenhum imóvel real foi alterado.</small></section>}
       </div>
       <div className={s.detailBody}>
         <div className={s.detailInfo}>
@@ -141,7 +142,7 @@ export default function PublicSite(props: Props) {
   return <SiteView {...props} content={current.content} properties={current.properties} />;
 }
 
-function SiteView({ content, properties, companySlug, demo = false, preview = false }: Props) {
+function SiteView({ content, properties, companySlug, demo = false, preview = false, demoPropertyVideos }: Props) {
   const [purpose, setPurpose] = useState('');
   const [city, setCity] = useState('');
   const [query, setQuery] = useState('');
@@ -201,6 +202,6 @@ function SiteView({ content, properties, companySlug, demo = false, preview = fa
       {content.aboutText && <section className={s.about} id="sobre"><div><span className={s.brandMark}><HouseMark /></span><p className={s.eyebrow}>{content.brandName}</p></div><div><h2>{content.aboutTitle || 'Perto de você em cada etapa.'}</h2><p>{content.aboutText}</p></div></section>}
     </main>
     <footer className={s.footer} id="contato"><div className={s.footerTop}><div><a href="#inicio" className={s.brand}><span className={s.brandMark}><HouseMark /></span><strong>{content.brandName}</strong></a><p>{content.tagline}</p></div><div className={s.contact}><h2>Vamos encontrar seu próximo lugar?</h2>{content.contactPhone && <a href={demo || preview ? '#imoveis' : `tel:+${phone}`}>{content.contactPhone}</a>}{content.contactEmail && <a href={demo || preview ? '#imoveis' : `mailto:${content.contactEmail}`}>{content.contactEmail}</a>}{content.contactAddress && <p>{content.contactAddress}</p>}{content.instagramUrl && safeLink(content.instagramUrl) && <a href={safeLink(content.instagramUrl)} target="_blank" rel="noopener noreferrer">Instagram ↗</a>}{!hasContact && <a href="#imoveis">Escolha um imóvel para falar com a equipe ↗</a>}</div></div><div className={s.footerBottom}><span>{demo ? 'Empresa e imóveis fictícios. Fotografias ilustrativas.' : `${content.brandName} · Imóveis sujeitos à disponibilidade.`}</span><a href="https://www.imobflow.net.br" target="_blank" rel="noopener noreferrer">Site conectado à <strong>ImobFlow ↗</strong></a></div></footer>
-    {selected && <PropertyDialog key={selected.id} property={selected} content={content} companySlug={companySlug} demo={demo} preview={preview} close={() => setSelectedId(null)} />}
+    {selected && <PropertyDialog key={selected.id} property={selected} content={content} companySlug={companySlug} demo={demo} preview={preview} demoVideo={demo ? demoPropertyVideos?.[selected.id] : undefined} close={() => setSelectedId(null)} />}
   </div>;
 }
