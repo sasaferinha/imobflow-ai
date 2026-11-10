@@ -149,6 +149,20 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
   const firstPage = mode === 'live' && actor.role === 'owner' && (initialPage === 'settings' || initialPage === 'campaigns' || initialPage === 'integrations' && integrated && Boolean(renderOperationalPanel)) ? initialPage : 'dashboard';
   const [state, setState] = useState(initialState);
   const [page, setPage] = useState<Page>(firstPage);
+  const motionSurface = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const surface = motionSurface.current;
+    if (!surface?.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // Animate the existing surface; never remount forms or conversation state.
+    const animation = surface.animate([
+      { opacity: 0.65, transform: 'translateY(6px)' },
+      { opacity: 1, transform: 'translateY(0)' },
+    ], { duration: 180, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const stop = () => animation.cancel();
+    preference.addEventListener('change', stop);
+    return () => { animation.cancel(); preference.removeEventListener('change', stop); };
+  }, [page]);
   const [filters, setFilters] = useState<Filters>(INITIAL_FILTERS);
   const [query, setQuery] = useState('');
   const [globalQuery, setGlobalQuery] = useState('');
@@ -648,7 +662,7 @@ export default function EvolutionClient({ initialState, actor, mode, integrated 
       <div className={s.pageHeading}><h1 ref={pageHeadingRef} tabIndex={-1}>{title}</h1><p>{creatingLeadPage ? 'Organize o contato e o que ele procura, em um só lugar' : page === 'dashboard' ? 'Visão geral do seu negócio imobiliário' : page === 'conversations' ? 'Relacionamentos que se transformam em oportunidades' : 'Sua operação organizada, do início ao próximo passo'}</p></div>
       <div className={s.headerTools}><div className={s.headerSearch}><Icon name="search" size={18} /><input aria-label="Busca global" placeholder="Pesquisar leads, imóveis, clientes…" value={globalQuery} onChange={event => setGlobalQuery(event.target.value)} />{globalQuery.length >= 2 && <div className={s.searchResults}>{globalResults.length ? globalResults.map(record => <button key={record.id} onClick={() => { setSelectedId(record.id); setGlobalQuery(''); }}><span>{label(record)}<small>{MODULES[record.kind].title}</small></span><Icon name="arrow" size={15} /></button>) : <p>Nenhum registro encontrado.</p>}</div>}</div><button className={s.iconButton} aria-label="Atualizar" title="Atualizar dados" onClick={() => void refresh()} disabled={busy || refreshing} aria-busy={refreshing}><Icon name="refresh" size={19} /></button><button className={s.iconButton} aria-label="Mural de avisos" title="Mural de avisos" onClick={() => navigate('notices')}><Icon name="bell" size={22} /></button><AccountMenu name={actor.name} role={actor.role} preview={mode === 'preview'} onOpen={() => setMenu(null)} /></div>
     </header>
-    <main className={s.main}>
+    <main ref={motionSurface} className={s.main}>
       {mode === 'preview' && <div className={s.previewStrip}><Icon name="shield" size={14} /><strong>Prévia privada</strong><span>Dados fictícios · integrações desligadas · painel clássico preservado.</span></div>}
       {hasLiveOperation && page === 'dashboard' && <details className={s.integrationNote}><summary><Icon name="shield" size={13} />Sua operação real, no novo painel <Icon name="chevron" size={12} /></summary><div><p>Clientes, imóveis e visitas conectados à carteira. Conversas, oportunidades e resultados mantêm as mesmas permissões.</p><button className={s.textButton} onClick={() => navigate('conversations')}>Abrir conversas <Icon name="arrow" size={14} /></button></div></details>}
       {creatingLeadPage && editor && <RecordEditor editor={editor} state={state} actor={actor} busy={busy} error={error} fullPage onDirtyChange={dirty => { leadDraftRef.current.dirty = dirty; }} onClose={() => closeLeadPage()} onSave={saveEditor} />}

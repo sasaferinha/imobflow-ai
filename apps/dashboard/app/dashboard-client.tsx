@@ -17,12 +17,13 @@ import type { ConversationInboxItem } from '@/lib/conversation-inbox';
 import PasswordModal from './password-modal';
 import { announceDashboardChange, subscribeDashboardSync } from '@/lib/dashboard-sync';
 import ReleaseNotice from './release-notice';
+import PanelLoading from './panel-loading';
 import OpportunityCenter, { actOnOpportunity } from './opportunity-center';
 import type { Opportunity } from '@/lib/opportunities';
 import { businessCalendarDate, isCalendarMonth } from '@/lib/calendar-date';
 
 const PANEL_SETTINGS_KEY = 'imobflow_panel_settings';
-const loadingSection = () => <p role="status">Carregando…</p>;
+const loadingSection = () => <PanelLoading />;
 const ConversationCenter = dynamic(() => import('./conversation-center'), { loading: loadingSection });
 const WhatsAppIntegration = dynamic(() => import('./whatsapp-integration'), { loading: loadingSection });
 const TeamModal = dynamic(() => import('./team-modal'), { loading: loadingSection });

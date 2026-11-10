@@ -1,0 +1,23 @@
+.panel-loading-page { padding: clamp(24px, 5vw, 72px); min-height: 75vh; background: #f4f8ff; }
+.panel-loading { width: 100%; padding: 20px; box-sizing: border-box; color: #526b8c; }
+.panel-loading-label { display: block; margin-bottom: 20px; font-size: 14px; }
+.panel-loading-heading, .panel-loading-stats > div, .panel-loading-body > div { background: #e6edf7; border-radius: 10px; animation: panel-skeleton 1.6s ease-in-out infinite alternate; }
+.panel-loading-heading { width: 38%; height: 26px; margin-bottom: 24px; }
+.panel-loading-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.panel-loading-stats > div { height: 88px; }
+.panel-loading-body { display: grid; gap: 14px; padding: 24px; background: #fff; border: 1px solid #e2ebf7; border-radius: 14px; }
+.panel-loading-body > div { height: 42px; }
+.panel-loading-body > div:last-child { width: 65%; }
+@keyframes panel-skeleton { from { opacity: .5; } to { opacity: 1; } }
+@keyframes panel-dialog-enter { from { opacity: .3; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .modal-card { animation: panel-dialog-enter 160ms ease-out; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-loading * { animation: none !important; }
+}
+@media (max-width: 600px) {
+  .panel-loading-stats { gap: 8px; }
+  .panel-loading-stats > div { height: 64px; }
+  .panel-loading { padding: 12px; }
+}
