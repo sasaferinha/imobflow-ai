@@ -8,7 +8,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 const photo = 'data:image/jpeg;base64,' + Buffer.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70]).toString('base64');
 
 function environment(options = {}) {
-  const state = { requests: [], urls: new Set(), images: [], canvases: [], frames: [], exports: [], tracksStopped: 0, recordersStopped: 0, timers: new Set(), draws: [], pixels: [], progress: [], time: 0 };
+  const state = { requests: [], urls: new Set(), images: [], canvases: [], frames: [], exports: [], tracksStopped: 0, recordersStopped: 0, timers: new Set(), draws: [], pixels: [], samples: [], progress: [], time: 0 };
   const timers = new Map();
   let nextTimer = 1;
   function schedule(fn, delay = 0) {
@@ -23,7 +23,7 @@ function environment(options = {}) {
   }
   class BrowserImage {
     constructor() { this.naturalWidth = options.width || 24; this.naturalHeight = options.height || 12; state.images.push(this); }
-    set src(value) { this.value = value; if (!value) { cancel(this.timer); return; } this.timer = schedule(() => { if (options.imageError) this.onerror?.(); else this.onload?.(); }); }
+    set src(value) { this.value = value; if (!value) { cancel(this.timer); return; } if (!options.freezeImage) this.timer = schedule(() => { if (options.imageError) this.onerror?.(); else this.onload?.(); }); }
     get src() { return this.value; }
   }
   class Canvas {
@@ -32,8 +32,8 @@ function environment(options = {}) {
       if (options.noContext) return null;
       return { canvas: this, fillRect() {}, save() {}, restore() {},
         drawImage: (...args) => state.draws.push(args),
-        getImageData: () => { const pixels = new Uint8ClampedArray(this.width * this.height * 4); for (let i = 0; i < pixels.length; i += 4) pixels.set([90, 120, 160, 255], i); return { data: pixels }; },
-        putImageData: pixels => state.pixels.push(pixels.data.slice(0, 4)),
+        getImageData: () => { const pixels = new Uint8ClampedArray(this.width * this.height * 4); const pattern = options.pattern || [[90, 120, 160, 255]]; for (let i = 0; i < pixels.length; i += 4) pixels.set(pattern[(i / 4) % pattern.length], i); return { data: pixels }; },
+        putImageData: pixels => { state.pixels.push(pixels.data.slice(0, 4)); state.samples.push(pixels.data.slice(0, 16)); },
         createLinearGradient: () => ({ addColorStop() {} }),
         measureText: text => ({ width: text.length * 14 }),
         fillText: (...args) => state.frames.push(args),
@@ -47,7 +47,7 @@ function environment(options = {}) {
     captureStream(fps) { state.capture = { fps, width: this.width, height: this.height }; return { getTracks: () => [{ stop: () => state.tracksStopped++ }] }; }
   }
   class Recorder {
-    static isTypeSupported(type) { return !options.unsupported && type.startsWith(options.mp4 ? 'video/mp4' : 'video/webm'); }
+    static isTypeSupported(type) { return !options.unsupported && (options.allFormats || type.startsWith(options.mp4 ? 'video/mp4' : 'video/webm')); }
     constructor(stream, settings) { if (options.startFailure) throw new Error('unsupported encoder'); this.state = 'inactive'; this.mimeType = settings.mimeType; }
     start() { this.state = 'recording'; if (options.recordError) schedule(() => this.onerror?.(), 1); }
     stop() {
@@ -58,11 +58,12 @@ function environment(options = {}) {
   }
   const module = { exports: {} };
   const context = {
-    module, exports: module.exports, window: options.noBrowser ? undefined : {}, document: options.noBrowser ? undefined : { createElement: tag => { assert.equal(tag, 'canvas'); return new Canvas(); } },
+    module, exports: module.exports, window: options.noBrowser ? undefined : { location: { origin: 'https://www.imobflow.net.br' } }, document: options.noBrowser ? undefined : { createElement: tag => { assert.equal(tag, 'canvas'); return new Canvas(); } },
     HTMLCanvasElement: Canvas, Image: BrowserImage, MediaRecorder: Recorder, URL: BrowserURL, Blob, Uint8Array, Uint8ClampedArray, AbortController, DOMException, TypeError,
     setTimeout: schedule, clearTimeout: cancel, performance: { now: () => state.time },
     requestAnimationFrame: callback => schedule(() => { if (!options.freezeFrames) { state.time += 250; callback(state.time); } }, 1), cancelAnimationFrame: cancel,
     atob: value => Buffer.from(value, 'base64').toString('binary'),
+    btoa: value => Buffer.from(value, 'binary').toString('base64'),
     fetch: async (url, settings) => {
       state.requests.push({ url, settings });
       if (options.corsError) throw new TypeError('CORS blocked');
@@ -75,10 +76,11 @@ function environment(options = {}) {
 }
 
 async function run() {
+  const options = { images: [photo, photo], title: 'Apartamento com varanda e vista', brand: 'Imobiliária de exemplo', format: 'landscape' };
   let env = environment();
   try {
     assert(env.canRecordPropertyVideo());
-    for (const bad of ['http://images.unsplash.com/photo', 'https://images.unsplash.com.evil.test/photo', 'https://images.unsplash.com@evil.test/photo', 'https://user:password@images.unsplash.com/photo', 'https://images.unsplash.com:444/photo', 'file:///image.jpg', 'blob:foreign', 'data:image/svg+xml;base64,PHN2Zz4=', 'https://127.0.0.1/photo']) {
+    for (const bad of ['http://images.unsplash.com/photo', 'https://images.unsplash.com.evil.test/photo', 'https://images.unsplash.com@evil.test/photo', 'https://user:password@images.unsplash.com/photo', 'https://images.unsplash.com:444/photo', 'file:///image.jpg', 'blob:foreign', 'data:image/svg+xml;base64,PHN2Zz4=', 'https://127.0.0.1/photo', '/api/private/photo.jpg', '/demo-media/../private.jpg', '/demo-media/photo.jpg?private=1', 'https://other.example/demo-media/photo.jpg']) {
       await assert.rejects(env.enhancePropertyPhoto(bad, { brightness: 100, contrast: 100, saturation: 100 }));
     }
     await assert.rejects(env.enhancePropertyPhoto(photo, { brightness: NaN, contrast: 100, saturation: 100 }));
@@ -93,6 +95,56 @@ async function run() {
     await env.enhancePropertyPhoto('https://images.unsplash.com/photo-example', { brightness: 108, contrast: 104, saturation: 103 });
     assert.equal(env.state.requests.length, 1);
     assert.deepEqual({ ...env.state.requests[0].settings, signal: undefined }, { mode: 'cors', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', signal: undefined }, 'Remote loads are CORS checked and never forward credentials or follow redirects');
+    await env.enhancePropertyPhoto('/demo-media/sala-clara.jpg', { brightness: 100, contrast: 100, saturation: 100 });
+    assert.equal(env.state.requests.at(-1).url, '/demo-media/sala-clara.jpg', 'Only the fixed same-origin demo asset directory is allowed');
+  } finally { env.state.dispose(); }
+
+  for (const tone of [
+    { name: 'dark', pixel: [35, 40, 45, 255] },
+    { name: 'bright', pixel: [215, 220, 225, 255] },
+    { name: 'balanced', pixel: [100, 120, 160, 255] },
+    { name: 'black', pixel: [0, 0, 0, 255] },
+    { name: 'white', pixel: [255, 255, 255, 255] },
+  ]) {
+    env = environment({ pattern: [tone.pixel] });
+    try {
+      await env.autoEnhancePropertyPhoto(photo);
+      const result = [...env.state.pixels[0]];
+      if (tone.name === 'dark') assert(result[0] > tone.pixel[0] && result[0] <= tone.pixel[0] + 30, 'Automatic improvement lifts dark pixels conservatively');
+      else if (tone.name === 'bright') assert(result[0] < tone.pixel[0] && result[0] >= tone.pixel[0] - 18, 'Bright photographs receive only a gentle correction');
+      else assert.deepEqual(result, tone.pixel, 'Balanced photos and pure black/white are not altered unnecessarily');
+      assert.equal(result[3], 255); assert.equal(env.state.requests.length, 0); assert.equal(env.state.urls.size, 0);
+      assert(env.state.images.every(image => image.src === ''));
+    } finally { env.state.dispose(); }
+  }
+  env = environment({ pattern: [[35, 40, 45, 255], [35, 40, 45, 255], [35, 40, 45, 255], [245, 248, 250, 255]] });
+  try {
+    await env.autoEnhancePropertyPhoto(photo);
+    assert(env.state.samples[0][0] > 35, 'A dark room is lightened');
+    assert.deepEqual([...env.state.samples[0].slice(12)], [245, 248, 250, 255], 'Bright windows are preserved instead of blown out');
+  } finally { env.state.dispose(); }
+  env = environment({ pattern: [[20, 40, 255, 255]] });
+  try {
+    await env.autoEnhancePropertyPhoto(photo);
+    assert.deepEqual([...env.state.pixels[0]], [20, 40, 255, 255], 'Automatic gain cannot clip an already saturated color channel');
+  } finally { env.state.dispose(); }
+  env = environment({ freezeImage: true, fastTimeout: true });
+  try {
+    await assert.rejects(env.autoEnhancePropertyPhoto(photo), /demorou/);
+    assert.equal(env.state.urls.size, 0); assert.equal(env.state.timers.size, 0, 'Timed-out automatic improvement releases its resources');
+  } finally { env.state.dispose(); }
+
+  env = environment();
+  try {
+    const image = new Blob([Buffer.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70])], { type: 'image/jpeg' });
+    const result = await env.preparePropertyPhotoFile(image);
+    assert(result.startsWith('data:image/jpeg;base64,'));
+    assert.equal(env.state.requests.length, 0, 'A local file is processed without uploading or requesting it');
+    assert.deepEqual([...env.state.pixels[0]], [90, 120, 160, 255], 'Import applies no photographic alteration');
+    assert.equal(env.state.urls.size, 0);
+    for (const file of [new Blob(['<svg/>'], { type: 'image/svg+xml' }), new Blob(['<svg/>'], { type: 'image/png' }), new Blob([''], { type: 'image/jpeg' }), new Blob([new Uint8Array(12 * 1024 * 1024 + 1)], { type: 'image/jpeg' })]) await assert.rejects(env.preparePropertyPhotoFile(file));
+    const controller = new AbortController(); controller.abort();
+    await assert.rejects(env.preparePropertyPhotoFile(image, controller.signal), { name: 'AbortError' });
   } finally { env.state.dispose(); }
 
   env = environment({ width: 3200, height: 1600, oversizedPhoto: true });
@@ -109,12 +161,40 @@ async function run() {
     finally { env.state.dispose(); }
   }
 
+  for (const motion of ['gentle', 'pan', 'none']) {
+    env = environment({ allFormats: true, width: 160, height: 90 });
+    try {
+      const blob = await env.createPropertySlideshow({ ...options, images: [photo], secondsPerPhoto: 2, motion, format: 'portrait' });
+      assert(blob.type.startsWith('video/mp4'), 'MP4 is preferred when the browser supports it for easier sharing');
+      assert.equal(env.state.time, 2000, 'The selected per-photo duration controls the exported video');
+      const mainPhotos = env.state.draws.filter((_, index) => index % 2 === 1);
+      assert(mainPhotos.length > 2);
+      for (const [, x, y, width, height] of mainPhotos) {
+        assert(x >= -1e-8 && y >= -1e-8 && x + width <= 720 + 1e-8 && y + height <= 1280 + 1e-8, 'The whole original photo remains inside the video frame');
+        assert(Math.abs(width / height - 160 / 90) < 1e-8, 'Photo geometry is preserved in vertical output');
+      }
+      const first = mainPhotos[0].slice(1), last = mainPhotos.at(-1).slice(1);
+      if (motion === 'none') assert.deepEqual(first, last, 'No-motion mode stays still');
+      else assert.notDeepEqual(first, last, 'Selected camera movement is present in the exported frames');
+    } finally { env.state.dispose(); }
+  }
+
+  env = environment();
+  try {
+    const sources = ['https://images.unsplash.com/photo-second', 'https://images.unsplash.com/photo-first'];
+    await env.createPropertySlideshow({ ...options, images: sources, secondsPerPhoto: 6, onProgress: value => { if (value === 0) sources.splice(0, sources.length, 'https://other.example/changed.jpg'); } });
+    assert.deepEqual(env.state.requests.map(request => request.url), ['https://images.unsplash.com/photo-second', 'https://images.unsplash.com/photo-first'], 'The selected order is captured before asynchronous rendering and cannot be changed mid-export');
+    assert.equal(env.state.time, 12000);
+  } finally { env.state.dispose(); }
+
   const cancelled = new AbortController(); cancelled.abort();
   env = environment();
   try { await assert.rejects(env.enhancePropertyPhoto(photo, { brightness: 100, contrast: 100, saturation: 100 }, cancelled.signal), { name: 'AbortError' }); assert.equal(env.state.images.length, 0); }
   finally { env.state.dispose(); }
+  env = environment();
+  try { await assert.rejects(env.autoEnhancePropertyPhoto(photo, cancelled.signal), { name: 'AbortError' }); assert.equal(env.state.images.length, 0); }
+  finally { env.state.dispose(); }
 
-  const options = { images: [photo, photo], title: 'Apartamento com varanda e vista', brand: 'Imobiliária de exemplo', format: 'landscape' };
   for (const format of ['landscape', 'portrait']) {
     env = environment({ mp4: format === 'portrait' });
     try {
@@ -151,12 +231,12 @@ async function run() {
     const controller = new AbortController();
     await assert.rejects(env.createPropertySlideshow({ ...options, signal: controller.signal, onProgress: value => { if (value > 20) controller.abort(); } }), { name: 'AbortError' });
     assert.equal(env.state.tracksStopped, 1); assert.equal(env.state.urls.size, 0);
-    for (const input of [{ ...options, images: [] }, { ...options, images: Array(6).fill(photo) }, { ...options, format: 'square' }, { ...options, brand: '' }, { ...options, images: ['https://other.example/photo.jpg'] }]) await assert.rejects(env.createPropertySlideshow(input));
+    for (const input of [{ ...options, images: [] }, { ...options, images: Array(6).fill(photo) }, { ...options, format: 'square' }, { ...options, brand: '' }, { ...options, images: ['https://other.example/photo.jpg'] }, { ...options, secondsPerPhoto: 0 }, { ...options, secondsPerPhoto: 7 }, { ...options, secondsPerPhoto: NaN }, { ...options, motion: 'invent-new-room' }]) await assert.rejects(env.createPropertySlideshow(input));
     assert.equal(env.state.requests.length, 0);
   } finally { env.state.dispose(); }
   env = environment({ noBrowser: true });
   try { assert.equal(env.canRecordPropertyVideo(), false); await assert.rejects(env.createPropertySlideshow(options), /navegador/); }
   finally { env.state.dispose(); }
-  console.log('PASS property media renderer: browser-only raster sources, CORS/redirect isolation, aspect/size bounds, real recorder contract, format fallback, immutable inputs, cancellation, timeouts and resource cleanup.');
+  console.log('PASS property media renderer: automatic bounded photo correction, highlight/color protection, neutral import and balanced photos, exact source isolation, duration/order/motion, uncropped geometry, MP4 fallback, immutable inputs, cancellation, timeouts and cleanup.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

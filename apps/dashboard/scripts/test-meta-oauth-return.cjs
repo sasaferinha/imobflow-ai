@@ -53,7 +53,7 @@ function walk(node, found = []) {
   for (const flow of ['social', 'ads']) {
     const cookieName = flow === 'social' ? 'imobflow_meta_social_state' : 'imobflow_meta_ads_state';
     const callbackPath = `/api/integrations/meta/${flow}/callback`;
-    const finish = async (...args) => { finishCalls.push(args); if (fail) throw Error('synthetic-provider-secret-must-not-leak'); };
+    const finish = async (...args) => { finishCalls.push(args); if (fail) throw Error('synthetic-provider-secret-must-not-leak'); return flow === 'social' ? 'instagram' : undefined; };
     const dependency = flow === 'social'
       ? { '@/lib/social-connections': { SOCIAL_COOKIE: cookieName, finishSocialOAuth: finish } }
       : { '@/lib/meta-ads': { ADS_COOKIE: cookieName, finishAdsOAuth: finish } };
@@ -72,7 +72,8 @@ function walk(node, found = []) {
       assert.equal(target.pathname, '/integracoes/retorno');
       assert.equal(target.searchParams.get('fluxo'), flow);
       assert.equal(target.searchParams.get('resultado'), rejected ? 'failed' : 'connected');
-      assert.deepEqual([...target.searchParams.keys()].sort(), ['fluxo', 'resultado']);
+      assert.deepEqual([...target.searchParams.keys()].sort(), flow === 'social' && !rejected ? ['canal', 'fluxo', 'resultado'] : ['fluxo', 'resultado']);
+      assert.equal(target.searchParams.get('canal'), flow === 'social' && !rejected ? 'instagram' : null);
       assert.equal(target.hash, '');
       assert.equal(JSON.stringify(finishCalls.at(-1)), JSON.stringify([state, state, code]));
       assert.match(response.headers.get('cache-control'), /no-store/);
@@ -120,6 +121,11 @@ function walk(node, found = []) {
   }
   for (const [query, destination, label] of [
     [{ fluxo: 'social', resultado: 'connected' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
+    [{ fluxo: 'social', resultado: 'connected', canal: 'instagram' }, '/painel?area=settings&social=instagram#settings', 'Concluir conexão do Instagram'],
+    [{ fluxo: 'social', resultado: 'connected', canal: 'facebook' }, '/painel?area=settings&social=facebook#settings', 'Concluir conexão do Facebook'],
+    [{ fluxo: 'social', resultado: 'failed', canal: 'instagram' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
+    [{ fluxo: 'social', resultado: 'connected', canal: ['instagram','facebook'] }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
+    [{ fluxo: 'social', resultado: 'connected', canal: 'https://attacker.test' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'ads', resultado: 'connected' }, '/painel?area=campaigns#campaigns', 'Voltar às campanhas'],
     [{ fluxo: 'social', resultado: 'failed' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'ads', resultado: 'failed' }, '/painel?area=campaigns#campaigns', 'Voltar às campanhas'],

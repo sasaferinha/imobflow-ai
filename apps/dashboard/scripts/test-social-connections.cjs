@@ -4,6 +4,7 @@ const ownerToken='a'.repeat(64),brokerToken='b'.repeat(64),digest=value=>crypto.
 const env={NODE_ENV:'production',META_APP_ID:'123456',META_APP_SECRET:'synthetic-app-secret',META_SOCIAL_WEBHOOK_VERIFY_TOKEN:'synthetic-webhook'};
 const oauth=new Map(),authorizations=new Map(),binds=[],network=[];
 let activeOwner=true,allowRate=true,allowInstagramFields=false,hasInstagram=false,foreignPage=false;
+let environmentConnections=[],savedAccounts=[];
 async function db(resource,options={}){
  const b=options.body;
  if(resource==='rpc/account_session')return b.p_hash===digest(ownerToken)||b.p_hash===digest(brokerToken)?[{company_id:company,broker_id:broker,name:'Synthetic owner',company:'Synthetic company',role:b.p_hash===digest(ownerToken)?'owner':'broker'}]:[];
@@ -21,7 +22,8 @@ async function db(resource,options={}){
  }
  if(resource.startsWith('social_accounts?')){
   if(resource.includes('page_id=eq.123'))return foreignPage?[{company_id:foreign}]:[];
-  assert.ok(resource.includes(`company_id=eq.${company}`));return[];
+  if(resource.includes('&or='))return savedAccounts.filter(a=>resource.includes(`(${a.account_id})`)||resource.includes(`(${a.page_id})`));
+  assert.ok(resource.includes(`company_id=eq.${company}`)||resource.includes(`company_id=in.(${company})`));return savedAccounts;
  }
  if(resource==='rpc/bind_social_account'){assert.equal(b.p_company_id,company);assert.equal(b.p_actor_id,broker);binds.push(b);return;}
  throw Error('Unexpected DB resource: '+resource);
@@ -50,7 +52,7 @@ const cache=new Map();function load(file){
  const requireLocal=s=>{
   if(s==='next/server')return{NextRequest:Request,NextResponse:TestResponse};
   if(s==='@/lib/supabase'||s==='./supabase')return{supabaseRequest:db,supabaseServiceRequest:db};
-  if(s==='./meta-social')return{socialConnections:()=>[]};
+  if(s==='./meta-social')return{socialConnections:()=>environmentConnections};
   if(s.startsWith('@/'))return load(s.slice(2)+'.ts');
   if(s.startsWith('.'))return load(path.posix.normalize(path.posix.join(path.posix.dirname(file),s))+'.ts');
   return require(s);
@@ -77,7 +79,7 @@ function request(method,{body,query='',token=ownerToken,state,origin='https://ap
  assert.equal(url.origin,'https://www.facebook.com');assert.match(state,/^[a-f0-9]{64}$/);assert.ok(scopes.includes('pages_messaging'));assert.ok(scopes.includes('leads_retrieval'));assert.ok(!scopes.some(s=>s.startsWith('instagram')),'Facebook-only consent never requires an Instagram asset');
  assert.equal(url.searchParams.get('redirect_uri'),'https://app.example.invalid/api/integrations/meta/social/callback');
  assert.equal(connected.testCookies[0].value,state);assert.equal(connected.testCookies[0].config.httpOnly,true);assert.equal(connected.testCookies[0].config.secure,true);assert.equal(connected.testCookies[0].config.sameSite,'lax');
- const stored=oauth.get(digest(state));assert.equal(stored.company_id,company);assert.equal(stored.broker_id,broker);assert.ok(!JSON.stringify(stored).includes(state),'only nonce hash is stored');
+ const stored=oauth.get(digest(state));assert.equal(stored.company_id,company);assert.equal(stored.broker_id,broker);assert.equal(stored.channel,'facebook');assert.ok(!JSON.stringify(stored).includes(state),'only nonce hash is stored');
  for(const channel of ['instagram',undefined]){
   const response=await api.POST(request('POST',{body:{action:'connect',...(channel?{channel}:{})}}));assert.equal(response.status,200);const scope=new URL((await response.json()).url).searchParams.get('scope');assert.match(scope,/instagram_basic/);assert.match(scope,/instagram_manage_messages/);
  }
@@ -86,6 +88,7 @@ function request(method,{body,query='',token=ownerToken,state,origin='https://ap
  assert.equal(network.length,beforeCallback,'mismatched cookie cannot exchange an authorization code');assert.ok(oauth.has(digest(state)));
  const returned=await callback.GET(request('GET',{token:null,state,query:new URLSearchParams({state,code:'synthetic-code-123',companyId:foreign,channel:'instagram'}).toString()}));
  const returnUrl=new URL(returned.headers.get('Location'));assert.equal(returnUrl.pathname,'/integracoes/retorno');assert.equal(returnUrl.searchParams.get('fluxo'),'social');assert.equal(returnUrl.searchParams.get('resultado'),'connected');assert.equal(returned.testCookies[0].config.maxAge,0);assert.ok(authorizations.has(company));assert.ok(!authorizations.has(foreign));
+ assert.equal(returnUrl.searchParams.get('canal'),'facebook','callback resumes the stored channel, never the hostile Instagram query');
  assert.ok(!authorizations.get(company).token_ciphertext.includes('synthetic-user-token'));
  await assert.rejects(()=>lib.finishSocialOAuth(state,state,'synthetic-code-123'));
  assert.equal(network.length,beforeCallback+2,'consumed state cannot replay a token exchange');
@@ -105,5 +108,18 @@ function request(method,{body,query='',token=ownerToken,state,origin='https://ap
  assert.equal((await api.POST(request('POST',{body:{action:'select-page',pageId:'123',channels:['instagram']}}))).status,200);assert.equal(binds.at(-1).p_account_id,'456');assert.equal(binds.at(-1).p_channel,'instagram');
  const pending=await lib.beginSocialOAuth(company,broker,'https://app.example.invalid/api/integrations/meta/social/callback','facebook');activeOwner=false;const beforeRevocation=network.length;
  await assert.rejects(()=>lib.finishSocialOAuth(pending.state,pending.state,'synthetic-code-123'));assert.equal(network.length,beforeRevocation,'revoked owner cannot exchange the code');
+ activeOwner=true;
+ for(const channel of ['instagram',undefined]){
+  const next=await lib.beginSocialOAuth(company,broker,'https://app.example.invalid/api/integrations/meta/social/callback',channel);
+  assert.equal(oauth.get(digest(next.state)).channel,channel||null);
+  const result=await lib.finishSocialOAuth(next.state,next.state,'synthetic-code-123');
+  assert.equal(result,channel||null,'legacy in-flight OAuth has no forced channel');
+ }
+ environmentConnections=[{companyId:company,pageId:'789',enabled:true,apiVersion:'v26.0'}];
+ savedAccounts=[{id:'archived',company_id:company,channel:'facebook',account_id:'999',page_id:'999',enabled:false,token_ciphertext:null}];
+ assert.equal((await lib.activeSocialConnections({accountIds:['789']})).length,0,'a filtered old env webhook cannot revive a channel managed through a different persisted identity');
+ assert.equal((await lib.activeSocialConnections({companyId:company})).length,0,'disconnected channel history overrides env fallback');
+ savedAccounts=[];
+ assert.equal((await lib.activeSocialConnections({accountIds:['789']})).length,1,'bootstrap remains available only before this channel has persisted history');
  console.log('PASS social connections: Facebook-only consent and Page listing/selection without Instagram, compatible IG/legacy flow, session/origin/rate guards, bound one-use state, active-owner check, tenant conflict and no credential exposure; synthetic provider only.');
 })().catch(error=>{console.error(error);process.exit(1);});

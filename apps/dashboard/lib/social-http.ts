@@ -23,6 +23,7 @@ export function socialFailure(error: unknown) {
     ['social_handoff','O atendimento mudou ou chegou uma nova mensagem. Atualize a conversa.',409],
     ['social_sending','Um envio está em andamento. Aguarde a confirmação antes de mudar o atendimento.',409],
     ['social_account_bound','Esta conta Meta já está conectada a outra imobiliária.',409],
+    ['social_account_disconnect_required','Desconecte a conta atual deste canal antes de conectar outra. O histórico será preservado.',409],
     ['social_account_change_requires_support','Para trocar a conta conectada, solicite a migração ao suporte. O histórico será preservado.',409],
     ['social_connection_unavailable','A conexão deste canal está desativada. Peça ao administrador para reconectar.',409],
     ['social_idempotency_conflict','O identificador deste envio já foi usado para outro conteúdo.',409],
