@@ -6,8 +6,12 @@ let mode='api',providerStatus=201,transportCalls=0,targetPresent=true,claimed=0,
 const midday=Date.parse('2026-10-19T15:00:00Z');
 let clock=midday,policyVersion=3,hoursFailure=false,hoursByCompany=new Map(),candidatePages=null,targetCompany=id(1),beforeTarget=null;
 class Clock extends Date { constructor(...args){super(...(args.length?args:[clock]));} static now(){return clock;} }
-const pair=crypto.createECDH('prime256v1');pair.generateKeys();
-const publicKey=pair.getPublicKey().toString('base64url'),privateKey=pair.getPrivateKey().toString('base64url');
+// A synthetic fixed-width scalar keeps this fixture deterministic. ECDH's
+// getPrivateKey() omits leading zero bytes: random scalars occasionally produced
+// a 31-byte VAPID key and failed configuration before the actual assertions.
+const privateBytes=Buffer.alloc(32,7);privateBytes[0]=0;
+const pair=crypto.createECDH('prime256v1');pair.setPrivateKey(privateBytes);
+const publicKey=pair.getPublicKey().toString('base64url'),privateKey=privateBytes.toString('base64url');
 const subscription={endpoint:'https://fcm.googleapis.com/fcm/send/synthetic',keys:{p256dh:publicKey,auth:Buffer.alloc(16,7).toString('base64url')}};
 const candidate={company_id:id(1),subscription_id:id(9),lead_id:id(101),waiting_message_id:id(701),waiting_since:new Date(clock-6*60000).toISOString(),duty_priority_until:null,duty_preferred:false};
 async function db(url,options={}){
@@ -66,6 +70,9 @@ const request=(method='GET',body,origin='https://example.test',authenticated=tru
  assert.throws(()=>policy.validatePushSubscription({...subscription,keys:{auth:'a',p256dh:publicKey}}));
  assert.throws(()=>policy.validatePushSubscription({...subscription,keys:{...subscription.keys,p256dh:Buffer.alloc(65).toString('base64url')}}));
  Object.assign(testEnv,{WEB_PUSH_ENABLED:'true',VAPID_PUBLIC_KEY:publicKey,VAPID_PRIVATE_KEY:privateKey,VAPID_SUBJECT:'mailto:test@example.test',CRON_SECRET:'synthetic-cron'});
+ assert.equal(pair.getPrivateKey().length,31,'fixture exercises ECDH leading-zero truncation');
+ assert.equal(Buffer.from(privateKey,'base64url').length,32,'VAPID retains the canonical fixed-width scalar');
+ assert.equal(policy.webPushConfig({...testEnv,VAPID_PRIVATE_KEY:pair.getPrivateKey().toString('base64url')}),null,'production validation still rejects a truncated VAPID private key');
  assert.equal(policy.webPushConfig().schedulerConfigured,false);
  testEnv.VAPID_SUBJECT='https://www.imobflow.net.br';assert.equal(policy.webPushConfig().subject,testEnv.VAPID_SUBJECT,'public HTTPS service contact is valid VAPID');
  for(const invalid of ['http://www.imobflow.net.br','https://user:pass@www.imobflow.net.br','https://www.imobflow.net.br/#fragment','https://localhost']){testEnv.VAPID_SUBJECT=invalid;assert.equal(policy.webPushConfig(),null);}
