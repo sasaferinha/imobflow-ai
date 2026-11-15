@@ -5,6 +5,10 @@ export type PropertySlideshowOptions = {
   title: string;
   brand: string;
   format: 'landscape' | 'portrait';
+  /** 2–6 seconds per photo. The input list determines the photo order. */
+  secondsPerPhoto?: number;
+  /** Optical movement of the original photo; no generated scene or invented details. */
+  motion?: 'gentle' | 'pan' | 'none';
   signal?: AbortSignal;
   /** Progress from 0 to 100, including photo loading. */
   onProgress?: (value: number) => void;
@@ -14,8 +18,7 @@ const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_PHOTO_DATA_URL = 2_000_000;
 const MAX_VIDEO_BYTES = 30_000_000;
 const PHOTO_EDGE = 1600;
-const SLIDE_MS = 3000;
-const VIDEO_TYPES = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm', 'video/mp4'];
+const VIDEO_TYPES = ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'];
 const DATA_IMAGE = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
 
 function abortError() { return new DOMException('Geração cancelada.', 'AbortError'); }
@@ -32,10 +35,19 @@ function validateSource(source: string) {
     return;
   }
   let url: URL;
-  try { url = new URL(source); } catch { throw new Error('O endereço da foto é inválido.'); }
-  if (source.length > 4096 || url.protocol !== 'https:' || url.hostname !== 'images.unsplash.com' || url.port || url.username || url.password || url.hash) {
+  try { url = new URL(source, typeof window === 'undefined' ? undefined : window.location?.origin); } catch { throw new Error('O endereço da foto é inválido.'); }
+  const localDemo = typeof window !== 'undefined' && url.origin === window.location?.origin && /^\/demo-media\/[a-z0-9-]+\.(?:jpg|jpeg|png|webp)$/.test(url.pathname) && !url.search;
+  const remoteDemo = url.protocol === 'https:' && url.hostname === 'images.unsplash.com' && !url.port;
+  if (source.length > 4096 || !(localDemo || remoteDemo) || url.username || url.password || url.hash) {
     throw new Error('Neste modelo, use as fotos de exemplo ou uma imagem JPEG, PNG ou WebP carregada na página.');
   }
+}
+
+function validRasterHeader(bytes: Uint8Array, type: string) {
+  if (type === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (type === 'image/png') return [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte);
+  if (type === 'image/webp') return [82, 73, 70, 70].every((byte, index) => bytes[index] === byte) && [87, 69, 66, 80].every((byte, index) => bytes[index + 8] === byte);
+  return false;
 }
 
 function rasterBlob(source: string) {
@@ -45,11 +57,20 @@ function rasterBlob(source: string) {
   try { binary = atob(match[2]); } catch { throw new Error('A foto está em formato inválido.'); }
   if (!binary.length || binary.length > MAX_IMAGE_BYTES) throw new Error('Escolha uma foto de até 12 MB.');
   const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
-  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  const png = [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte);
-  const webp = binary.slice(0, 4) === 'RIFF' && binary.slice(8, 12) === 'WEBP';
-  if (!(match[1] === 'jpeg' && jpeg || match[1] === 'png' && png || match[1] === 'webp' && webp)) throw new Error('O conteúdo da foto não corresponde ao formato informado.');
+  if (!validRasterHeader(bytes, `image/${match[1]}`)) throw new Error('O conteúdo da foto não corresponde ao formato informado.');
   return new Blob([bytes], { type: `image/${match[1]}` });
+}
+
+/** Imports a local raster photo without uploading it; export strips metadata and bounds dimensions. */
+export async function preparePropertyPhotoFile(file: File, signal?: AbortSignal): Promise<string> {
+  requireBrowser(); checkAbort(signal);
+  if (!(file instanceof Blob) || !/^image\/(jpeg|png|webp)$/.test(file.type) || !file.size || file.size > MAX_IMAGE_BYTES) throw new Error('Escolha uma foto JPEG, PNG ou WebP de até 12 MB.');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  checkAbort(signal);
+  if (!validRasterHeader(bytes, file.type)) throw new Error('O conteúdo da foto não corresponde ao formato informado.');
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  return enhancePropertyPhoto(`data:${file.type};base64,${btoa(binary)}`, { brightness: 100, contrast: 100, saturation: 100 }, signal);
 }
 
 async function remoteBlob(source: string, signal: AbortSignal) {
@@ -133,6 +154,64 @@ function pause(signal?: AbortSignal) {
 export async function enhancePropertyPhoto(source: string, adjustments: PhotoAdjustments, signal?: AbortSignal): Promise<string> {
   requireBrowser(); checkAbort(signal); validateSource(source);
   if (!adjustments || ![adjustments.brightness, adjustments.contrast, adjustments.saturation].every(Number.isFinite) || adjustments.brightness < 50 || adjustments.brightness > 150 || adjustments.contrast < 50 || adjustments.contrast > 150 || adjustments.saturation < 0 || adjustments.saturation > 200) throw new Error('Escolha ajustes de brilho e contraste entre 50 e 150, e saturação entre 0 e 200.');
+  const brightness = adjustments.brightness / 100, contrast = adjustments.contrast / 100, saturation = adjustments.saturation / 100;
+  return renderPropertyPhoto(source, async (pixels, width) => {
+    await transformPhotoPixels(pixels, width, index => {
+      const red = (pixels[index] * brightness - 128) * contrast + 128;
+      const green = (pixels[index + 1] * brightness - 128) * contrast + 128;
+      const blue = (pixels[index + 2] * brightness - 128) * contrast + 128;
+      const luminance = red * .2126 + green * .7152 + blue * .0722;
+      pixels[index] = luminance + (red - luminance) * saturation;
+      pixels[index + 1] = luminance + (green - luminance) * saturation;
+      pixels[index + 2] = luminance + (blue - luminance) * saturation;
+    }, signal);
+  }, signal);
+}
+
+async function transformPhotoPixels(pixels: Uint8ClampedArray, width: number, transform: (index: number) => void, signal?: AbortSignal) {
+  const chunkSize = width * 64 * 4;
+  for (let offset = 0; offset < pixels.length; offset += chunkSize) {
+    await pause(signal);
+    for (let index = offset; index < Math.min(pixels.length, offset + chunkSize); index += 4) transform(index);
+  }
+}
+
+/** Automatic, bounded tonal correction of existing pixels. No generated content or AI restoration. */
+export async function autoEnhancePropertyPhoto(source: string, signal?: AbortSignal): Promise<string> {
+  return renderPropertyPhoto(source, async (pixels, width) => {
+    const histogram = new Uint32Array(256);
+    await transformPhotoPixels(pixels, width, index => {
+      histogram[Math.round(pixels[index] * .2126 + pixels[index + 1] * .7152 + pixels[index + 2] * .0722)]++;
+    }, signal);
+    const middle = Math.ceil(pixels.length / 8);
+    let accumulated = 0, median = 0;
+    for (; median < 255; median++) { accumulated += histogram[median]; if (accumulated >= middle) break; }
+    // Leave already balanced photographs alone. Limit any correction so that
+    // a dark room never becomes a different scene and bright interiors stay natural.
+    let gamma = 1;
+    if (median > 0 && median < 100) gamma = Math.max(.82, Math.log(Math.min(112, median + 24) / 255) / Math.log(median / 255));
+    else if (median > 180 && median < 255) gamma = Math.min(1.12, Math.log(Math.max(170, median - 16) / 255) / Math.log(median / 255));
+    if (gamma === 1) return;
+    await transformPhotoPixels(pixels, width, index => {
+      const red = pixels[index], green = pixels[index + 1], blue = pixels[index + 2];
+      const luminance = red * .2126 + green * .7152 + blue * .0722;
+      if (luminance <= 0) return;
+      let corrected = 255 * Math.pow(luminance / 255, gamma);
+      if (gamma < 1) {
+        const highlight = Math.max(0, Math.min(1, (luminance - 190) / 40));
+        const protection = highlight * highlight * (3 - 2 * highlight);
+        corrected = corrected * (1 - protection) + luminance * protection;
+      }
+      // Scale RGB together to retain hue. The gamut limit prevents clipping
+      // any channel, including saturated colors inside an otherwise dark room.
+      const gain = Math.min(corrected / luminance, 255 / Math.max(red, green, blue));
+      pixels[index] = red * gain; pixels[index + 1] = green * gain; pixels[index + 2] = blue * gain;
+    }, signal);
+  }, signal);
+}
+
+async function renderPropertyPhoto(source: string, transform: (pixels: Uint8ClampedArray, width: number) => Promise<void>, signal?: AbortSignal): Promise<string> {
+  requireBrowser(); checkAbort(signal); validateSource(source);
   const image = await loadImage(source, signal);
   const canvases: HTMLCanvasElement[] = [];
   try {
@@ -145,20 +224,7 @@ export async function enhancePropertyPhoto(source: string, adjustments: PhotoAdj
     context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-    const brightness = adjustments.brightness / 100, contrast = adjustments.contrast / 100, saturation = adjustments.saturation / 100;
-    const chunkSize = canvas.width * 64 * 4;
-    for (let offset = 0; offset < pixels.data.length; offset += chunkSize) {
-      await pause(signal);
-      for (let index = offset; index < Math.min(pixels.data.length, offset + chunkSize); index += 4) {
-        const red = (pixels.data[index] * brightness - 128) * contrast + 128;
-        const green = (pixels.data[index + 1] * brightness - 128) * contrast + 128;
-        const blue = (pixels.data[index + 2] * brightness - 128) * contrast + 128;
-        const luminance = red * .2126 + green * .7152 + blue * .0722;
-        pixels.data[index] = luminance + (red - luminance) * saturation;
-        pixels.data[index + 1] = luminance + (green - luminance) * saturation;
-        pixels.data[index + 2] = luminance + (blue - luminance) * saturation;
-      }
-    }
+    await transform(pixels.data, canvas.width);
     context.putImageData(pixels, 0, 0);
     for (let resize = 0; resize < 6; resize++) {
       for (const quality of [.9, .8, .7, .6]) {
@@ -207,10 +273,10 @@ function textLines(context: CanvasRenderingContext2D, text: string, maxWidth: nu
   return lines;
 }
 
-function drawSlide(context: CanvasRenderingContext2D, images: HTMLImageElement[], elapsed: number, title: string, brand: string, portrait: boolean) {
+function drawSlide(context: CanvasRenderingContext2D, images: HTMLImageElement[], elapsed: number, title: string, brand: string, portrait: boolean, slideMs: number, motion: NonNullable<PropertySlideshowOptions['motion']>) {
   const width = context.canvas.width, height = context.canvas.height;
-  const index = Math.min(images.length - 1, Math.floor(elapsed / SLIDE_MS));
-  const progress = Math.min(1, (elapsed - index * SLIDE_MS) / SLIDE_MS), image = images[index];
+  const index = Math.min(images.length - 1, Math.floor(elapsed / slideMs));
+  const progress = Math.min(1, (elapsed - index * slideMs) / slideMs), image = images[index];
   const smooth = progress * progress * (3 - 2 * progress);
   context.fillStyle = '#0b182c'; context.fillRect(0, 0, width, height);
   const background = Math.max(width / image.naturalWidth, height / image.naturalHeight);
@@ -218,8 +284,12 @@ function drawSlide(context: CanvasRenderingContext2D, images: HTMLImageElement[]
   context.drawImage(image, (width - image.naturalWidth * background) / 2, (height - image.naturalHeight * background) / 2, image.naturalWidth * background, image.naturalHeight * background);
   context.restore();
   // The main photo fits completely; the subtle movement never stretches it.
-  const fit = Math.min(width / image.naturalWidth, height / image.naturalHeight) * (.95 + .04 * smooth);
-  context.drawImage(image, (width - image.naturalWidth * fit) / 2, (height - image.naturalHeight * fit) / 2, image.naturalWidth * fit, image.naturalHeight * fit);
+  const fit = Math.min(width / image.naturalWidth, height / image.naturalHeight) * (motion === 'gentle' ? .95 + .04 * (index % 2 ? 1 - smooth : smooth) : .95);
+  const photoWidth = image.naturalWidth * fit, photoHeight = image.naturalHeight * fit;
+  const pan = motion === 'pan' ? (smooth * 2 - 1) * (index % 2 ? -1 : 1) : 0;
+  const x = (width - photoWidth) / 2 + Math.min((width - photoWidth) / 2, width * .025) * pan;
+  const y = (height - photoHeight) / 2 + Math.min((height - photoHeight) / 2, height * .015) * pan;
+  context.drawImage(image, x, y, photoWidth, photoHeight);
   const gradient = context.createLinearGradient(0, height * .52, 0, height);
   gradient.addColorStop(0, 'rgba(5,16,32,0)'); gradient.addColorStop(1, 'rgba(5,16,32,.95)');
   context.fillStyle = gradient; context.fillRect(0, height * .52, width, height * .48);
@@ -235,16 +305,16 @@ function drawSlide(context: CanvasRenderingContext2D, images: HTMLImageElement[]
   const top = height - (portrait ? 100 : 72) - (lines.length - 1) * lineHeight;
   lines.forEach((line, lineIndex) => context.fillText(line, margin, top + lineIndex * lineHeight));
   context.fillStyle = 'rgba(255,255,255,.25)'; context.fillRect(margin, height - 30, width - margin * 2, 3);
-  context.fillStyle = '#fff'; context.fillRect(margin, height - 30, (width - margin * 2) * Math.min(1, elapsed / (images.length * SLIDE_MS)), 3);
+  context.fillStyle = '#fff'; context.fillRect(margin, height - 30, (width - margin * 2) * Math.min(1, elapsed / (images.length * slideMs)), 3);
 }
 
-function record(canvas: HTMLCanvasElement, images: HTMLImageElement[], title: string, brand: string, portrait: boolean, signal: AbortSignal, onProgress: (value: number) => void): Promise<Blob> {
+function record(canvas: HTMLCanvasElement, images: HTMLImageElement[], title: string, brand: string, portrait: boolean, slideMs: number, motion: NonNullable<PropertySlideshowOptions['motion']>, signal: AbortSignal, onProgress: (value: number) => void): Promise<Blob> {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Este navegador não conseguiu preparar o vídeo.');
   const mimeType = recordingType();
   if (!mimeType) throw new Error('Este navegador não oferece exportação de vídeo. Tente Chrome ou Edge atualizados.');
   checkAbort(signal);
-  drawSlide(context, images, 0, title, brand, portrait);
+  drawSlide(context, images, 0, title, brand, portrait, slideMs, motion);
   const stream = canvas.captureStream(24);
   let recorder: MediaRecorder;
   try { recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_500_000 }); }
@@ -252,7 +322,7 @@ function record(canvas: HTMLCanvasElement, images: HTMLImageElement[], title: st
   return new Promise<Blob>((resolve, reject) => {
     const chunks: Blob[] = [];
     let size = 0, settled = false, finished = false, frame = 0;
-    const duration = images.length * SLIDE_MS;
+    const duration = images.length * slideMs;
     const started = performance.now();
     const cleanup = () => {
       cancelAnimationFrame(frame); clearTimeout(timeout); signal.removeEventListener('abort', cancel);
@@ -281,7 +351,7 @@ function record(canvas: HTMLCanvasElement, images: HTMLImageElement[], title: st
       try {
         checkAbort(signal);
         const elapsed = Math.min(duration, performance.now() - started);
-        drawSlide(context, images, elapsed, title, brand, portrait);
+        drawSlide(context, images, elapsed, title, brand, portrait, slideMs, motion);
         onProgress(10 + Math.floor(elapsed / duration * 89));
         if (settled) return;
         if (elapsed >= duration) { finished = true; recorder.stop(); return; }
@@ -294,11 +364,14 @@ function record(canvas: HTMLCanvasElement, images: HTMLImageElement[], title: st
   });
 }
 
-export async function createPropertySlideshow({ images, title, brand, format, signal, onProgress }: PropertySlideshowOptions): Promise<Blob> {
+export async function createPropertySlideshow({ images, title, brand, format, secondsPerPhoto = 3, motion = 'gentle', signal, onProgress }: PropertySlideshowOptions): Promise<Blob> {
   requireBrowser(); checkAbort(signal);
   if (!Array.isArray(images) || images.length < 1 || images.length > 5) throw new Error('Escolha entre uma e cinco fotos para o vídeo.');
   if (format !== 'landscape' && format !== 'portrait') throw new Error('Escolha o formato horizontal ou vertical.');
-  images.forEach(validateSource);
+  if (!Number.isFinite(secondsPerPhoto) || secondsPerPhoto < 2 || secondsPerPhoto > 6) throw new Error('Escolha uma duração entre 2 e 6 segundos por foto.');
+  if (!['gentle', 'pan', 'none'].includes(motion)) throw new Error('Escolha um movimento de vídeo válido.');
+  const sources = [...images];
+  sources.forEach(validateSource);
   const safeTitle = cleanText(title, 200), safeBrand = cleanText(brand, 80);
   if (!safeTitle || !safeBrand) throw new Error('Informe o título do imóvel e o nome da imobiliária.');
   if (!canRecordPropertyVideo()) throw new Error('Este navegador não oferece exportação de vídeo. Tente Chrome ou Edge atualizados.');
@@ -306,15 +379,15 @@ export async function createPropertySlideshow({ images, title, brand, format, si
   let timedOut = false, lastProgress = -1;
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort, { once: true });
-  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 60000);
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, sources.length * (15000 + secondsPerPhoto * 1000) + 15000);
   const loaded: HTMLImageElement[] = [];
   const canvas = document.createElement('canvas');
   const progress = (value: number) => { const next = Math.max(lastProgress, Math.min(100, Math.floor(value))); if (next !== lastProgress) { lastProgress = next; try { onProgress?.(next); } catch { /* A UI callback must not prevent recorder cleanup. */ } } };
   try {
     progress(0);
-    for (let index = 0; index < images.length; index++) { loaded.push(await loadImage(images[index], controller.signal)); progress(Math.floor((index + 1) / images.length * 10)); }
+    for (let index = 0; index < sources.length; index++) { loaded.push(await loadImage(sources[index], controller.signal)); progress(Math.floor((index + 1) / sources.length * 10)); }
     const portrait = format === 'portrait'; canvas.width = portrait ? 720 : 1280; canvas.height = portrait ? 1280 : 720;
-    return await record(canvas, loaded, safeTitle, safeBrand, portrait, controller.signal, progress);
+    return await record(canvas, loaded, safeTitle, safeBrand, portrait, secondsPerPhoto * 1000, motion, controller.signal, progress);
   } catch (error) {
     if (signal?.aborted) throw abortError();
     if (timedOut) throw new Error('O vídeo demorou demais para ser concluído. Mantenha esta aba visível e tente novamente.');

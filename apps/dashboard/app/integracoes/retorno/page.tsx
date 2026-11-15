@@ -8,15 +8,16 @@ export const metadata: Metadata = {
   referrer: 'no-referrer',
 };
 
-type Query = { fluxo?: string | string[]; resultado?: string | string[] };
+type Query = { fluxo?: string | string[]; resultado?: string | string[]; canal?: string | string[] };
 
 export default async function IntegrationReturnPage({ searchParams }: { searchParams: Promise<Query> }) {
   const query = await searchParams;
   const ads = query.fluxo === 'ads';
   const knownFlow = ads || query.fluxo === 'social';
   const result = knownFlow && (query.resultado === 'connected' || query.resultado === 'failed') ? query.resultado : null;
-  const destination = ads ? '/painel?area=campaigns#campaigns' : '/painel?area=integrations#integrations';
-  const label = ads ? 'Voltar às campanhas' : 'Voltar às integrações';
+  const channel = query.fluxo === 'social' && result === 'connected' && (query.canal === 'instagram' || query.canal === 'facebook') ? query.canal : null;
+  const destination = ads ? '/painel?area=campaigns#campaigns' : channel ? `/painel?area=settings&social=${channel}#settings` : '/painel?area=integrations#integrations';
+  const label = ads ? 'Voltar às campanhas' : channel ? `Concluir conexão do ${channel === 'instagram' ? 'Instagram' : 'Facebook'}` : 'Voltar às integrações';
 
   // Query parameters only select presentation. The destination authenticates
   // the existing HttpOnly session; this page never reads or creates a session.
@@ -29,7 +30,7 @@ export default async function IntegrationReturnPage({ searchParams }: { searchPa
         : result === 'connected'
           ? ads
             ? 'A autorização foi recebida. Volte às campanhas para escolher a conta de anúncios e conferir a conexão.'
-            : 'A autorização foi recebida. Volte às integrações para escolher a Página e conferir a conexão.'
+            : 'A autorização foi recebida. Continue no painel para confirmar a conta que deseja conectar.'
           : 'Volte ao painel para conferir suas conexões com a Meta.'}</p>
       {/* A native link starts a fresh same-site document request, even without
           JavaScript, rather than reusing a prefetched unauthenticated CRM. */}
