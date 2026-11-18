@@ -12,13 +12,13 @@
       ]
     },
     {
-      "source": "/((?!(?:integracoes/retorno|api/integrations/meta/(?:social|ads)/callback)/?$).*)",
+      "source": "/((?!(?:integracoes/retorno|api/integrations/meta/(?:social|ads|instagram)/callback)/?$).*)",
       "headers": [
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
     },
     {
-      "source": "/(integracoes/retorno|api/integrations/meta/(?:social|ads)/callback)(/?)",
+      "source": "/(integracoes/retorno|api/integrations/meta/(?:social|ads|instagram)/callback)(/?)",
       "headers": [
         { "key": "Referrer-Policy", "value": "no-referrer" }
       ]

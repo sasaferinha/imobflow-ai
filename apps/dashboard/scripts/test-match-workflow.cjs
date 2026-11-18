@@ -48,6 +48,7 @@ function load(relative) {
     if (name === '@neondatabase/serverless') return { neon: () => sql };
     if (name === './database') return {
       listLeads: async () => [lead],
+      listLeadsForAutomation: async () => [lead],
       listProperties: async (automationOnly) => { assert.equal(automationOnly, true); propertyReads++; return properties; }
     };
     if (name === './supabase') return { supabaseCompanyId: () => 'test-company' };

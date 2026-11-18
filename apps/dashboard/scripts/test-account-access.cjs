@@ -11,12 +11,12 @@ function load(file,deps={},globals={}) {
   vm.runInNewContext(output,{module:mod,exports:mod.exports,require:n=>n in deps?deps[n]:require(n),Buffer,URL,URLSearchParams,Date,console,process:{env:{}},...globals});
   return mod.exports;
 }
-const next={NextResponse:{json:(body,options={})=>({body,status:options.status||200,cookies:{set(){}},headers:{set(){}}})},after:fn=>background.push(fn)};
+const next={NextResponse:{json:(body,options={})=>({body,status:options.status||200,cookies:{set(){}},headers:new Headers(options.headers)})},after:fn=>background.push(fn)};
 let background=[], calls=[], actor={brokerId:'11111111-1111-4111-8111-111111111111',companyId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',role:'owner'};
 let database=async(route,options)=>{calls.push({route,options});return true;};
 const security={hasSameOrigin:req=>req.safe!==false,consumeRateLimit:async()=>true};
 const auth={protectedRoute:fn=>fn,readAccount:async()=>actor,verifyPassword:async(p,h)=>p==='current-password'&&h==='hash',hashPassword:async()=> 'new-hash',tokenHash:t=>crypto.createHash('sha256').update(t).digest('hex'),normalizeName:t=>t.trim().toLowerCase(),normalizeEmail:t=>t.trim().toLowerCase(),ACCOUNT_COOKIE:'imobflow_session',cookieOptions:{}};
-const deps={'next/server':next,'@/lib/accounts':auth,'@/lib/request-security':security,'@/lib/supabase':{supabaseRequest:(...args)=>database(...args)},'@/lib/tenant-context':{currentAccount:()=>actor}};
+const deps={'next/server':next,'@/lib/accounts':auth,'@/lib/request-security':security,'@/lib/supabase':{supabaseRequest:(...args)=>database(...args)},'@/lib/tenant-context':{currentAccount:()=>actor},'@/lib/classic-crm-access':{ClassicCrmError:class extends Error {}}};
 const req=(body,method='POST',safe=true)=>({method,safe,text:async()=>JSON.stringify(body),json:async()=>body,cookies:{get:()=>({value:'cookie'})},nextUrl:{searchParams:new URLSearchParams()}});
 async function run(){
   // Model StrictMode's setup -> cleanup -> setup cycle before timers run.
@@ -81,6 +81,13 @@ async function run(){
   console.log('PASS private email diagnostics, timeout/network failures, no blind retries and origin validation before token issuance');
 
   const accounts=load('lib/accounts.ts',{'next/server':next,'./tenant-context':{},'./supabase':{supabaseRequest:(...args)=>database(...args)}});
+  const deniedRoute=accounts.protectedRoute(async()=>assert.fail('Denied requests must not enter the handler'));
+  const anonymous=await deniedRoute({cookies:{get:()=>undefined}},{});
+  assert.equal(anonymous.status,401);assert.equal(anonymous.headers.get('Cache-Control'),'private, no-store, max-age=0');
+  database=async()=>{throw Error('synthetic private database failure');};
+  const unavailable=await deniedRoute({cookies:{get:()=>({value:'a'.repeat(64)})}},{});
+  assert.equal(unavailable.status,503);assert.equal(unavailable.headers.get('Cache-Control'),'private, no-store, max-age=0');
+  assert.ok(!JSON.stringify(unavailable.body).includes('synthetic private'));
   const hash=await accounts.hashPassword('12345678');
   assert.match(hash,/^scrypt-v1\$[a-f0-9]{32}\$[a-f0-9]{128}$/);
   assert.equal(await accounts.verifyPassword('12345678',hash),true);

@@ -29,8 +29,8 @@
     "@fastify/swagger": "^9.5.1",
     "@fastify/swagger-ui": "^5.2.3",
     "@prisma/client": "^6.15.0",
-    "fastify": "^5.5.0",
-    "zod": "^3.25.76"
+    "fastify": "^5.12.6",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^22.17.2",

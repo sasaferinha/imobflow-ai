@@ -1,5 +1,26 @@
 # Conexão operacional da Meta — 8 de novembro de 2026
 
+## Atualização de 18 de novembro de 2026
+
+O fluxo novo usa Login do Instagram diretamente, independente do Facebook. Solicita apenas `instagram_business_basic` e `instagram_business_manage_messages`, sem seleção de Página. O perfil precisa ser profissional (empresa ou criador). Facebook continua autorizando sua própria Página; WhatsApp conserva o cadastro incorporado existente. Conexões antigas por Facebook Login permanecem identificadas como legadas, sem converter seu histórico ou destinatários para o novo namespace.
+
+Configuração necessária no produto **Instagram → API setup with Instagram login** da Meta:
+
+- Retorno OAuth: `https://www.imobflow.net.br/api/integrations/meta/instagram/callback`.
+- Webhook Instagram: `https://www.imobflow.net.br/api/integrations/meta/instagram`, com eventos `messages` e `messaging_postbacks`.
+- Produção: `META_INSTAGRAM_APP_ID` e `META_INSTAGRAM_APP_SECRET`, próprios do Instagram Login. `META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN` é opcional; quando ausente, reutiliza somente o segredo de verificação social. A assinatura dos eventos sempre exige o segredo específico do Instagram.
+- Contas externas ao aplicativo dependem do acesso e da análise de permissões exigidos pela Meta. O consentimento do Facebook/WhatsApp não substitui essa autorização.
+
+As credenciais `META_INSTAGRAM_*` não estavam configuradas na Vercel nesta conferência. Sem elas, o botão informa indisponibilidade; não há retorno silencioso ao login do Facebook. Não copiar segredos para documentação, Git ou chat. Manter o segredo Facebook atual e a chave de cifra: alterá-los sem migração impede ler as autorizações antigas.
+
+O token nativo tem validade persistida; a reconexão renova a mesma identidade e preserva seu histórico. Ainda não existe renovação agendada desse token. Mensagens recebidas com assinatura válida continuam registradas quando o token de saída expira, mas envios e novos trabalhos automáticos são bloqueados. Trabalhos pendentes também revalidam a conexão antes de chamar a IA.
+
+Na validação real, conectar duas contas independentes, receber uma mensagem em cada uma e conferir resposta, áudio, Match e troca de conta sem cruzar históricos. Esses passos exigem autorização de destinatário/conteúdo para envio; testes locais simulados não comprovam entrega. A assinatura do webhook precede o vínculo final no banco; uma mensagem nesse pequeno intervalo pode não ser registrada, portanto o teste de recebimento deve ocorrer depois da confirmação da conexão.
+
+Referências oficiais: [Business Login for Instagram](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login), [identidade da conta](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/get-started), [webhooks](https://developers.facebook.com/documentation/instagram-platform/webhooks/setup).
+
+As seções seguintes são o histórico de configuração de novembro; exigências antigas de Página vinculada aplicam-se somente ao caminho legado.
+
 ## Estado confirmado
 
 - A entrega integrada foi publicada a partir de `main@e4360c71975f15cff730f6e078c1a9a3ffe528d6`, após a revisão e os testes registrados em `entrega-integrada-2026-11-08.md`. As seis migrations de `20261108120000` a `20261108125000` foram verificadas no banco remoto. O agendador de push está instalado; isso não comprova recebimento em um dispositivo.

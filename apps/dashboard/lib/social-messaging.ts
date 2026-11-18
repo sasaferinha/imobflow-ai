@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { supabaseServiceRequest as db } from './supabase';
 import { currentAccount } from './tenant-context';
-import { socialLeadId, type SocialEvent } from './meta-social';
+import { socialLeadId, socialLoginProvider, type SocialEvent } from './meta-social';
 import { decryptSocialToken, encryptSocialToken, type SocialAccountRow } from './social-connections';
 import { publicSocialMessage, publicSocialProfile, SocialError, socialImageUrl, socialObject, socialUuid, type SocialChannel, type SocialContact, type SocialMessage, type SocialMode } from './social-model';
 
@@ -11,6 +11,8 @@ const actor = () => { const a = currentAccount(); if (!a) throw new SocialError(
 
 export async function receiveSocialMessage(event: SocialEvent): Promise<SocialIncomingResult> {
   const c = event.connection;
+  const provider = socialLoginProvider(c.loginProvider);
+  if (!provider || provider === 'instagram' && (event.kind !== 'instagram' || !c.databaseId)) throw new SocialError('A conexão deste canal está incompleta.', 409, 'connection_incomplete');
   let accountId = c.databaseId;
   if (!accountId) {
     accountId = await db<string>('rpc/bind_social_account', { method: 'POST', body: { p_company_id: c.companyId, p_actor_id: null, p_channel: event.kind, p_account_id: event.kind === 'instagram' ? c.instagramId : c.pageId, p_page_id: c.pageId || c.instagramId, p_name: event.kind === 'instagram' ? 'Instagram conectado' : 'Página conectada', p_token: c.accessToken ? encryptSocialToken(c.accessToken, c.companyId) : null, p_api_version: c.apiVersion } });
@@ -68,8 +70,20 @@ export async function readSocialThreadForAI(companyId: string, threadId: string,
   if (!socialUuid(companyId) || !socialUuid(threadId)) throw new SocialError('Conversa inválida.');
   const [thread] = await socialDb<ThreadRow[]>(`social_threads?company_id=eq.${companyId}&id=eq.${threadId}&select=id,company_id,lead_id,account_id,mode,assigned_broker_id,assigned_to,last_inbound_at,last_inbound_message_id&limit=1`, {}, deadline);
   if (!thread) return null;
-  const [account] = await socialDb<SocialAccountRow[]>(`social_accounts?company_id=eq.${companyId}&id=eq.${thread.account_id}&select=channel,enabled&limit=1`, {}, deadline);
-  if (!account?.enabled) return null;
+  const [account] = await socialDb<SocialAccountRow[]>(`social_accounts?company_id=eq.${companyId}&id=eq.${thread.account_id}&select=channel,enabled,login_provider,token_expires_at,token_ciphertext,account_id,page_id,api_version&limit=1`, {}, deadline);
+  const provider = socialLoginProvider(account?.login_provider), nativeInstagram = provider === 'instagram';
+  // A queued job can outlive its authorization. Stop before reading the client
+  // history or calling the paid AI provider when this channel cannot send.
+  if (!account?.enabled || !account.token_ciphertext || !provider || !['instagram','facebook'].includes(account.channel)
+    || !/^v\d+\.\d+$/.test(account.api_version) || !/^\d{1,40}$/.test(account.account_id) || !/^\d{1,40}$/.test(account.page_id)
+    || nativeInstagram && (account.channel !== 'instagram' || account.account_id !== account.page_id)
+    || !nativeInstagram && account.channel === 'instagram' && account.account_id === account.page_id) return null;
+  if (nativeInstagram || account.token_expires_at != null) {
+    const expiresAt = Date.parse(account.token_expires_at || '');
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+  }
+  try { if (!decryptSocialToken(account.token_ciphertext, companyId)) return null; }
+  catch { return null; }
   const [lead] = await socialDb<Array<Record<string,unknown>>>(`leads?company_id=eq.${companyId}&id=eq.${thread.lead_id}&select=id,name,goal,region,property_type,budget_min,budget_max,interest_profile&limit=1`, {}, deadline);
   const messages = await socialDb<unknown[]>(`social_messages?company_id=eq.${companyId}&thread_id=eq.${threadId}&select=id,content,occurred_at,direction,status,error_message,media_urls,media_type,source&order=occurred_at.desc,id.desc&limit=40`, {}, deadline);
   const profileSnapshot = { interestProfile: lead?.interest_profile ?? {}, goal: lead?.goal ?? null, region: lead?.region ?? null, propertyType: lead?.property_type ?? null, budgetMin: lead?.budget_min ?? null, budgetMax: lead?.budget_max ?? null };
@@ -126,14 +140,26 @@ async function dispatchSocialMessage(companyId: string, messageId: string, deadl
   let dispatched = false;
   try {
     const [account] = await socialDb<SocialAccountRow[]>(`social_accounts?company_id=eq.${companyId}&id=eq.${claimed.accountId}&select=*&limit=1`, {}, deadline);
-    if (!account?.enabled || !account.token_ciphertext || account.channel === 'instagram' && account.account_id === account.page_id) throw new SocialError('A conexão deste canal está incompleta. Peça ao administrador para reconectar.', 409, 'connection_incomplete');
+    const provider = socialLoginProvider(account?.login_provider), nativeInstagram = provider === 'instagram';
+    if (!account?.enabled || !account.token_ciphertext || !provider || !['instagram','facebook'].includes(account.channel)
+      || !/^v\d+\.\d+$/.test(account.api_version) || !/^\d{1,40}$/.test(account.account_id) || !/^\d{1,40}$/.test(account.page_id)
+      || nativeInstagram && (account.channel !== 'instagram' || account.account_id !== account.page_id)
+      || !nativeInstagram && account.channel === 'instagram' && account.account_id === account.page_id) throw new SocialError('A conexão deste canal está incompleta. Peça ao administrador para reconectar.', 409, 'connection_incomplete');
+    if (nativeInstagram || account.token_expires_at != null) {
+      const expiresAt = Date.parse(account.token_expires_at || '');
+      if (!Number.isFinite(expiresAt)) throw new SocialError('A validade da conexão não foi confirmada. Peça ao administrador para reconectar.', 409, 'connection_incomplete');
+      if (expiresAt <= Date.now()) throw new SocialError('A autorização do canal expirou. Peça ao administrador para reconectar.', 409, 'token_expired');
+    }
+    if (nativeInstagram && !claimed.mediaUrls.length && Buffer.byteLength(claimed.content, 'utf8') > 1000) throw new SocialError('A mensagem ultrapassa o limite do Instagram. Envie um texto menor.', 400, 'message_too_long');
     const token = decryptSocialToken(account.token_ciphertext,companyId);
-    const message = claimed.mediaUrls.length ? { attachment: { type: 'image', payload: { url: claimed.mediaUrls[0], is_reusable: false } } } : { text: claimed.content };
-    const body = { recipient: { id: claimed.recipientId }, messaging_type: 'RESPONSE', message, ...(process.env.META_APP_SECRET ? { appsecret_proof: createHmac('sha256',process.env.META_APP_SECRET).update(token).digest('hex') } : {}) };
+    const message = claimed.mediaUrls.length
+      ? nativeInstagram ? { attachments: [{ type: 'image', payload: { url: claimed.mediaUrls[0] } }] } : { attachment: { type: 'image', payload: { url: claimed.mediaUrls[0], is_reusable: false } } }
+      : { text: claimed.content };
+    const body = { recipient: { id: claimed.recipientId }, message, ...(!nativeInstagram ? { messaging_type: 'RESPONSE', ...(process.env.META_APP_SECRET ? { appsecret_proof: createHmac('sha256',process.env.META_APP_SECRET).update(token).digest('hex') } : {}) } : {}) };
     // Keep time for the confirmed/uncertain result and thread timestamp writes.
     const sendTimeout = socialTimeout(deadline ? deadline-4500 : undefined, 15000);
     dispatched = true;
-    const response = await fetch(`https://graph.facebook.com/${account.api_version}/${account.page_id}/messages`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type':'application/json' }, body: JSON.stringify(body), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(sendTimeout) });
+    const response = await fetch(`https://${nativeInstagram ? 'graph.instagram.com' : 'graph.facebook.com'}/${account.api_version}/${nativeInstagram ? account.account_id : account.page_id}/messages`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type':'application/json' }, body: JSON.stringify(body), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(sendTimeout) });
     const payload = await response.json().catch(() => null), result = socialObject(payload);
     if (!response.ok || result.error) { const failure = socialSendFailure(response.status,payload); state = failure.uncertain ? 'unknown' : 'failed'; errorCode = failure.code; errorMessage = failure.message; }
     else if (typeof result.message_id === 'string' && result.message_id.length <= 255 && result.recipient_id === claimed.recipientId) { state = 'sent'; externalId = result.message_id; }

@@ -76,15 +76,11 @@ const visit=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
 
   // Agenda labels should never transfer photos, full lead profiles, or scan when empty.
   let rows=[];calls=[];
-  const database=load('lib/database.ts',{'./supabase':{supabaseCompanyId:()=> 'tenant',supabaseRequest:async url=>{
-    calls.push(url);assert.ok(url.includes('company_id=eq.tenant'));
-    return url.startsWith('appointments?')?rows:[];
-  }}});
+  const database=load('lib/database.ts',{'./classic-crm-access':{readClassicRows:async table=>{calls.push(table);assert.equal(table,'appointments');return rows;}}});
   await database.listAppointments();assert.equal(calls.length,1);
   rows=[{id:'appointment',scheduled_at:'2026-09-28T18:00:00Z',created_at:'2026-09-28T18:00:00Z',notes:'Client · House'}];
   calls=[];const agenda=await database.listAppointments();
   assert.equal(agenda[0].name,'Client');assert.equal(agenda[0].property,'House');
-  assert.ok(calls.some(url=>url.endsWith('select=id,name')));
-  assert.ok(calls.some(url=>url.endsWith('select=id,title')));
-  console.log('PASS agenda skips empty joins and reads tenant-scoped name-only projections');
+  assert.deepEqual(calls,['appointments'],'authorized SQL response already includes labels; no separate photo/profile scans');
+  console.log('PASS agenda uses a single authorized read with joined labels and no photo/profile scans');
 })().catch(error=>{console.error(error);process.exitCode=1;});

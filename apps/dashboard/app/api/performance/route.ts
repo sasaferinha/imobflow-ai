@@ -6,6 +6,7 @@ import { supabaseCompanyId, supabaseRequest } from '@/lib/supabase';
 import type { PerformanceSettingsInput, SaleInput } from '@/lib/operations';
 import { hasSameOrigin } from '@/lib/request-security';
 import { currentAccount } from '@/lib/tenant-context';
+import { ClassicCrmError } from '@/lib/classic-crm-access';
 
 export const runtime = 'nodejs';
 
@@ -50,11 +51,13 @@ function normalizePropertyStatus(value: string | undefined | null) {
 
 async function handleGET(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (currentAccount()?.role !== 'owner') return NextResponse.json({ error: 'Consulte suas negociações no funil. O histórico financeiro antigo é exclusivo do administrador porque ainda não identifica cada corretor com segurança.', code: 'legacy_financial_owner_only' }, { status: 403 });
   const month = request.nextUrl.searchParams.get('month') || new Date().toISOString().slice(0, 7);
   if (!validMonth(month)) return NextResponse.json({ error: 'Mês inválido.' }, { status: 400 });
   try {
     return NextResponse.json({ data: await getPerformance(month) });
   } catch (error) {
+    if (error instanceof ClassicCrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('performance_get_failed', error);
     return NextResponse.json({ error: 'Não foi possível carregar os indicadores.' }, { status: 500 });
   }
@@ -62,6 +65,7 @@ async function handleGET(request: NextRequest) {
 
 async function handlePOST(request: NextRequest) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (currentAccount()?.role !== 'owner') return NextResponse.json({ error: 'Registre o fechamento pela negociação do cliente. O registro financeiro direto é exclusivo do administrador.' }, { status: 403 });
   if (!hasSameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 });
   try {
     const body = await request.json() as Record<string, unknown>;

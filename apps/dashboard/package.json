@@ -30,15 +30,16 @@
     "test:crm-operations": "node scripts/test-guided-record-fields.cjs && node scripts/test-conversation-urgency.cjs && node scripts/test-conversation-urgent-server.cjs && node scripts/test-browser-push-ui.cjs && node scripts/test-web-push-server.cjs && node scripts/test-web-push-sql.cjs && node scripts/test-business-hours-push-sql.cjs && node scripts/test-operations-reminders.cjs && node scripts/test-inactive-lead-pool.cjs && node scripts/test-social-inactive-pool.cjs && node scripts/test-duty-priority.cjs && node scripts/test-operations-model.cjs && node scripts/test-operations-ui.cjs && node scripts/test-broker-assistant.cjs && node scripts/test-broker-assistant-errors.cjs && node scripts/test-broker-assistant-integrated.cjs && node scripts/test-broker-assistant-ui.cjs && node scripts/test-meta-social.cjs && node scripts/test-meta-social-route.cjs && node scripts/test-social-intake-sql.cjs && node scripts/test-weekly-report.cjs && node scripts/test-operations-scheduler.cjs",
     "test:meeting": "node scripts/test-team-management.cjs && node scripts/test-team-management-sql.cjs && node scripts/test-property-workflows.cjs && node scripts/test-property-feedback-sql.cjs && node scripts/test-audio-transcription.cjs && node scripts/test-buyer-report.cjs && node scripts/test-buyer-report-scheduler.cjs && node scripts/test-meta-ads.cjs && node scripts/test-meta-ads-route.cjs && node scripts/test-meta-ads-sql.cjs",
     "test:websites": "node scripts/test-company-websites.cjs && node scripts/test-company-website-routes.cjs && node scripts/test-website-media.cjs && node scripts/test-website-public-ui.cjs && node scripts/test-website-editor.cjs && node scripts/test-demo-property-media.cjs && node scripts/test-property-media-renderer.cjs && node scripts/test-media-studio-ui.cjs && pnpm run test:media-ai",
-    "test:integrated": "node scripts/test-meta-oauth-return.cjs && node scripts/test-visit-feedback.cjs && node scripts/test-visit-feedback-ui.cjs && node scripts/test-visit-feedback-sql.cjs && node scripts/test-mobile-workspace.cjs && node scripts/test-social-connections.cjs && node scripts/test-social-connections-ui.cjs && node scripts/test-social-messaging.cjs && node scripts/test-social-messaging-sql.cjs && node scripts/test-social-ai.cjs && node scripts/test-social-ai-sql.cjs && node scripts/test-lead-channel-routing.cjs && node scripts/test-meta-ads-workspace.cjs && node scripts/test-meta-ads-drafts.cjs && node scripts/test-meta-ads-attribution-sql.cjs && node scripts/test-website-domains.cjs && node scripts/test-website-domains-sql.cjs && node scripts/test-social-audio.cjs && node scripts/test-social-assistant-routes.cjs && node scripts/test-social-notifications-sql.cjs && node scripts/test-social-conversations-ui.cjs && node scripts/test-web-push-scheduler-sql.cjs && node scripts/test-integrated-migrations.cjs && node scripts/test-social-oauth-channel-sql.cjs && node scripts/test-social-account-switch.cjs",
-    "test:media-ai": "node scripts/test-media-ai-providers.cjs && node scripts/test-media-ai-jobs-sql.cjs && node scripts/test-media-ai-scheduler-sql.cjs && node scripts/test-media-ai-server.cjs && node scripts/test-media-ai-storage.cjs && node scripts/test-media-ai-ui.cjs"
+    "test:integrated": "node scripts/test-meta-oauth-return.cjs && node scripts/test-visit-feedback.cjs && node scripts/test-visit-feedback-ui.cjs && node scripts/test-visit-feedback-sql.cjs && node scripts/test-mobile-workspace.cjs && node scripts/test-social-connections.cjs && node scripts/test-social-connections-ui.cjs && node scripts/test-social-messaging.cjs && node scripts/test-social-messaging-sql.cjs && node scripts/test-social-ai.cjs && node scripts/test-social-ai-sql.cjs && node scripts/test-lead-channel-routing.cjs && node scripts/test-meta-ads-workspace.cjs && node scripts/test-meta-ads-drafts.cjs && node scripts/test-meta-ads-attribution-sql.cjs && node scripts/test-website-domains.cjs && node scripts/test-website-domains-sql.cjs && node scripts/test-social-audio.cjs && node scripts/test-social-assistant-routes.cjs && node scripts/test-social-notifications-sql.cjs && node scripts/test-social-conversations-ui.cjs && node scripts/test-web-push-scheduler-sql.cjs && node scripts/test-integrated-migrations.cjs && node scripts/test-social-oauth-channel-sql.cjs && node scripts/test-social-account-switch.cjs && node scripts/test-instagram-login.cjs && node scripts/test-instagram-native-login-sql.cjs && pnpm run test:classic-access",
+    "test:media-ai": "node scripts/test-media-ai-providers.cjs && node scripts/test-media-ai-jobs-sql.cjs && node scripts/test-media-ai-scheduler-sql.cjs && node scripts/test-media-ai-server.cjs && node scripts/test-media-ai-storage.cjs && node scripts/test-media-ai-ui.cjs",
+    "test:classic-access": "node scripts/test-classic-portfolio-sql.cjs && node scripts/test-classic-crm-api.cjs && node scripts/test-automation-portfolio.cjs && node scripts/test-performance-portfolio.cjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
-    "next": "16.3.3",
+    "next": "16.4.5",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.5",
     "web-push": "3.6.7"
   },
   "devDependencies": {
@@ -54,7 +55,7 @@
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.4.5",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",

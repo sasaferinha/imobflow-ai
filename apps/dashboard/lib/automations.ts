@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { neon } from '@neondatabase/serverless';
-import { listLeads, listProperties } from './database';
+import { listLeads, listLeadsForAutomation, listProperties } from './database';
 import { automationFlows, evaluateAutomation, isFlowId, type FlowId } from './automation-rules';
 import { newPropertyCandidates, whatsappNumber } from './property-matching';
 import { supabaseCompanyId } from './supabase';
@@ -73,7 +73,7 @@ export async function runAutomations(trigger: 'manual' | 'event' | 'cron', selec
   let processed = 0;
   let failed = 0;
   try {
-    const leads = await listLeads(10001);
+    const leads = await listLeadsForAutomation(10001);
     if (leads.length > 10000) throw new Error('Lote acima do limite seguro.');
     const settings = await sql`SELECT id FROM site_automation_settings WHERE company_id=${companyId} AND active=TRUE`;
     // New-property matching now lives in Supabase opportunities; retain old

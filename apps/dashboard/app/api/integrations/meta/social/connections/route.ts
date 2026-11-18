@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { protectedRoute } from '@/lib/accounts';
 import { currentAccount } from '@/lib/tenant-context';
 import { beginSocialOAuth,disconnectSocial,setSocialDefaultMode,selectSocialPage,socialConnectionStatus,SOCIAL_COOKIE } from '@/lib/social-connections';
+import { beginInstagramOAuth,INSTAGRAM_COOKIE,INSTAGRAM_CALLBACK } from '@/lib/instagram-login';
 import { socialBody,socialFailure } from '@/lib/social-http';
 import { SocialError,type SocialChannel,type SocialMode } from '@/lib/social-model';
 export const runtime='nodejs';
@@ -21,6 +22,10 @@ export const POST=protectedRoute(async(request:NextRequest)=>{
   const b=await socialBody(request,['action','pageId','channels','channel','mode'],8192);
   if(b.action==='connect'){
    const channel=optionalChannel(b.channel);
+   if(channel==='instagram'){
+    const result=await beginInstagramOAuth(a.companyId,a.brokerId,new URL(INSTAGRAM_CALLBACK,request.nextUrl.origin).href),response=NextResponse.json({url:result.url});
+    response.cookies.set(INSTAGRAM_COOKIE,result.state,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:INSTAGRAM_CALLBACK,maxAge:600});return response;
+   }
    const result=await beginSocialOAuth(a.companyId,a.brokerId,new URL('/api/integrations/meta/social/callback',request.nextUrl.origin).href,channel),response=NextResponse.json({url:result.url});
    response.cookies.set(SOCIAL_COOKIE,result.state,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/api/integrations/meta/social/callback',maxAge:600});return response;
   }

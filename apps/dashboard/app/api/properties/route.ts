@@ -9,6 +9,7 @@ import { supabaseCompanyId } from '@/lib/supabase';
 import { persistPropertyImages } from '@/lib/property-images';
 import { hasSameOrigin } from '@/lib/request-security';
 import { propertyNumber } from '@/lib/property-input';
+import { ClassicCrmError } from '@/lib/classic-crm-access';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -58,6 +59,7 @@ async function handlePOST(request: NextRequest) {
     after(() => onPropertyChanged(companyId, data.id));
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
+    if (error instanceof ClassicCrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('property_create_failed', error);
     return NextResponse.json({ error: 'Não foi possível salvar o imóvel.' }, { status: 500 });
   }
