@@ -696,7 +696,7 @@ export default function DashboardClient({ account, publicDemo = false, initialVi
       {utilityModal === 'profile' && <ProfileModal profile={profile} close={() => setUtilityModal(null)} save={(nextProfile) => { setProfile(nextProfile); setUtilityModal(null); notify('Perfil atualizado'); }} />}
       {utilityModal === 'password' && <PasswordModal close={() => setUtilityModal(null)} />}
       {utilityModal === 'settings' && <SettingsModal settings={settings} close={() => setUtilityModal(null)} save={(nextSettings) => { saveSettings(nextSettings); setUtilityModal(null); notify('Configurações salvas'); }} />}
-      {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} close={() => setUtilityModal(null)} />}
+      {utilityModal === 'broker' && <BrokerProfileModal brokerName={profile.name} company={profile.company} canViewTeam={account?.role === 'owner'} close={() => setUtilityModal(null)} />}
       {utilityModal === 'team' && account?.role === 'owner' && <TeamModal close={() => setUtilityModal(null)} notify={notify} />}
 
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
@@ -735,6 +735,7 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!canEditGoals) return;
     let active = true;
     loadPerformance(month).then((data) => {
       if (active) {
@@ -743,7 +744,7 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
       }
     }).catch((error) => active && setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os indicadores.')).finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, loadAttempt]);
+  }, [month, loadAttempt, canEditGoals]);
 
   function changeMonth(value: string) {
     if (!isCalendarMonth(value) || value === month) return;
@@ -757,7 +758,7 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
 
   async function registerSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (savingDeal) return;
+    if (!canEditGoals || savingDeal) return;
     setSavingDeal(true);
     const form = new FormData(event.currentTarget);
     try {
@@ -774,7 +775,7 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
 
   async function saveGoals(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!performance) return;
+    if (!canEditGoals || !performance) return;
     const form = new FormData(event.currentTarget);
     const brokerGoals = performance.brokers.map((broker,index) => ({ broker:broker.broker, goal:Number(form.get(`broker-goal-${index}`)) }));
     try {
@@ -790,7 +791,7 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
   }
 
   async function removeSale(id: string) {
-    if (!window.confirm('Excluir este registro de negócio?')) return;
+    if (!canEditGoals || !window.confirm('Excluir este registro de negócio?')) return;
     try {
       const response = await fetch(`/api/performance/sales/${id}`, { method:'DELETE' });
       if (!response.ok) throw new Error('Não foi possível excluir o negócio.');
@@ -800,6 +801,8 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
       notify(error instanceof Error ? error.message : 'Não foi possível excluir o negócio.');
     }
   }
+
+  if (!canEditGoals) return <section className="panel empty-live-data"><h2>Seu acompanhamento</h2><p>Acompanhe seus clientes e registre os fechamentos nas negociações. O relatório financeiro consolidado fica com o administrador.</p><a className="primary-button" href="#conversations">Abrir minhas conversas</a></section>;
 
   if (loading || loadError || !performance || performance.month !== month) return <PeriodLoadNotice month={month} changeMonth={changeMonth} loading={loading} error={loadError} retry={() => { setLoading(true); setLoadError(null); setLoadAttempt(value => value + 1); }} />;
 
@@ -819,7 +822,7 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
   const performanceKey = `${month}-${performance.totalSold}-${performance.salesCount}-${performance.history.map((item) => `${item.month}:${item.sold}`).join('|')}`;
   return <>
     <div className="performance-animated" key={performanceKey}>
-    <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></label>{canEditGoals && <button type="button" onClick={() => setModal('goals')}>Editar metas</button>}<button type="button" className="primary-button" onClick={() => { setModal('sale'); void refreshProperties().catch(() => notify('Não foi possível atualizar o catálogo. Tente novamente antes de registrar o negócio.')); }}>＋ Registrar negócio</button></div></section>
+    <section className="performance-toolbar"><div><span className={`performance-live ${performance.dataMode === 'demo' ? 'demo' : ''}`}><i/> {performance.dataMode === 'demo' ? 'Dados demonstrativos locais' : 'Dados atualizados'}</span><strong>Resultados de {monthTitle}</strong></div><div><label>Competência<input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></label>{canEditGoals && <button type="button" onClick={() => setModal('goals')}>Editar metas</button>}{canEditGoals && <button type="button" className="primary-button" onClick={() => { setModal('sale'); void refreshProperties().catch(() => notify('Não foi possível atualizar o catálogo. Tente novamente antes de registrar o negócio.')); }}>＋ Registrar negócio</button>}</div></section>
 
     <section className="company-goal-card">
       <div className="company-goal-copy"><p>Meta mensal da imobiliária</p><strong>{money.format(performance.totalSold)}</strong><span>de {money.format(performance.companyGoal)}</span></div>
@@ -844,7 +847,7 @@ function Overview({ notify, canEditGoals, properties, refreshProperties }: { not
     <section className="panel recent-sales"><div className="panel-heading"><div><p className="eyebrow">Movimentação</p><h2>Negócios registrados</h2></div><strong>{money.format(performance.totalSold)} em vendas · {money.format(performance.sales.filter((sale) => sale.dealType === 'Aluguel').reduce((sum, sale) => sum + sale.amount, 0))}/mês em aluguéis registrados</strong></div><div className="recent-sales-table"><div className="sale-row sale-head"><span>Data</span><span>Corretor</span><span>Cliente</span><span>Imóvel</span><span>Valor</span><span/></div>{performance.sales.slice(0,8).map((sale) => <div className="sale-row" key={sale.id}><time>{new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</time><strong>{sale.broker}</strong><span>{sale.client}</span><span>{sale.property}<small className="deal-type-label">{sale.dealType || 'Venda'}</small></span><b>{money.format(sale.amount)}{sale.dealType === 'Aluguel' ? '/mês' : ''}</b>{canEditGoals && <button type="button" aria-label={`Excluir venda de ${sale.client}`} onClick={() => removeSale(sale.id)}>×</button>}</div>)}{performance.sales.length === 0 && <p className="performance-empty">Nenhuma venda registrada neste mês.</p>}</div></section>
     </div>
 
-    {modal === 'sale' && <div className="modal-backdrop" role="presentation" onMouseDown={() => !savingDeal && setModal(null)}><form className="modal-card deal-modal" onSubmit={registerSale} onMouseDown={(event) => event.stopPropagation()}>
+    {modal === 'sale' && canEditGoals && <div className="modal-backdrop" role="presentation" onMouseDown={() => !savingDeal && setModal(null)}><form className="modal-card deal-modal" onSubmit={registerSale} onMouseDown={(event) => event.stopPropagation()}>
       <div className="modal-head"><div><p className="eyebrow">Resultado comercial</p><h2>{dealType === 'Venda' ? 'Registrar venda' : 'Registrar aluguel'}</h2></div><button type="button" disabled={savingDeal} aria-label="Fechar" onClick={() => setModal(null)}>×</button></div>
       <div className="native-segments" role="group" aria-label="Tipo de negócio">{(['Venda', 'Aluguel'] as const).map((type) => <button type="button" disabled={savingDeal} aria-pressed={dealType === type} key={type} onClick={() => setDealType(type)}>{type === 'Venda' ? 'Imóvel vendido' : 'Aluguel'}</button>)}</div>
       <p className="deal-help">{dealType === 'Venda' ? 'Registre o valor total da venda concluída.' : 'Informe o valor mensal contratado. Aluguéis não são somados ao VGV de vendas.'}</p>
@@ -1069,7 +1072,7 @@ function ProfileModal({ profile, close, save }: { profile:{ name:string; company
   return <div className="modal-backdrop" role="presentation" onMouseDown={close}><form className="modal-card" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">Equipe</p><h2>Editar perfil</h2></div><button type="button" aria-label="Fechar" onClick={close}>×</button></div><label>Nome<input name="name" defaultValue={profile.name} autoFocus required/></label><label>Imobiliária<input name="company" defaultValue={profile.company} required/></label><div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button type="submit" className="primary-button">Salvar perfil</button></div></form></div>;
 }
 
-function BrokerProfileModal({ brokerName, company, close }: { brokerName:string; company:string; close:()=>void }) {
+function BrokerProfileModal({ brokerName, company, close, canViewTeam = false }: { brokerName:string; company:string; close:()=>void; canViewTeam?:boolean }) {
   const [month, setMonth] = useState(() => businessCalendarDate().slice(0, 7));
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [performance, setPerformance] = useState<PerformanceSnapshot | null>(null);
@@ -1077,6 +1080,7 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!canViewTeam) return;
     let active = true;
     loadPerformance(month).then((data) => {
       if (active) {
@@ -1085,12 +1089,14 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
       }
     }).catch((reason) => active && setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o desempenho.')).finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, loadAttempt]);
+  }, [month, loadAttempt, canViewTeam]);
 
   function changeMonth(value: string) {
     if (!isCalendarMonth(value) || value === month) return;
     setLoading(true); setError(null); setMonth(value);
   }
+
+  if (!canViewTeam) return <div className="modal-backdrop" role="presentation" onMouseDown={close}><article className="modal-card" onMouseDown={event => event.stopPropagation()}><div className="modal-head"><h2>Meu acompanhamento</h2><button type="button" aria-label="Fechar perfil" onClick={close}>×</button></div><p>Acompanhe seus clientes e registre os fechamentos nas negociações. O relatório financeiro consolidado fica com o administrador.</p><a className="primary-button" href="#conversations" onClick={close}>Abrir minhas conversas</a></article></div>;
 
   const broker = performance?.brokers.find((item) => item.broker.toLowerCase() === brokerName.toLowerCase());
   const brokerSales = performance?.sales.filter((sale) => sale.dealType !== 'Aluguel' && sale.broker === broker?.broker) || [];
@@ -1105,7 +1111,7 @@ function BrokerProfileModal({ brokerName, company, close }: { brokerName:string;
   return <div className="modal-backdrop broker-profile-backdrop" role="presentation" onMouseDown={close}><article className="modal-card broker-profile-modal" onMouseDown={(event) => event.stopPropagation()}>
     <div className="broker-profile-header"><div className="broker-profile-person"><span>{brokerName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</span><div><p>Meu desempenho</p><h2>{brokerName}</h2><small>{company}{performance?.dataMode === 'demo' ? ' • dados demonstrativos locais' : ''}</small></div></div><div className="broker-profile-actions"><label>Competência<input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></label><button type="button" aria-label="Fechar perfil" onClick={close}>×</button></div></div>
     {loading || error || !performance || performance.month !== month ? <PeriodLoadNotice month={month} changeMonth={changeMonth} loading={loading} error={error} retry={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }} /> : !broker ? <div className="broker-profile-loading">Este perfil ainda não possui metas associadas para {monthTitle}.</div> : <div className="broker-performance-reveal" key={brokerAnimationKey}>
-      <section className="broker-goal-overview"><div><p>Meta individual de {monthTitle}</p><strong>{money.format(broker.sold)}</strong><span>de {money.format(broker.goal)}</span></div><div className="broker-goal-ring" style={{ '--broker-progress':'0deg', '--broker-progress-target':`${Math.min(100, broker.progress) * 3.6}deg` } as CSSProperties}><span><strong>{broker.progress.toFixed(0)}%</strong><small>alcançado</small></span></div><dl><div><dt>Falta para a meta</dt><dd>{money.format(remaining)}</dd></div><div><dt>Posição na equipe</dt><dd>{rank}º lugar</dd></div><div><dt>Participação no VGV</dt><dd>{teamShare.toFixed(1)}%</dd></div></dl></section>
+      <section className="broker-goal-overview"><div><p>Meta individual de {monthTitle}</p><strong>{money.format(broker.sold)}</strong><span>de {money.format(broker.goal)}</span></div><div className="broker-goal-ring" style={{ '--broker-progress':'0deg', '--broker-progress-target':`${Math.min(100, broker.progress) * 3.6}deg` } as CSSProperties}><span><strong>{broker.progress.toFixed(0)}%</strong><small>alcançado</small></span></div><dl><div><dt>Falta para a meta</dt><dd>{money.format(remaining)}</dd></div>{canViewTeam && <><div><dt>Posição na equipe</dt><dd>{rank}º lugar</dd></div><div><dt>Participação no VGV</dt><dd>{teamShare.toFixed(1)}%</dd></div></>}</dl></section>
       <section className="broker-stat-grid"><article><span>Negócios fechados</span><strong>{broker.salesCount}</strong><small>No mês selecionado</small></article><article><span>Ticket médio</span><strong>{compactMoney.format(averageTicket)}</strong><small>Por imóvel vendido</small></article><article><span>Leads recebidos</span><strong>{broker.leadsReceived}</strong><small>Carteira mensal</small></article><article><span>Leads convertidos</span><strong>{broker.convertedLeads}</strong><small>{broker.conversionRate.toFixed(1)}% de conversão</small></article><article><span>Leads recuperados</span><strong>{broker.recoveredLeads}</strong><small>Oportunidades retomadas</small></article><article><span>Visitas realizadas</span><strong>{broker.visits}</strong><small>Atendimentos presenciais</small></article></section>
       <section className="broker-profile-content"><article className="broker-month-chart"><div><p>Evolução individual</p><h3>Vendas por mês</h3></div>{broker.history.length > 0 ? <div className="broker-history-bars">{broker.history.map((item) => <div key={item.month}><span>{compactMoney.format(item.sold)}</span><i><b style={{ height:`${Math.max(10, (item.sold / historyMax) * 100)}%` }}/></i><small>{new Intl.DateTimeFormat('pt-BR', { month:'short', timeZone:'UTC' }).format(new Date(`${item.month}-01T12:00:00Z`)).replace('.','')}</small></div>)}</div> : <p className="broker-empty">Ainda não há histórico de vendas.</p>}</article><article className="broker-sales-list"><div><p>Fechamentos do mês</p><h3>Vendas recentes</h3></div>{brokerSales.length > 0 ? <ul>{brokerSales.map((sale) => <li key={sale.id}><span><strong>{sale.property}</strong><small>{sale.client} • {new Date(`${sale.date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone:'UTC' })}</small></span><b>{money.format(sale.amount)}</b></li>)}</ul> : <p className="broker-empty">Nenhuma venda registrada neste mês.</p>}</article></section>
     </div>}

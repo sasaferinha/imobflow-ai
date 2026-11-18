@@ -12,7 +12,7 @@ async function db(resource,options={}){
  if(resource==='social_oauth_requests'&&options.method==='POST'){oauth.set(b.state_hash,{...b});return;}
  if(resource.startsWith('social_oauth_requests?')&&options.method==='DELETE'){
   const hash=new URLSearchParams(resource.split('?')[1]).get('state_hash').slice(3),row=oauth.get(hash);
-  if(!row||Date.parse(row.expires_at)<=Date.now())return[];
+  if(!row||Date.parse(row.expires_at)<=Date.now()||(row.login_provider||'facebook')!==new URLSearchParams(resource.split('?')[1]).get('login_provider')?.slice(3))return[];
   oauth.delete(hash);return[row];
  }
  if(resource.startsWith('broker_accounts?')){assert.ok(resource.includes(`company_id=eq.${company}`));assert.ok(resource.includes(`id=eq.${broker}`));return activeOwner?[{id:broker}]:[];}
@@ -52,7 +52,7 @@ const cache=new Map();function load(file){
  const requireLocal=s=>{
   if(s==='next/server')return{NextRequest:Request,NextResponse:TestResponse};
   if(s==='@/lib/supabase'||s==='./supabase')return{supabaseRequest:db,supabaseServiceRequest:db};
-  if(s==='./meta-social')return{socialConnections:()=>environmentConnections};
+  if(s==='./meta-social')return{socialConnections:()=>environmentConnections,socialLoginProvider:value=>value===undefined?'facebook':['facebook','instagram'].includes(value)?value:null};
   if(s.startsWith('@/'))return load(s.slice(2)+'.ts');
   if(s.startsWith('.'))return load(path.posix.normalize(path.posix.join(path.posix.dirname(file),s))+'.ts');
   return require(s);
@@ -80,7 +80,8 @@ function request(method,{body,query='',token=ownerToken,state,origin='https://ap
  assert.equal(url.searchParams.get('redirect_uri'),'https://app.example.invalid/api/integrations/meta/social/callback');
  assert.equal(connected.testCookies[0].value,state);assert.equal(connected.testCookies[0].config.httpOnly,true);assert.equal(connected.testCookies[0].config.secure,true);assert.equal(connected.testCookies[0].config.sameSite,'lax');
  const stored=oauth.get(digest(state));assert.equal(stored.company_id,company);assert.equal(stored.broker_id,broker);assert.equal(stored.channel,'facebook');assert.ok(!JSON.stringify(stored).includes(state),'only nonce hash is stored');
- for(const channel of ['instagram',undefined]){
+ assert.equal((await api.POST(request('POST',{body:{action:'connect',channel:'instagram'}}))).status,503,'missing native Instagram credentials never silently use Facebook Login');
+ for(const channel of [undefined]){
   const response=await api.POST(request('POST',{body:{action:'connect',...(channel?{channel}:{})}}));assert.equal(response.status,200);const scope=new URL((await response.json()).url).searchParams.get('scope');assert.match(scope,/instagram_basic/);assert.match(scope,/instagram_manage_messages/);
  }
  const beforeCallback=network.length;
@@ -121,5 +122,21 @@ function request(method,{body,query='',token=ownerToken,state,origin='https://ap
  assert.equal((await lib.activeSocialConnections({companyId:company})).length,0,'disconnected channel history overrides env fallback');
  savedAccounts=[];
  assert.equal((await lib.activeSocialConnections({accountIds:['789']})).length,1,'bootstrap remains available only before this channel has persisted history');
+ const previousNetwork=network.length;
+ const native={id:'native-ig',company_id:company,channel:'instagram',account_id:'456',page_id:'456',name:'Synthetic IG',enabled:true,default_mode:'human',login_provider:'instagram'};
+ for(const expiresAt of [new Date(Date.now()-1000).toISOString(),null,undefined,'invalid']){
+  savedAccounts=[{...native,token_expires_at:expiresAt}];
+  const result=await lib.socialConnectionStatus(company);
+  assert.equal(result.accounts[0].enabled,true,'expired identity remains available to disconnect');
+  assert.equal(result.accounts[0].reconnectRequired,true,'native authorization with expired/unconfirmed validity cannot be presented as ready');
+  assert.doesNotMatch(JSON.stringify(result.accounts),/token_ciphertext|access_token|token_expires_at/,'status exposes no credential or raw storage fields');
+ }
+ savedAccounts=[{...native,token_expires_at:new Date(Date.now()+86400000).toISOString()}];
+ assert.equal((await lib.socialConnectionStatus(company)).accounts[0].reconnectRequired,false);
+ for(const channel of ['instagram','facebook'])for(const provider of ['facebook',undefined]){
+  savedAccounts=[{...native,channel,login_provider:provider,token_expires_at:null}];
+  assert.equal((await lib.socialConnectionStatus(company)).accounts[0].reconnectRequired,false,'legacy connections without a recorded expiration remain valid');
+ }
+ assert.equal(network.length,previousNetwork,'status never contacts the provider or renews tokens as a side effect');
  console.log('PASS social connections: Facebook-only consent and Page listing/selection without Instagram, compatible IG/legacy flow, session/origin/rate guards, bound one-use state, active-owner check, tenant conflict and no credential exposure; synthetic provider only.');
 })().catch(error=>{console.error(error);process.exit(1);});

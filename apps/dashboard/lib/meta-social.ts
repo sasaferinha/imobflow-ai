@@ -10,8 +10,14 @@ const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const clean = (value: unknown, max = 500) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const id = (value: unknown) => /^\d{1,40}$/.test(clean(value)) ? clean(value) : '';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export type SocialConnection = { companyId: string; pageId?: string; instagramId?: string; accessToken?: string; enabled: boolean; apiVersion: string; channel?: 'facebook' | 'instagram'; databaseId?: string };
+export type SocialLoginProvider = 'facebook' | 'instagram';
+export type SocialConnection = { companyId: string; pageId?: string; instagramId?: string; accessToken?: string; enabled: boolean; apiVersion: string; channel?: 'facebook' | 'instagram'; databaseId?: string; loginProvider?: SocialLoginProvider; tokenExpiresAt?: string | null };
 export type SocialEvent = { kind: 'facebook' | 'instagram'; connection: SocialConnection; externalId: string; senderId?: string; text?: string; occurredAt?: string; mediaUrls?: string[]; mediaType?: string };
+
+/** Only an absent legacy field defaults to Facebook; malformed providers fail closed. */
+export function socialLoginProvider(value: unknown): SocialLoginProvider | null {
+  return value === undefined || value === 'facebook' ? 'facebook' : value === 'instagram' ? 'instagram' : null;
+}
 
 /** Bindings are server-managed. A webhook can never select an arbitrary tenant. */
 export function socialConnections(raw = process.env.META_SOCIAL_CONNECTIONS): SocialConnection[] {
@@ -21,7 +27,7 @@ export function socialConnections(raw = process.env.META_SOCIAL_CONNECTIONS): So
   const bound = new Set<string>();
   return input.map(value => {
     const row = object(value), companyId = clean(row.companyId), pageId = id(row.pageId), instagramId = id(row.instagramId);
-    if (!uuid.test(companyId) || (!pageId && !instagramId) || (row.enabled !== undefined && typeof row.enabled !== 'boolean')) throw new Error('social_configuration_invalid');
+    if (!uuid.test(companyId) || (!pageId && !instagramId) || (row.enabled !== undefined && typeof row.enabled !== 'boolean') || socialLoginProvider(row.loginProvider) !== 'facebook') throw new Error('social_configuration_invalid');
     for (const key of [pageId && `page:${pageId}`, instagramId && `instagram:${instagramId}`].filter(Boolean)) {
       if (bound.has(key)) throw new Error('social_account_ambiguous');
       bound.add(key);
@@ -32,11 +38,14 @@ export function socialConnections(raw = process.env.META_SOCIAL_CONNECTIONS): So
 
 export function parseSocialEvents(payload: unknown, connections: SocialConnection[]): SocialEvent[] {
   const root = object(payload), result: SocialEvent[] = [];
+  // Native Instagram identities are never eligible for Page events. The route
+  // additionally restricts connections to the app whose signature was checked.
+  const available = connections.filter(c => c.enabled && socialLoginProvider(c.loginProvider) !== null && (c.loginProvider !== 'instagram' || c.channel === 'instagram'));
   for (const rawEntry of list(root.entry)) {
     const entry = object(rawEntry), entryId = id(entry.id);
     if (!entryId) continue;
     if (root.object === 'page') {
-      const connection = connections.find(c => c.enabled && c.pageId === entryId && c.channel !== 'instagram');
+      const connection = available.find(c => socialLoginProvider(c.loginProvider) === 'facebook' && c.pageId === entryId && c.channel !== 'instagram');
       if (!connection) continue;
       for (const rawChange of list(entry.changes)) {
         const change = object(rawChange), value = object(change.value), externalId = id(value.leadgen_id);
@@ -45,7 +54,7 @@ export function parseSocialEvents(payload: unknown, connections: SocialConnectio
     }
     if (root.object === 'instagram' || root.object === 'page') {
       const instagram = root.object === 'instagram';
-      const connection = connections.find(c => c.enabled && (instagram ? c.instagramId === entryId && c.channel !== 'facebook' : c.pageId === entryId && c.channel !== 'instagram'));
+      const connection = available.find(c => instagram ? c.instagramId === entryId && c.channel !== 'facebook' : socialLoginProvider(c.loginProvider) === 'facebook' && c.pageId === entryId && c.channel !== 'instagram');
       if (!connection) continue;
       for (const rawMessage of list(entry.messaging)) {
         const event = object(rawMessage), message = object(event.message), senderId = id(object(event.sender).id), recipient = id(object(event.recipient).id);
@@ -64,7 +73,13 @@ export function parseSocialEvents(payload: unknown, connections: SocialConnectio
 }
 
 export function socialLeadId(event: SocialEvent) {
-  const hash = createHash('sha256').update([event.connection.companyId, event.senderId && event.kind === 'facebook' ? 'facebook-messenger' : event.kind, event.kind === 'instagram' ? event.connection.instagramId : event.connection.pageId, event.senderId || event.externalId].join(':')).digest('hex');
+  const provider = socialLoginProvider(event.connection.loginProvider);
+  if (!provider || provider === 'instagram' && event.kind !== 'instagram') throw new Error('social_configuration_invalid');
+  const identity = [event.connection.companyId, event.senderId && event.kind === 'facebook' ? 'facebook-messenger' : event.kind, event.kind === 'instagram' ? event.connection.instagramId : event.connection.pageId, event.senderId || event.externalId];
+  // Keep all historical Facebook Login IDs byte-for-byte unchanged. Instagram
+  // Login has its own recipient namespace even when an external ID coincides.
+  if (provider === 'instagram') identity.splice(1, 0, 'instagram-login');
+  const hash = createHash('sha256').update(identity.join(':')).digest('hex');
   return `${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`;
 }
 

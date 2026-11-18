@@ -7,6 +7,7 @@ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleK
  if(id==='next/server')return {NextResponse:{json:(body,options)=>({body,status:options?.status||200})}};
  if(id==='@/lib/admin-auth')return {isAdminRequest:()=>authorized};
  if(id==='@/lib/request-security')return {hasSameOrigin:()=>sameOrigin};
+ if(id==='@/lib/classic-crm-access')return {ClassicCrmError:class extends Error {},assertClassicPropertyWrite:async()=>{}};
  if(id==='@/lib/database')return {updatePropertyImages:async(id,images)=>{writes.push({id,images});return {id,images}},updateProperty:()=>{throw Error('Full update must not run')}};
  if(id==='@/lib/property-images')return {persistPropertyImages:async images=>{persisted.push(images);return images}};
  return {};

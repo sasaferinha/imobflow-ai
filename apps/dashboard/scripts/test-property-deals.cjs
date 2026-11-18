@@ -36,7 +36,7 @@ function loadPure(file) {
   const code = ts.transpileModule(fs.readFileSync(require('node:path').join(__dirname, '../lib/', file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const mod = { exports: {} }; vm.runInNewContext(code, { module: mod, exports: mod.exports, Date }); return mod.exports;
 }
-vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, process: { env: { DATABASE_URL: 'mock-only' } }, require: (name) => name === '@neondatabase/serverless' ? { neon: () => sql } : name === './supabase' ? { supabaseCompanyId: () => 'company', supabaseRequest } : name === './property-matching' ? loadPure('property-matching.ts') : name === './leads' ? loadPure('leads.ts') : {}, Date, console });
+vm.runInNewContext(output, { module: fakeModule, exports: fakeModule.exports, process: { env: { DATABASE_URL: 'mock-only' } }, require: (name) => name === '@neondatabase/serverless' ? { neon: () => sql } : name === './supabase' ? { supabaseCompanyId: () => 'company', supabaseRequest } : name === './tenant-context' ? {currentAccount:()=>({role:'owner'})} : name === './classic-crm-access' ? {ClassicCrmError:class extends Error {},readClassicRows:async table=>supabaseRequest(`${table}?company_id=eq.company`),writeClassicRow:async(table,id,action,data)=>{assert.equal(table,'properties');lastPropertyPayload=data;return savedProperty;}} : name === './property-matching' ? loadPure('property-matching.ts') : name === './leads' ? loadPure('leads.ts') : {}, Date, console });
 (async () => {
   const api = fakeModule.exports;
   const report = await api.getPerformance('2026-09');

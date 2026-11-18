@@ -7,11 +7,15 @@ const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
 const ts = require('typescript');
-const { createDatabase, seedCompanies, id } = require('./helpers/tenant-test-database.cjs');
+const { createDatabase, seedCompanies, id, migration, isolationMigration } = require('./helpers/tenant-test-database.cjs');
 
 async function run() {
   const db = await createDatabase();
   try {
+    // Exercise current RPC authorization against the same versioned schema as
+    // production, including native social identities and classic portfolio ACL.
+    for (const name of fs.readdirSync(path.resolve(__dirname, '../../../supabase/migrations'))
+      .filter(name => name.endsWith('.sql') && name > isolationMigration).sort()) await db.exec(migration(name));
     await seedCompanies(db);
     const tokens = ['a'.repeat(64),'b'.repeat(64)];
     for (const [index,token] of tokens.entries()) {
@@ -32,8 +36,9 @@ async function run() {
         let rows;
         if (resource.startsWith('rpc/')) {
           const fn = resource.slice(4), entries = Object.entries(body || {});
-          rows = (await db.query(`SELECT * FROM public.${identifier(fn)}(${entries.map(([name],i)=>`${identifier(name)} => $${i+1}`).join(',')})`,entries.map(([,value])=>value))).rows;
-          if (fn === 'consume_rate_limit') return Response.json(rows[0].consume_rate_limit);
+          rows = (await db.query(`SELECT * FROM public.${identifier(fn)}(${entries.map(([name],i)=>`${identifier(name)} => $${i+1}`).join(',')})`,entries.map(([,value])=>typeof value==='object'&&value!==null?JSON.stringify(value):value))).rows;
+          // PostgREST unwraps scalar JSONB results; SETOF routines remain arrays.
+          if (['consume_rate_limit','read_classic_crm_records','write_classic_crm_record'].includes(fn)) return Response.json(rows[0][fn]);
           return Response.json(rows);
         }
         assert.ok(['leads','properties','appointments','companies','account_companies'].includes(resource),resource);

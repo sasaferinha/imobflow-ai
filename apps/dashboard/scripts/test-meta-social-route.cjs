@@ -1,8 +1,8 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),ts=require('typescript'),crypto=require('node:crypto');
 const company='11111111-1111-4111-a111-111111111111',foreign='22222222-2222-4222-a222-222222222222';
-const env={META_APP_SECRET:'test-app-secret',META_SOCIAL_WEBHOOK_VERIFY_TOKEN:'social-token',META_WHATSAPP_WEBHOOK_VERIFY_TOKEN:'whatsapp-token',META_SOCIAL_CONNECTIONS:JSON.stringify([{companyId:company,pageId:'123',instagramId:'456',accessToken:'secret-never-output',enabled:true},{companyId:foreign,pageId:'234',instagramId:'567',accessToken:'foreign-secret',enabled:true}])};
+const env={META_APP_SECRET:'test-app-secret',META_INSTAGRAM_APP_SECRET:'native-instagram-secret',META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN:'instagram-token',META_SOCIAL_WEBHOOK_VERIFY_TOKEN:'social-token',META_WHATSAPP_WEBHOOK_VERIFY_TOKEN:'whatsapp-token',META_SOCIAL_CONNECTIONS:JSON.stringify([{companyId:company,pageId:'123',instagramId:'456',accessToken:'secret-never-output',enabled:true},{companyId:foreign,pageId:'234',instagramId:'567',accessToken:'foreign-secret',enabled:true}])};
 const sessions=new Map([['a'.repeat(64),'owner'],['b'.repeat(64),'broker']].map(([token,role])=>[crypto.createHash('sha256').update(token).digest('hex'),{broker_id:`${role}-example`,company_id:company,name:'Synthetic user',company:'Synthetic company',role}]));
-const calls=[],saved=[];let failSave=false;
+const calls=[],saved=[],afterTasks=[];let failSave=false,extraConnections=[],onlyExtras=false,inboxResult=false;
 async function db(resource,options={}){
   calls.push({resource,options});
   if(resource==='rpc/account_session')return sessions.has(options.body.p_hash)?[sessions.get(options.body.p_hash)]:[];
@@ -14,10 +14,10 @@ function load(file){
   if(cache.has(file))return cache.get(file);
   const mod={exports:{}};cache.set(file,mod.exports);
   const requireLocal=specifier=>{
-    if(specifier==='next/server')return{NextResponse:Response,NextRequest:Request,after:()=>{}};
+    if(specifier==='next/server')return{NextResponse:Response,NextRequest:Request,after:task=>afterTasks.push(task)};
     if(specifier==='@/lib/supabase'||specifier==='./supabase')return{supabaseRequest:db,supabaseServiceRequest:db};
-    if(specifier==='@/lib/meta-social')return{...load('lib/meta-social.ts'),saveSocialEvent:async event=>{if(failSave)throw Error('synthetic-failure');saved.push(event);return {created:true};}};
-    if(specifier==='@/lib/social-connections')return{activeSocialConnections:async filter=>load('lib/meta-social.ts').socialConnections().filter(c=>!filter.companyId||c.companyId===filter.companyId)};
+    if(specifier==='@/lib/meta-social')return{...load('lib/meta-social.ts'),saveSocialEvent:async event=>{if(failSave)throw Error('synthetic-failure');saved.push(event);return inboxResult?{saved:true,companyId:event.connection.companyId,threadId:'synthetic-thread',leadId:'synthetic-lead',messageId:'synthetic-message'}:{created:true};}};
+    if(specifier==='@/lib/social-connections')return{activeSocialConnections:async filter=>[...(onlyExtras?[]:load('lib/meta-social.ts').socialConnections()),...extraConnections].filter(c=>!filter.companyId||c.companyId===filter.companyId)};
     if(specifier==='./lead-import')return{importPhone:input=>input.replace(/\D/g,'')};
     if(specifier==='./leads')return{analyzeLead:()=>({score:0,temperature:'Frio'}),explainProfile:()=>''};
     if(specifier.startsWith('@/'))return load(specifier.slice(2)+'.ts');
@@ -27,7 +27,7 @@ function load(file){
   const source=ts.transpileModule(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   vm.runInNewContext(source,{module:mod,exports:mod.exports,require:requireLocal,Date,Buffer,URL,URLSearchParams,Request,Response,Headers,AbortSignal,process:{env},console:{error:()=>{}},fetch:()=>{throw Error('External network denied in route test');}},{filename:file});return mod.exports;
 }
-const signature=body=>`sha256=${crypto.createHmac('sha256',env.META_APP_SECRET).update(body).digest('hex')}`;
+const signature=(body,secret=env.META_APP_SECRET)=>`sha256=${crypto.createHmac('sha256',secret).update(body).digest('hex')}`;
 function request(method,{token,query='',body,headers={}}={}){
   const req=new Request(`https://app.example.invalid/api/integrations/meta/social${query?'?'+query:''}`,{method,headers:{...headers},...(body===undefined?{}:{body})});
   req.nextUrl=new URL(req.url);req.cookies={get:name=>name==='imobflow_session'&&token?{value:token}:undefined};return req;
@@ -61,6 +61,49 @@ function request(method,{token,query='',body,headers={}}={}){
   failSave=true;assert.equal((await api.POST(request('POST',{body,headers:{'x-hub-signature-256':signature(body)}}))).status,503,'failed commit asks Meta retry, not false success');
   delete env.META_APP_SECRET;
   assert.equal((await api.POST(request('POST',{body,headers:{'x-hub-signature-256':'sha256='+'0'.repeat(64)}}))).status,401);
+  env.META_APP_SECRET='test-app-secret';failSave=false;
+  const native=load('app/api/integrations/meta/instagram/route.ts');
+  const nativeSecret=env.META_INSTAGRAM_APP_SECRET;
+  const nativeHeaders={'x-hub-signature-256':signature(body,nativeSecret)};
+  const nativeConnection={companyId:company,pageId:'456',instagramId:'456',enabled:true,apiVersion:'v26.0',channel:'instagram',loginProvider:'instagram',databaseId:'native-account',accessToken:'native-token-never-output'};
+  extraConnections=[nativeConnection];
+  assert.equal((await native.GET(request('GET',{query:challenge+'instagram-token'}))).status,200);
+  assert.equal((await native.GET(request('GET',{query:challenge+'social-token'}))).status,403,'configured native verification token takes precedence');
+  delete env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN;
+  assert.equal((await native.GET(request('GET',{query:challenge+'social-token'}))).status,200,'shared verification token may be explicitly reused');
+  delete env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN;
+  assert.equal((await native.GET(request('GET',{query:challenge+'whatsapp-token'}))).status,403);
+  env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN='social-token';env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN='instagram-token';
+  let before=saved.length;
+  assert.equal((await native.POST(request('POST',{body,headers:{'x-hub-signature-256':signature(body)}}))).status,401,'Facebook app signature cannot authenticate native Instagram');
+  assert.equal((await api.POST(request('POST',{body,headers:nativeHeaders}))).status,401,'Instagram app signature cannot authenticate the legacy app');
+  assert.equal(saved.length,before);
+  inboxResult=true;
+  assert.equal((await native.POST(request('POST',{body,headers:nativeHeaders}))).status,200);
+  assert.equal(saved.length,before+1);assert.equal(saved.at(-1).connection.loginProvider,'instagram');assert.equal(saved.at(-1).connection.companyId,company);assert.equal(afterTasks.length,1,'only durable native incoming messages schedule AI');
+  inboxResult=false;
+  assert.equal((await api.POST(request('POST',{body,headers:{'x-hub-signature-256':signature(body)}}))).status,200);
+  assert.equal(saved.length,before+2);assert.equal(saved.at(-1).connection.loginProvider,undefined,'legacy signed event stays with legacy identity despite the same Instagram ID');
+  const pageBody=JSON.stringify({object:'page',entry:[{id:'456',messaging:[{sender:{id:'777'},recipient:{id:'456'},message:{mid:'page-native',text:'Must not route'}}]}]});
+  before=saved.length;
+  assert.equal((await native.POST(request('POST',{body:pageBody,headers:{'x-hub-signature-256':signature(pageBody,nativeSecret)}}))).status,200);assert.equal(saved.length,before,'native endpoint ignores all Page notifications');
+  assert.equal((await native.POST(request('POST',{body:unknown,headers:{'x-hub-signature-256':signature(unknown,nativeSecret)}}))).status,200);assert.equal(saved.length,before);
+  assert.equal((await native.POST(request('POST',{body:'{',headers:{'x-hub-signature-256':signature('{',nativeSecret)}}))).status,400);
+  assert.equal((await native.POST(request('POST',{body:'x'.repeat(262145)}))).status,413);
+  assert.equal((await native.POST(request('POST',{body:'',headers:{'content-length':'262145'}}))).status,413);
+  onlyExtras=true;
+  const nativeOnly=await api.GET(request('GET',{token:'a'.repeat(64)}));const nativeStatus=await nativeOnly.json();assert.equal(nativeStatus.data.facebook,false);assert.equal(nativeStatus.data.instagram,true);assert.doesNotMatch(JSON.stringify(nativeStatus),/native-token-never-output|accessToken/);
+  assert.equal((await api.POST(request('POST',{body,headers:{'x-hub-signature-256':signature(body)}}))).status,200);assert.equal(saved.length,before,'Facebook signature never routes a native-only matching account');
+  extraConnections=[{...nativeConnection,loginProvider:'facebook'}];
+  assert.equal((await native.POST(request('POST',{body,headers:nativeHeaders}))).status,200);assert.equal(saved.length,before,'native signature never routes a legacy-only matching account');
+  extraConnections=[{...nativeConnection,loginProvider:'invalid'}];
+  assert.equal((await native.POST(request('POST',{body,headers:nativeHeaders}))).status,200);assert.equal(saved.length,before);
+  assert.equal((await api.POST(request('POST',{body,headers:{'x-hub-signature-256':signature(body)}}))).status,200);assert.equal(saved.length,before,'invalid provider fails closed on both routes');
+  extraConnections=[nativeConnection];failSave=true;
+  assert.equal((await native.POST(request('POST',{body,headers:nativeHeaders}))).status,503,'native failed commit requests retry');failSave=false;
+  delete env.META_INSTAGRAM_APP_SECRET;
+  assert.equal((await native.POST(request('POST',{body,headers:{'x-hub-signature-256':signature(body)}}))).status,401,'missing Instagram secret never defaults to Facebook app secret');
+  assert.equal((await native.POST(request('POST',{body,headers:nativeHeaders}))).status,401);
   assert.ok(calls.every(c=>c.resource==='rpc/account_session'||c.resource.startsWith('leads?')));
-  console.log('PASS Meta social route: real session/ALS auth, owner-only tenant-scoped status, no credentials exposed, explicit handshake token, real HMAC, payload bounds, unsigned denial, unbound account ignore and retry on failed commit; no network or sends.');
+  console.log('PASS Meta social/Instagram routes: tenant-scoped status, channel-correct connection state, separate HMAC secrets and provider namespaces, native handshake, bounded payloads, durable AI scheduling, unsigned/cross-app denial and retry on failed commit; no network or sends.');
 })().catch(error=>{console.error(error);process.exit(1);});

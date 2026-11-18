@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { deleteAppointment, updateAppointmentStatus } from '@/lib/database';
 import { hasSameOrigin } from '@/lib/request-security';
+import { ClassicCrmError } from '@/lib/classic-crm-access';
 
 export const runtime = 'nodejs';
 
@@ -15,6 +16,7 @@ async function handlePATCH(request: NextRequest, context: { params: Promise<{ id
     const data = await updateAppointmentStatus((await context.params).id, status);
     return data ? NextResponse.json({ data }) : NextResponse.json({ error: 'Horário não encontrado.' }, { status: 404 });
   } catch (error) {
+    if (error instanceof ClassicCrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('appointment_update_failed', error);
     return NextResponse.json({ error: 'Não foi possível atualizar o horário.' }, { status: 500 });
   }
@@ -28,6 +30,7 @@ async function handleDELETE(request: NextRequest, context: { params: Promise<{ i
       ? NextResponse.json({ ok: true })
       : NextResponse.json({ error: 'Horário não encontrado.' }, { status: 404 });
   } catch (error) {
+    if (error instanceof ClassicCrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('appointment_delete_failed', error);
     return NextResponse.json({ error: 'Não foi possível excluir o horário.' }, { status: 500 });
   }

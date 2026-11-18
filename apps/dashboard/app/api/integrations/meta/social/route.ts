@@ -3,7 +3,7 @@ import { protectedRoute } from '@/lib/accounts';
 import { currentAccount } from '@/lib/tenant-context';
 import { supabaseServiceRequest } from '@/lib/supabase';
 import { verifyMetaWebhookSignature, verifyMetaWebhookToken } from '@/lib/meta-whatsapp';
-import { parseSocialEvents, saveSocialEvent } from '@/lib/meta-social';
+import { parseSocialEvents, saveSocialEvent, socialLoginProvider } from '@/lib/meta-social';
 import { activeSocialConnections } from '@/lib/social-connections';
 import { socialId, socialObject } from '@/lib/social-model';
 
@@ -18,7 +18,7 @@ const status = protectedRoute(async () => {
     const connections=await activeSocialConnections({companyId:actor.companyId});
     const leads=await supabaseServiceRequest<Array<{id:string;name:string;source:string;created_at:string;details:string;interest_profile:Record<string,unknown>}>>(`leads?company_id=eq.${encodeURIComponent(actor.companyId)}&source=in.(Facebook%20Lead%20Ads,Instagram%20Direct)&select=id,name,source,created_at,details,interest_profile&order=created_at.desc&limit=30`);
     return NextResponse.json({data:{
-      facebook:connections.some(c=>c.enabled&&c.pageId&&c.accessToken), instagram:connections.some(c=>c.enabled&&c.instagramId),
+      facebook:connections.some(c=>c.enabled&&c.pageId&&c.accessToken&&socialLoginProvider(c.loginProvider)==='facebook'&&c.channel!=='instagram'), instagram:connections.some(c=>c.enabled&&c.instagramId&&c.channel!=='facebook'),
       webhookConfigured:Boolean(process.env.META_APP_SECRET&&process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN),
       inbox:leads.map(l=>({id:l.id,name:l.name,source:l.source,createdAt:l.created_at,details:l.details,messages:Array.isArray(l.interest_profile?.socialMessages)?l.interest_profile.socialMessages:[]})),
     }},{headers:{'Cache-Control':'no-store'}});
@@ -42,7 +42,10 @@ export async function POST(request:NextRequest) {
   try {
     const entries=socialObject(payload).entry;
     const accountIds=Array.isArray(entries)?entries.map(e=>socialId(socialObject(e).id)).filter(Boolean):[];
-    const events=parseSocialEvents(payload,await activeSocialConnections({accountIds}));
+    // This endpoint belongs to the Facebook app. Its signature cannot
+    // authorize a delivery to an Instagram Login connection with a matching ID.
+    const connections=(await activeSocialConnections({accountIds})).filter(c=>socialLoginProvider(c.loginProvider)==='facebook');
+    const events=parseSocialEvents(payload,connections);
     const deadline=Date.now()+45000;
     for(const event of events){
       if(Date.now()>deadline)throw Error('deadline');

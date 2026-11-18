@@ -7,6 +7,8 @@ import type { AppointmentInput, AppointmentRecord, PerformanceSettingsInput, Per
 import { supabaseCompanyId, supabaseRequest } from './supabase';
 import { moneyValue } from './property-matching';
 import { importPhone } from './lead-import';
+import { ClassicCrmError, readClassicRows, writeClassicRow } from './classic-crm-access';
+import { currentAccount } from './tenant-context';
 
 // Exact identifiers written by the retired demo bootstrap. Preserve the records
 // for review, but never count them as real sales.
@@ -37,6 +39,14 @@ export async function createLead(input: LeadInput, attribution?: AdAttribution |
 }
 
 export async function listLeads(limit = 10000): Promise<LeadProfile[]> {
+  const rows = await readClassicRows('leads', limit);
+  return rows.map(mapLead);
+}
+
+/** Internal automation reconciliation needs the complete company snapshot so
+ * an event raised by one broker never cancels another portfolio's reminders.
+ * Browser listings and manual Match must use listLeads instead. */
+export async function listLeadsForAutomation(limit = 10001): Promise<LeadProfile[]> {
   const rows = await supabaseRequest<Record<string, unknown>[]>(`leads?company_id=eq.${supabaseCompanyId()}&select=*&order=created_at.desc&limit=${Math.max(1, Math.min(limit, 10001))}`, { allRows: true });
   return rows.map(mapLead);
 }
@@ -74,13 +84,12 @@ export async function importLeads(inputs: LeadInput[]) {
 }
 
 export async function updateLeadIntelligence(id: string, input: Partial<{ lifecycleStatus: LeadLifecycleStatus; lastContactAt: string | null; recoverySelected: boolean; assignedTo: string | null }>) {
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`leads?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, {
-    method: 'PATCH', prefer: 'return=representation',
-    body: { ...(input.lifecycleStatus === undefined ? {} : { lifecycle_status: input.lifecycleStatus }),
+  const row = await writeClassicRow('leads', id, 'update', {
+      ...(input.lifecycleStatus === undefined ? {} : { lifecycle_status: input.lifecycleStatus }),
       ...(input.lastContactAt === undefined ? {} : { last_contact_at: input.lastContactAt }),
-      ...(input.assignedTo === undefined ? {} : { assigned_to: input.assignedTo }) },
+      ...(input.assignedTo === undefined ? {} : { assigned_to: input.assignedTo }),
   });
-  return rows[0] ? mapLead(rows[0]) : null;
+  return row ? mapLead(row) : null;
 }
 
 export async function listProperties(forAutomation = false): Promise<PropertyRecord[]> {
@@ -90,23 +99,23 @@ export async function listProperties(forAutomation = false): Promise<PropertyRec
 }
 
 export async function createProperty(input: PropertyInput): Promise<PropertyRecord> {
-  const rows = await supabaseRequest<Record<string, unknown>[]>('properties', { method: 'POST', prefer: 'return=representation', body: propertyPayload(input) });
-  return mapProperty(rows[0]);
+  const row = await writeClassicRow('properties', null, 'insert', propertyPayload(input));
+  if (!row) throw new ClassicCrmError('Não foi possível salvar o imóvel.', 503);
+  return mapProperty(row);
 }
 
 export async function updateProperty(id: string, input: PropertyInput): Promise<PropertyRecord | null> {
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`properties?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, { method: 'PATCH', prefer: 'return=representation', body: propertyPayload(input) });
-  return rows[0] ? mapProperty(rows[0]) : null;
+  const row = await writeClassicRow('properties', id, 'update', propertyPayload(input));
+  return row ? mapProperty(row) : null;
 }
 
 export async function updatePropertyImages(id: string, images: string[]): Promise<PropertyRecord | null> {
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`properties?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}`, { method: 'PATCH', prefer: 'return=representation', body: { images, updated_at: new Date().toISOString() } });
-  return rows[0] ? mapProperty(rows[0]) : null;
+  const row = await writeClassicRow('properties', id, 'update', { images });
+  return row ? mapProperty(row) : null;
 }
 
 export async function deleteProperty(id: string): Promise<boolean> {
-  const rows = await supabaseRequest<Array<{ id: string }>>(`properties?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&select=id`, { method: 'DELETE', prefer: 'return=representation' });
-  return rows.length > 0;
+  return Boolean(await writeClassicRow('properties', id, 'delete'));
 }
 
 function mapProperty(row: Record<string, unknown>): PropertyRecord {
@@ -127,15 +136,11 @@ function mapProperty(row: Record<string, unknown>): PropertyRecord {
 }
 
 export async function listAppointments(): Promise<AppointmentRecord[]> {
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?company_id=eq.${supabaseCompanyId()}&select=*&order=scheduled_at.asc`, { allRows: true });
+  const rows = await readClassicRows('appointments');
   if (!rows.length) return [];
-  // Names only: do not download property photos or full lead profiles for agenda labels.
-  const [leads, properties] = await Promise.all([
-    supabaseRequest<Array<{id: string; name: string}>>(`leads?company_id=eq.${supabaseCompanyId()}&select=id,name`, { allRows: true }),
-    supabaseRequest<Array<{id: string; title: string}>>(`properties?company_id=eq.${supabaseCompanyId()}&select=id,title`, { allRows: true }),
-  ]);
-  const leadNames = new Map(leads.map((lead) => [lead.id, lead.name]));
-  const propertyNames = new Map(properties.map((property) => [property.id, property.title]));
+  // The authorized SQL read joins only labels, not photos or client profiles.
+  const leadNames = new Map(rows.filter(row => typeof row.lead_name === 'string').map(row => [String(row.lead_id), String(row.lead_name)]));
+  const propertyNames = new Map(rows.filter(row => typeof row.property_title === 'string').map(row => [String(row.property_id), String(row.property_title)]));
   return rows.map((row) => mapAppointment(row, leadNames, propertyNames));
 }
 
@@ -145,25 +150,23 @@ export async function createAppointment(input: AppointmentInput): Promise<Appoin
   const property = properties.find((item) => input.propertyId ? item.id === input.propertyId : item.title.toLowerCase() === input.property.toLowerCase());
   if (!lead) throw new Error('Selecione um lead cadastrado para agendar a visita.');
   if (input.propertyId && (!property || property.status === 'Vendido' || property.status === 'Alugado')) throw new Error('Selecione um imóvel disponível para agendar a visita.');
-  const rows = await supabaseRequest<Record<string, unknown>[]>('appointments', {
-    method: 'POST', prefer: 'return=representation',
-    body: { company_id: supabaseCompanyId(), lead_id: lead.id, property_id: property?.id || null,
-      scheduled_at: `${input.date}T${input.time}:00-03:00`, assigned_to: input.broker, status: input.status, notes: `${lead.name} · ${property?.title || input.property}` },
+  const row = await writeClassicRow('appointments', null, 'insert', {
+      lead_id: lead.id, property_id: property?.id || null,
+      scheduled_at: `${input.date}T${input.time}:00-03:00`, assigned_to: input.broker, status: input.status, notes: `${lead.name} · ${property?.title || input.property}`,
   });
-  return mapAppointment(rows[0], new Map([[lead.id, lead.name]]), new Map(property ? [[property.id, property.title]] : []));
+  if (!row) throw new ClassicCrmError('Não foi possível salvar o horário.', 503);
+  return mapAppointment(row, new Map([[lead.id, lead.name]]), new Map(property ? [[property.id, property.title]] : []));
 }
 
 export async function updateAppointmentStatus(id: string, status: AppointmentRecord['status']): Promise<AppointmentRecord | null> {
-  // Keep the status predicate in the mutation itself: a concurrent completion
-  // must not be reopened by an older classic-panel confirmation request.
-  const rows = await supabaseRequest<Record<string, unknown>[]>(`appointments?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&status=in.(Aguardando,Agendada,Confirmada)`, { method: 'PATCH', prefer: 'return=representation', body: { status } });
-  return rows[0] ? mapAppointment(rows[0]) : null;
+  // SQL locks ownership and checks open status in the same mutation.
+  const row = await writeClassicRow('appointments', id, 'update', { status });
+  return row ? mapAppointment(row) : null;
 }
 
 export async function deleteAppointment(id: string): Promise<boolean> {
   // Classic cancellation deletes an open slot, never completed visit history.
-  const rows = await supabaseRequest<Array<{ id: string }>>(`appointments?id=eq.${encodeURIComponent(id)}&company_id=eq.${supabaseCompanyId()}&status=in.(Aguardando,Agendada,Confirmada)&select=id`, { method: 'DELETE', prefer: 'return=representation' });
-  return rows.length > 0;
+  return Boolean(await writeClassicRow('appointments', id, 'delete'));
 }
 
 function mapAppointment(row: Record<string, unknown>, leadNames = new Map<string, string>(), propertyNames = new Map<string, string>()): AppointmentRecord {
@@ -217,7 +220,7 @@ function leadField(row: Record<string, unknown>, field: string) {
 
 function propertyPayload(input: PropertyInput) {
   return {
-    company_id: supabaseCompanyId(), code: input.code || null, title: input.title, description: input.description || null,
+    code: input.code || null, title: input.title, description: input.description || null,
     purpose: input.purpose, price: parseMoney(input.price), district: input.district, city: input.city || null,
     address: input.address || null, property_type: input.propertyType || null, bedrooms: input.bedrooms ?? null,
     parking_spaces: input.parkingSpaces ?? null, area: input.area ?? null, images: input.images,
@@ -243,6 +246,11 @@ function propertyMeta(row: Record<string, unknown>) {
 
 
 export async function getPerformance(month: string): Promise<PerformanceSnapshot> {
+  const account = currentAccount();
+  if (!account) throw new ClassicCrmError('Entre na sua conta para continuar.', 401);
+  // site_sales historically stores an arbitrary broker name, not an account
+  // UUID. A current name match cannot prove ownership of past client finances.
+  if (account.role !== 'owner') throw new ClassicCrmError('Consulte suas negociações no funil. O histórico financeiro antigo é exclusivo do administrador porque ainda não identifica cada corretor com segurança.', 403);
   const sql = database();
   const companyId = supabaseCompanyId();
   await sql`INSERT INTO site_performance_months (company_id, month, company_goal, leads_received, converted_leads, recovered_leads)

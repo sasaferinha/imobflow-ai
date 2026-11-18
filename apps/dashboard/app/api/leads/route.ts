@@ -7,6 +7,7 @@ import { isAdminRequest } from '@/lib/admin-auth';
 import { consumeRateLimit, hasSafeRequestSize, hasSameOrigin } from '@/lib/request-security';
 import { withAccount } from '@/lib/tenant-context';
 import { publicCompany } from '@/lib/public-company';
+import { ClassicCrmError } from '@/lib/classic-crm-access';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -53,6 +54,7 @@ async function handleGET(request: NextRequest) {
   try {
     return NextResponse.json({ data: await listLeads() });
   } catch (error) {
+    if (error instanceof ClassicCrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('lead_list_failed', error);
     return NextResponse.json({ error: 'Não foi possível carregar os leads.' }, { status: 500 });
   }

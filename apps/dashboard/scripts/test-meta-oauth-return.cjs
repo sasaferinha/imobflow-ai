@@ -50,11 +50,11 @@ function walk(node, found = []) {
 }
 
 (async () => {
-  for (const flow of ['social', 'ads']) {
-    const cookieName = flow === 'social' ? 'imobflow_meta_social_state' : 'imobflow_meta_ads_state';
+  for (const flow of ['social', 'ads', 'instagram']) {
+    const cookieName = flow === 'instagram' ? 'imobflow_instagram_state' : flow === 'social' ? 'imobflow_meta_social_state' : 'imobflow_meta_ads_state';
     const callbackPath = `/api/integrations/meta/${flow}/callback`;
     const finish = async (...args) => { finishCalls.push(args); if (fail) throw Error('synthetic-provider-secret-must-not-leak'); return flow === 'social' ? 'instagram' : undefined; };
-    const dependency = flow === 'social'
+    const dependency = flow === 'instagram' ? { '@/lib/instagram-login': { INSTAGRAM_COOKIE: cookieName, INSTAGRAM_CALLBACK: callbackPath, finishInstagramOAuth: finish } } : flow === 'social'
       ? { '@/lib/social-connections': { SOCIAL_COOKIE: cookieName, finishSocialOAuth: finish } }
       : { '@/lib/meta-ads': { ADS_COOKIE: cookieName, finishAdsOAuth: finish } };
     const callback = load(`app${callbackPath}/route.ts`, { 'next/server': { NextResponse: TestResponse }, ...dependency });
@@ -70,10 +70,10 @@ function walk(node, found = []) {
       assert.equal(response.status, 307);
       assert.equal(target.origin, origin);
       assert.equal(target.pathname, '/integracoes/retorno');
-      assert.equal(target.searchParams.get('fluxo'), flow);
+      assert.equal(target.searchParams.get('fluxo'), flow === 'instagram' ? 'social' : flow);
       assert.equal(target.searchParams.get('resultado'), rejected ? 'failed' : 'connected');
-      assert.deepEqual([...target.searchParams.keys()].sort(), flow === 'social' && !rejected ? ['canal', 'fluxo', 'resultado'] : ['fluxo', 'resultado']);
-      assert.equal(target.searchParams.get('canal'), flow === 'social' && !rejected ? 'instagram' : null);
+      assert.deepEqual([...target.searchParams.keys()].sort(), flow !== 'ads' && !rejected ? ['canal', 'fluxo', 'resultado'] : ['fluxo', 'resultado']);
+      assert.equal(target.searchParams.get('canal'), flow !== 'ads' && !rejected ? 'instagram' : null);
       assert.equal(target.hash, '');
       assert.equal(JSON.stringify(finishCalls.at(-1)), JSON.stringify([state, state, code]));
       assert.match(response.headers.get('cache-control'), /no-store/);
@@ -105,13 +105,13 @@ function walk(node, found = []) {
   const vercel = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
   const edgeHeaders = vercel.headers.map(rule => ({ ...rule, match: pathToRegexp(rule.source, [], { sensitive: true, strict: true }) }));
   for (const [url, expected] of [
-    ...['/integracoes/retorno', '/api/integrations/meta/social/callback', '/api/integrations/meta/ads/callback'].flatMap(pathname => [
+    ...['/integracoes/retorno', '/api/integrations/meta/social/callback', '/api/integrations/meta/ads/callback', '/api/integrations/meta/instagram/callback'].flatMap(pathname => [
       [pathname, 'no-referrer'], [`${pathname}/`, 'no-referrer'],
       [`${pathname}?state=synthetic&code=synthetic`, 'no-referrer'], [`${pathname}/?resultado=connected`, 'no-referrer'],
     ]),
     ['/integracoes/retorno?fluxo=social&resultado=connected', 'no-referrer'],
     ['/integracoes/retorno?fluxo=ads&resultado=failed', 'no-referrer'],
-    ...['/', '/painel', '/painel/site', '/demonstracao', '/integracoes/retorno-extra', '/integracoes/retorno/child', '/Integracoes/Retorno', '/api/integrations/meta/social/callback-extra', '/api/integrations/meta/ads/callback/child', '/api/integrations/meta/instagram/callback', '/api/integrations/meta/Social/callback', '/_next/static/chunk.js'].map(url => [url, 'strict-origin-when-cross-origin']),
+    ...['/', '/painel', '/painel/site', '/demonstracao', '/integracoes/retorno-extra', '/integracoes/retorno/child', '/Integracoes/Retorno', '/api/integrations/meta/social/callback-extra', '/api/integrations/meta/ads/callback/child', '/api/integrations/meta/instagram/callback/child', '/api/integrations/meta/Social/callback', '/_next/static/chunk.js'].map(url => [url, 'strict-origin-when-cross-origin']),
   ]) {
     const pathname = new URL(url, origin).pathname;
     const headers = edgeHeaders.filter(rule => rule.match.test(pathname)).flatMap(rule => rule.headers);

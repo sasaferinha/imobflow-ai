@@ -6,6 +6,7 @@ import type { PropertyInput } from '@/lib/operations';
 import { persistPropertyImages } from '@/lib/property-images';
 import { hasSameOrigin } from '@/lib/request-security';
 import { propertyNumber } from '@/lib/property-input';
+import { assertClassicPropertyWrite, ClassicCrmError } from '@/lib/classic-crm-access';
 
 import { onPropertyChanged } from '@/lib/opportunities';
 import { supabaseCompanyId } from '@/lib/supabase';
@@ -30,6 +31,7 @@ async function handlePATCH(request: NextRequest, context: { params: Promise<{ id
     const body = await request.json() as Record<string, unknown>;
     if (body.action === 'photos') {
       if (Object.keys(body).some(key => !['action', 'images'].includes(key)) || !Array.isArray(body.images) || body.images.length > 5 || cleanImages(body.images).length !== body.images.length) return NextResponse.json({ error: 'Selecione até 5 fotos válidas em JPG, PNG ou WebP.' }, { status: 400 });
+      await assertClassicPropertyWrite((await context.params).id);
       const images = await persistPropertyImages(cleanImages(body.images));
       const data = await updatePropertyImages((await context.params).id, images);
       return data ? NextResponse.json({ data }) : NextResponse.json({ error: 'Imóvel não encontrado.' }, { status: 404 });
@@ -43,12 +45,14 @@ async function handlePATCH(request: NextRequest, context: { params: Promise<{ id
       status: body.status === 'Reservado' ? 'Reservado' : body.status === 'Vendido' ? 'Vendido' : body.status === 'Alugado' ? 'Alugado' : 'Disponível',
     };
     if (!input.code || !input.title || !input.description || !input.district || !input.city || !input.price || !input.propertyType || input.bedrooms == null || input.parkingSpaces == null || input.area == null) return NextResponse.json({ error: 'Preencha os campos obrigatórios.' }, { status: 400 });
+    await assertClassicPropertyWrite((await context.params).id);
     input.images = await persistPropertyImages(input.images);
     const data = await updateProperty((await context.params).id, input);
     const companyId = supabaseCompanyId();
     if (data) after(() => onPropertyChanged(companyId, data.id));
     return data ? NextResponse.json({ data }) : NextResponse.json({ error: 'Imóvel não encontrado.' }, { status: 404 });
   } catch (error) {
+    if (error instanceof ClassicCrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('property_update_failed', error);
     return NextResponse.json({ error: 'Não foi possível atualizar o imóvel.' }, { status: 500 });
   }
@@ -62,6 +66,7 @@ async function handleDELETE(request: NextRequest, context: { params: Promise<{ i
       ? NextResponse.json({ ok: true })
       : NextResponse.json({ error: 'Imóvel não encontrado.' }, { status: 404 });
   } catch (error) {
+    if (error instanceof ClassicCrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('property_delete_failed', error);
     return NextResponse.json({ error: 'Não foi possível excluir o imóvel.' }, { status: 500 });
   }

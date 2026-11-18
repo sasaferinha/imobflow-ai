@@ -17,6 +17,7 @@ function load(file, dependencies = {}) {
       if (name === '@/lib/admin-auth') return { isAdminRequest: () => true };
       if (name === '@/lib/request-security') return { hasSameOrigin: () => true };
       if (name === '@/lib/tenant-context') return { currentAccount: () => ({ role: 'owner' }) };
+      if (name === '@/lib/classic-crm-access') return { ClassicCrmError: class extends Error {}, assertClassicPropertyWrite: async () => {} };
       if (name in dependencies) return dependencies[name];
       throw new Error(`Unexpected test dependency: ${name}`);
     },

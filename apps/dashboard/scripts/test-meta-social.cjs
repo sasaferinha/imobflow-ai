@@ -8,6 +8,17 @@ const cache=new Map();function load(name){if(cache.has(name))return cache.get(na
  const message=(entry,sender,mid,text='Olá',extra={})=>({sender:{id:sender},recipient:{id:entry},timestamp:Date.now(),message:{mid,text,...extra}});
  const instagram=m.parseSocialEvents({object:'instagram',entry:[{id:'456',messaging:[message('456','777','ig-1'),message('456','777','echo','Ignore',{is_echo:true}),message('999','777','wrong')]}]},connections);
  assert.equal(instagram.length,1);assert.equal(instagram[0].kind,'instagram');assert.equal(instagram[0].connection.companyId,company);await m.saveSocialEvent(instagram[0]);assert.equal(received.length,1);
+ const nativeConnection={...connections[0],pageId:'456',instagramId:'456',channel:'instagram',loginProvider:'instagram',databaseId:'native-account'};
+ const nativePayload={object:'instagram',entry:[{id:'456',messaging:[message('456','777','native-1')]}]};
+ const native=m.parseSocialEvents(nativePayload,[nativeConnection]);assert.equal(native.length,1);
+ assert.notEqual(m.socialLeadId(native[0]),m.socialLeadId(instagram[0]),'same Instagram IDs under different login providers never share a lead');
+ assert.equal(m.socialLeadId({...instagram[0],connection:{...instagram[0].connection,loginProvider:'facebook'}}),m.socialLeadId(instagram[0]),'explicit legacy provider preserves every historical lead ID');
+ assert.notEqual(m.socialLeadId({...native[0],connection:{...nativeConnection,companyId:other}}),m.socialLeadId(native[0]));
+ assert.equal(m.parseSocialEvents({...nativePayload,object:'page'},[nativeConnection]).length,0,'native Instagram never consumes Page notifications');
+ assert.equal(m.parseSocialEvents(nativePayload,[{...nativeConnection,channel:'facebook'}]).length,0);
+ assert.equal(m.parseSocialEvents(nativePayload,[{...nativeConnection,loginProvider:'unknown'}]).length,0);
+ assert.throws(()=>m.socialLeadId({...native[0],connection:{...nativeConnection,loginProvider:'unknown'}}),/configuration_invalid/);
+ assert.throws(()=>m.socialConnections(JSON.stringify([{companyId:company,instagramId:'456',loginProvider:'instagram',enabled:true}])),'native connections cannot be provisioned via the legacy environment path');
  const facebook=m.parseSocialEvents({object:'page',entry:[{id:'123',changes:[{field:'leadgen',value:{leadgen_id:'999',page_id:'123'}}],messaging:[message('123','777','fb-1')]}]},connections);
  assert.equal(facebook.length,2);assert.equal(facebook[0].senderId,undefined);assert.equal(facebook[1].senderId,'777');assert.notEqual(m.socialLeadId(facebook[0]),m.socialLeadId(facebook[1]));assert.notEqual(m.socialLeadId(instagram[0]),m.socialLeadId(facebook[1]));
  const photo=m.parseSocialEvents({object:'instagram',entry:[{id:'456',messaging:[message('456','777','photo','',{attachments:[{type:'image',payload:{url:'https://cdn.facebook.com/test.jpg'}}]})]}]},connections)[0];assert.equal(photo.mediaUrls[0],'https://cdn.facebook.com/test.jpg');assert.equal(photo.text,'[Foto recebida]');

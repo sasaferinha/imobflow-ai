@@ -12,6 +12,7 @@ const button = (tree, label) => find(tree, node => node.type === 'button' && (no
 const select = tree => find(find(tree, node => node.type === 'fieldset'), node => node.type === 'select');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const status = { available: true, webhookConfigured: true, authorized: true, accounts: [] };
+const directStatus = { ...status, channels: { facebook: { available: true, webhookConfigured: true }, instagram: { available: true, webhookConfigured: true } } };
 const page = { id: '123', name: 'Imobiliária de teste', instagramId: null, instagramName: null };
 const fbAccount = { id: 'account-fb', channel: 'facebook', name: page.name, enabled: true, defaultMode: 'human' };
 const igAccount = { id: 'account-ig', channel: 'instagram', name: 'teste', enabled: true, defaultMode: 'human' };
@@ -67,7 +68,7 @@ function harness(fetch, href = 'https://app.test/painel#settings') {
     if (url.includes('action=pages')) return response({ ...current, pages: [{ ...page, instagramId: '456', instagramName: 'teste' }] });
     if (body?.action === 'select-page') current = { ...current, accounts: [fbAccount, igAccount] };
     if (body?.action === 'disconnect') current = { ...current, accounts: [fbAccount] };
-    if (body?.action === 'connect') return response({ url: 'https://www.facebook.com/v26.0/dialog/oauth?state=new' });
+    if (body?.action === 'connect') return response({ url: 'https://www.instagram.com/oauth/authorize?state=new' });
     return response(current);
   }, 'https://app.test/painel?area=settings&social=instagram#settings');
   await chooser.settle();
@@ -128,7 +129,7 @@ function harness(fetch, href = 'https://app.test/painel#settings') {
   assert.equal(staleRequests.length, 1, 'a return completed in another tab only loads current status');
   assert.equal(button(stale.tree, 'Concluir conexão do Instagram'), undefined);
   assert.ok(button(stale.tree, 'Desconectar Instagram'));
-  assert.match(text(stale.tree), /já está conectado/);
+  assert.match(text(stale.tree), /Instagram conectado/);
 
   const retryRequests = [];
   const retry = harness(async (url, options) => {
@@ -140,5 +141,101 @@ function harness(fetch, href = 'https://app.test/painel#settings') {
   button(retry.tree, 'Confirmar desconexão').props.onClick(); await retry.settle();
   button(retry.tree, 'Tentar novamente').props.onClick(); await retry.settle();
   assert.equal(retryRequests.filter(r => r.url.includes('action=pages')).length, 0, 'a failed disconnect retries status instead of an old account picker');
-  console.log('PASS social connection UI: simple per-channel cards, scoped OAuth/resume, one-account confirmation, multiple-account selection only within connection, preserved preferences/history, retry and safe redirect.');
+  const nativeRequests = [];
+  let nativeStatus = { ...directStatus, accounts: [fbAccount, igAccount] };
+  const native = harness(async (url, options) => {
+    const body = options.body && JSON.parse(options.body); nativeRequests.push({ url, body });
+    assert(!url.includes('action=pages'), 'Direct Instagram authorization never lists Facebook Pages');
+    if (body?.action === 'disconnect') nativeStatus = { ...nativeStatus, accounts: [fbAccount] };
+    if (body?.action === 'connect') return response({ url: 'https://www.instagram.com/oauth/authorize?state=independent' });
+    return response(nativeStatus);
+  }, 'https://app.test/painel?social=instagram#settings');
+  await native.settle();
+  assert.equal(nativeRequests.length, 1, 'Native callback already binds the account: only read status');
+  assert.equal(button(native.tree, 'Concluir conexão do Instagram'), undefined);
+  assert.ok(button(native.tree, 'Desconectar Instagram')); assert.ok(button(native.tree, 'Desconectar Facebook'));
+  assert.match(text(native.tree), /Conecte cada canal com a conta que preferir/);
+  assert.match(text(native.tree), /Instagram conectado/);
+  button(native.tree, 'Desconectar Instagram').props.onClick(); native.render();
+  button(native.tree, 'Confirmar desconexão').props.onClick(); await native.settle();
+  assert.deepEqual(nativeRequests.at(-1).body, { action: 'disconnect', channel: 'instagram' });
+  assert.ok(button(native.tree, 'Desconectar Facebook'), 'Disconnecting Instagram preserves Facebook');
+  button(native.tree, 'Conectar Instagram').props.onClick(); await native.settle();
+  assert.deepEqual(nativeRequests.at(-1).body, { action: 'connect', channel: 'instagram' });
+  assert.equal(native.redirects[0], 'https://www.instagram.com/oauth/authorize?state=independent');
+
+  const unfinishedRequests = [];
+  const unfinished = harness(async url => { unfinishedRequests.push(url); return response({ ...directStatus, accounts: [fbAccount] }); }, 'https://app.test/painel?social=instagram#settings');
+  await unfinished.settle();
+  assert.equal(unfinishedRequests.length, 1);
+  assert.match(text(unfinished.tree), /Não foi possível concluir a conexão do Instagram/);
+  assert.ok(button(unfinished.tree, 'Conectar Instagram'));
+  const instagramCard = find(unfinished.tree, node => node.props?.['aria-label'] === 'Conexão do Instagram');
+  assert.doesNotMatch(text(instagramCard), /Página|vinculad|Concluir conexão/, 'Failed direct callback does not require a Facebook Page');
+
+  const unavailableRequests = [];
+  const unavailable = harness(async (url, options) => {
+    const body = options.body && JSON.parse(options.body); unavailableRequests.push({ url, body });
+    return body ? response({ url: 'https://www.facebook.com/v26.0/dialog/oauth?state=still-works' }) : response({ ...directStatus, available: false, webhookConfigured: false, channels: { facebook: { available: true, webhookConfigured: true }, instagram: { available: false, webhookConfigured: false } } });
+  });
+  unavailable.tree.props.onToggle({ currentTarget: { open: true } }); await unavailable.settle();
+  assert.equal(button(unavailable.tree, 'Conectar Instagram').props.disabled, true);
+  assert.equal(button(unavailable.tree, 'Conectar Facebook').props.disabled, false, 'Missing Instagram credentials never disable Facebook');
+  assert.match(text(unavailable.tree), /A conexão direta do Instagram ainda precisa ser habilitada pela ImobFlow/);
+  button(unavailable.tree, 'Conectar Instagram').props.onClick(); await unavailable.settle();
+  assert.equal(unavailableRequests.length, 1, 'Unavailable channel cannot start authorization even through a stale click');
+  button(unavailable.tree, 'Conectar Facebook').props.onClick(); await unavailable.settle(); assert.equal(unavailable.redirects.length, 1);
+
+  const independent = harness(async (_url, options) => options.body ? response({ url: 'https://www.instagram.com/oauth/authorize?state=only-instagram' }) : response({ ...directStatus, available: false, channels: { facebook: { available: false, webhookConfigured: false }, instagram: { available: true, webhookConfigured: false } } }));
+  independent.tree.props.onToggle({ currentTarget: { open: true } }); await independent.settle();
+  assert.equal(button(independent.tree, 'Conectar Instagram').props.disabled, false); assert.equal(button(independent.tree, 'Conectar Facebook').props.disabled, true);
+  assert.match(text(find(independent.tree, node => node.props?.['aria-label'] === 'Conexão do Instagram')), /recebimento de mensagens do Instagram/);
+  assert.doesNotMatch(text(find(independent.tree, node => node.props?.['aria-label'] === 'Conexão do Facebook')), /recebimento de mensagens do Instagram/);
+  button(independent.tree, 'Conectar Instagram').props.onClick(); await independent.settle(); assert.equal(independent.redirects.length, 1, 'Direct Instagram can connect without Facebook configuration');
+
+  for (const [channel, url] of [
+    ['Instagram', 'https://www.facebook.com/v26.0/dialog/oauth?state=wrong-channel'],
+    ['Facebook', 'https://www.instagram.com/oauth/authorize?state=wrong-channel'],
+    ['Instagram', 'https://www.instagram.com/accounts/login'],
+    ['Facebook', 'https://www.facebook.com/v25.0/dialog/oauth'],
+    ['Instagram', 'https://www.instagram.com.attacker.test/oauth/authorize'],
+    ['Instagram', 'http://www.instagram.com/oauth/authorize'],
+    ['Facebook', 'https://name:pass@www.facebook.com/v26.0/dialog/oauth'],
+    ['Instagram', 'https://www.instagram.com/oauth/authorize#untrusted'],
+  ]) {
+    const unsafe = harness(async (_url, options) => response(options.body ? { url } : directStatus));
+    unsafe.tree.props.onToggle({ currentTarget: { open: true } }); await unsafe.settle();
+    button(unsafe.tree, `Conectar ${channel}`).props.onClick(); await unsafe.settle();
+    assert.equal(unsafe.redirects.length, 0, `${channel} rejects a wrong origin, channel or OAuth path`);
+    assert.match(text(unsafe.tree), /Endereço de autorização inválido/);
+  }
+  const malformed = harness(async () => response({ ...directStatus, channels: { facebook: { available: true, webhookConfigured: true }, instagram: { available: 'true', webhookConfigured: true } } }));
+  malformed.tree.props.onToggle({ currentTarget: { open: true } }); await malformed.settle();
+  assert.match(text(malformed.tree), /Não foi possível conferir a conexão/); assert.equal(button(malformed.tree, 'Conectar Instagram'), undefined);
+  const renewalRequests=[];
+  const expired = harness(async (url, options) => {
+    const body=options.body&&JSON.parse(options.body); renewalRequests.push({url,body});
+    assert(!url.includes('action=pages'),'renewing native Instagram never opens a Facebook Page picker');
+    return response(body ? {url:'https://www.instagram.com/oauth/authorize?state=renew'} : {...directStatus,accounts:[fbAccount,{...igAccount,reconnectRequired:true}]});
+  },'https://app.test/painel?social=instagram#settings');
+  await expired.settle();
+  const expiredCard=find(expired.tree,node=>node.props?.['aria-label']==='Conexão do Instagram');
+  assert.match(text(expiredCard),/Reconexão necessária/); assert.doesNotMatch(text(expiredCard),/Conectado/);
+  assert.doesNotMatch(text(expired.tree),/Instagram conectado/,'callback hint cannot override expired server status');
+  assert.ok(!nodes(expiredCard).some(node=>node.type==='span'&&String(node.props.className).split(' ').includes('connected')),'expired account has no green connected indicator');
+  assert.ok(button(expired.tree,'Desconectar Instagram')); assert.ok(button(expired.tree,'Desconectar Facebook'));
+  button(expired.tree,'Reconectar Instagram').props.onClick(); await expired.settle();
+  assert.deepEqual(renewalRequests.at(-1).body,{action:'connect',channel:'instagram'});
+  assert.equal(expired.redirects[0],'https://www.instagram.com/oauth/authorize?state=renew');
+  assert(!renewalRequests.some(item=>item.body?.action==='disconnect'),'renewal preserves account identity and history');
+  const disabledRenewal=harness(async()=>response({...directStatus,channels:{...directStatus.channels,instagram:{available:false,webhookConfigured:false}},accounts:[{...igAccount,reconnectRequired:true}]}));
+  disabledRenewal.tree.props.onToggle({currentTarget:{open:true}}); await disabledRenewal.settle();
+  assert.equal(button(disabledRenewal.tree,'Reconectar Instagram').props.disabled,true);
+  assert.equal(button(disabledRenewal.tree,'Desconectar Instagram').props.disabled,false,'missing configuration never traps an expired connection');
+  const renewed=harness(async()=>response({...directStatus,accounts:[{...igAccount,reconnectRequired:false}]}),'https://app.test/painel?social=instagram#settings');
+  await renewed.settle(); assert.match(text(renewed.tree),/Instagram conectado/); assert.equal(button(renewed.tree,'Reconectar Instagram'),undefined);
+  const malformedRenewal=harness(async()=>response({...directStatus,accounts:[{...igAccount,reconnectRequired:'false'}]}));
+  malformedRenewal.tree.props.onToggle({currentTarget:{open:true}}); await malformedRenewal.settle();
+  assert.match(text(malformedRenewal.tree),/Não foi possível conferir a conexão/);
+  console.log('PASS social connection UI: independent per-channel capability/login/disconnect, direct Instagram callback without Facebook Page picker, strict channel-specific OAuth redirects, legacy callback recovery, one account per channel, preserved history/preferences and scoped retries. Mocked HTTP only.');
 })().catch(error => { console.error(error); process.exit(1); });

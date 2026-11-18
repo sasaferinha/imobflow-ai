@@ -43,3 +43,9 @@ Mesmo depois de enviar essas fontes ao GitHub, um outro computador pode ter alte
 `work/sync-backup-20260924/` guarda o historico em `repository.bundle`, o diff rastreado em `local-changes.patch` e os dois testes novos de exclusao/atendimento. O bundle foi verificado pelo Git. Os arquivos originais permanecem intactos. Arquivos de ambiente nao foram copiados. `tsconfig.tsbuildinfo` e um cache gerado, nao codigo-fonte.
 
 Essa copia esta apenas neste computador, na pasta ignorada `work`; nao e backup externo nem garantia contra falha do disco. Nunca aplicar o patch antigo diretamente sobre a versao nova sem revisar conflitos e contratos de envio.
+
+## Builds e OneDrive
+
+Execute instalacoes e builds em uma copia temporaria das fontes fora do OneDrive. Copie somente arquivos de origem revisados, preservando caminhos relativos; instale as dependencias pelo lockfile. Nao copie `.git`, `.next`, `node_modules`, tokens ou arquivos de ambiente com credenciais. Confira se as fontes testadas correspondem ao commit que sera publicado.
+
+Um aviso do OneDrive sobre exclusao em massa exige conferir os itens. Em 18/11/2026, os dois nomes mostrados no aviso foram localizados no cache `.next`; os outros 847 itens nao foram individualmente conferidos. Isso nao autoriza excluir todos. A orientacao foi manter os itens. `.gitignore` impede versionamento, mas nao impede sincronizacao pelo OneDrive.

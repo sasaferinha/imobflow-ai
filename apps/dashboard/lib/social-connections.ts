@@ -1,11 +1,12 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 import { supabaseServiceRequest as db } from './supabase';
 import { SocialError, socialId, socialObject, type SocialChannel, type SocialMode } from './social-model';
-import { socialConnections, type SocialConnection } from './meta-social';
+import { socialConnections, socialLoginProvider, type SocialConnection, type SocialLoginProvider } from './meta-social';
+import { instagramAvailable } from './instagram-api';
 
 export const SOCIAL_COOKIE = 'imobflow_meta_social_state';
 export const SOCIAL_VERSION = 'v26.0';
-export type SocialAccountRow = { id: string; company_id: string; channel: SocialChannel; account_id: string; page_id: string; name: string; enabled: boolean; token_ciphertext: string | null; api_version: string; default_mode: SocialMode };
+export type SocialAccountRow = { id: string; company_id: string; channel: SocialChannel; account_id: string; page_id: string; name: string; enabled: boolean; token_ciphertext: string | null; api_version: string; default_mode: SocialMode; login_provider?: SocialLoginProvider; token_expires_at?: string | null };
 type Authorization = { company_id: string; broker_id: string; token_ciphertext: string; expires_at: string | null };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 function key() {
@@ -26,6 +27,7 @@ export function decryptSocialToken(value: string, companyId: string) {
   catch { throw new SocialError('Reconecte a conta Meta.', 409, 'token_invalid'); }
 }
 export function socialAvailable() { try { key(); return /^\d+$/.test(process.env.META_APP_ID || '') && Boolean(process.env.META_APP_SECRET); } catch { return false; } }
+export function socialTokenProtectionAvailable() { try { key(); return true; } catch { return false; } }
 export async function socialGraph<T>(path: string, token: string, params: Record<string, string> = {}, method: 'GET' | 'POST' = 'GET'): Promise<T> {
   const url = new URL(`https://graph.facebook.com/${SOCIAL_VERSION}/${path}`), body = new URLSearchParams(params);
   if (token && process.env.META_APP_SECRET) body.set('appsecret_proof', createHmac('sha256', process.env.META_APP_SECRET).update(token).digest('hex'));
@@ -59,7 +61,7 @@ export async function beginSocialOAuth(companyId: string, brokerId: string, redi
 }
 export async function finishSocialOAuth(state: string, cookie: string | undefined, code: string) {
   if (!/^[a-f\d]{64}$/.test(state) || state !== cookie || code.length < 10 || code.length > 4096) throw new SocialError('A conexão expirou. Inicie novamente pelo painel.');
-  const [request] = await db<Array<{ company_id: string; broker_id: string; redirect_uri: string; channel?: SocialChannel | null }>>(`social_oauth_requests?state_hash=eq.${hash(state)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}`, { method: 'DELETE', prefer: 'return=representation' });
+  const [request] = await db<Array<{ company_id: string; broker_id: string; redirect_uri: string; channel?: SocialChannel | null }>>(`social_oauth_requests?state_hash=eq.${hash(state)}&login_provider=eq.facebook&expires_at=gt.${encodeURIComponent(new Date().toISOString())}`, { method: 'DELETE', prefer: 'return=representation' });
   if (!request) throw new SocialError('A conexão expirou. Inicie novamente pelo painel.');
   await requireSocialOwner(request.company_id, request.broker_id);
   const short = await socialGraph<{ access_token: string }>('oauth/access_token', '', { client_id: process.env.META_APP_ID!, client_secret: process.env.META_APP_SECRET!, redirect_uri: request.redirect_uri, code }, 'POST');
@@ -98,9 +100,17 @@ async function pages(companyId: string, channel?: SocialChannel): Promise<Provid
 }
 export async function socialConnectionStatus(companyId: string, includePages = false, channel?: SocialChannel) {
   assertOptionalChannel(channel);
-  const accounts = await db<SocialAccountRow[]>(`social_accounts?company_id=eq.${companyId}&enabled=eq.true&select=id,channel,account_id,page_id,name,enabled,default_mode&order=channel.asc`);
+  const accounts = await db<SocialAccountRow[]>(`social_accounts?company_id=eq.${companyId}&enabled=eq.true&select=id,channel,account_id,page_id,name,enabled,default_mode,login_provider,token_expires_at&order=channel.asc`);
   const pending = await db<Array<{ expires_at: string | null }>>(`social_authorizations?company_id=eq.${companyId}&select=expires_at&limit=1`);
-  return { available: socialAvailable(), webhookConfigured: Boolean(process.env.META_APP_SECRET && process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN), authorized: Boolean(pending[0]), accounts: accounts.map(a => ({ id: a.id, channel: a.channel, accountId: a.account_id, pageId: a.page_id, name: a.name, enabled: a.enabled, defaultMode: a.default_mode })), ...(includePages ? { pages: (await pages(companyId, channel)).map(p => ({ id: p.id, name: p.name, instagramId: channel === 'facebook' ? null : p.instagram_business_account?.id || null, instagramName: channel === 'facebook' ? null : p.instagram_business_account?.username || null })) } : {}) };
+  const facebook = { available: socialAvailable(), webhookConfigured: Boolean(process.env.META_APP_SECRET && process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN) };
+  const instagram = { available: instagramAvailable() && socialTokenProtectionAvailable(), webhookConfigured: Boolean(process.env.META_INSTAGRAM_APP_SECRET && (process.env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN || process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN)) };
+  return { ...facebook, channels: { facebook, instagram }, authorized: Boolean(pending[0]), accounts: accounts.map(a => {
+    const expiresAt = Date.parse(a.token_expires_at || '');
+    // An expired native authorization stays bound so the owner can renew the
+    // same identity or disconnect it. Legacy Page tokens have no stored expiry.
+    const reconnectRequired = a.login_provider === 'instagram' && (!Number.isFinite(expiresAt) || expiresAt <= Date.now());
+    return { id: a.id, channel: a.channel, accountId: a.account_id, pageId: a.page_id, name: a.name, enabled: a.enabled, defaultMode: a.default_mode, reconnectRequired };
+  }), ...(includePages ? { pages: (await pages(companyId, channel)).map(p => ({ id: p.id, name: p.name, instagramId: channel === 'facebook' ? null : p.instagram_business_account?.id || null, instagramName: channel === 'facebook' ? null : p.instagram_business_account?.username || null })) } : {}) };
 }
 export async function selectSocialPage(companyId: string, brokerId: string, pageId: string, channels: SocialChannel[]) {
   await requireSocialOwner(companyId, brokerId);
@@ -128,7 +138,7 @@ export async function activeSocialConnections(filter: { companyId?: string; acco
   const ids = filter.accountIds?.filter(v => socialId(v));
   if (ids && !ids.length) return [];
   const scope = filter.companyId ? `&company_id=eq.${encodeURIComponent(filter.companyId)}` : ids ? `&or=(account_id.in.(${ids.join(',')}),page_id.in.(${ids.join(',')}))` : '';
-  const saved = await db<SocialAccountRow[]>(`social_accounts?select=id,company_id,channel,account_id,page_id,name,enabled,token_ciphertext,api_version,default_mode&limit=1001${scope}`);
+  const saved = await db<SocialAccountRow[]>(`social_accounts?select=id,company_id,channel,account_id,page_id,name,enabled,token_ciphertext,api_version,default_mode,login_provider,token_expires_at&limit=1001${scope}`);
   if (saved.length > 1000) throw new SocialError('Limite de conexões excedido.', 503);
   const env = socialConnections().filter(c => (!filter.companyId || c.companyId === filter.companyId) && (!ids || ids.includes(c.pageId || '') || ids.includes(c.instagramId || '')));
   const channelHistory: Array<Pick<SocialAccountRow, 'company_id' | 'channel'>> = [...saved];
@@ -141,7 +151,11 @@ export async function activeSocialConnections(filter: { companyId?: string; acco
     channelHistory.push(...history);
   }
   for (const c of env) for (const row of saved) if ((row.page_id === c.pageId || row.channel === 'instagram' && row.account_id === c.instagramId) && row.company_id !== c.companyId) throw new SocialError('Vínculo Meta ambíguo. Revise a configuração.', 503);
-  const result: SocialConnection[] = saved.filter(a => a.enabled).map(a => ({ companyId: a.company_id, pageId: a.page_id, instagramId: a.channel === 'instagram' ? a.account_id : undefined, accessToken: a.token_ciphertext ? decryptSocialToken(a.token_ciphertext, a.company_id) : undefined, enabled: true, apiVersion: a.api_version, channel: a.channel, databaseId: a.id }));
+  const result: SocialConnection[] = saved.filter(a => a.enabled).map(a => {
+    const provider = socialLoginProvider(a.login_provider);
+    if (!provider || provider === 'instagram' && (a.channel !== 'instagram' || a.page_id !== a.account_id)) throw new SocialError('Vínculo Instagram inválido. Reconecte a conta.', 503);
+    return { companyId: a.company_id, pageId: provider === 'facebook' ? a.page_id : undefined, instagramId: a.channel === 'instagram' ? a.account_id : undefined, accessToken: a.token_ciphertext ? decryptSocialToken(a.token_ciphertext, a.company_id) : undefined, enabled: true, apiVersion: a.api_version, channel: a.channel, databaseId: a.id, loginProvider: provider, tokenExpiresAt: a.token_expires_at };
+  });
   // Any persisted channel history overrides the environment opt-in, including
   // disconnected identities. Switching accounts must never revive an old one.
   for (const c of env) {

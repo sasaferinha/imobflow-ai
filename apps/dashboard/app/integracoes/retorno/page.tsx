@@ -30,7 +30,7 @@ export default async function IntegrationReturnPage({ searchParams }: { searchPa
         : result === 'connected'
           ? ads
             ? 'A autorização foi recebida. Volte às campanhas para escolher a conta de anúncios e conferir a conexão.'
-            : 'A autorização foi recebida. Continue no painel para confirmar a conta que deseja conectar.'
+            : 'A autorização foi recebida. Volte ao painel para conferir a conexão da sua conta.'
           : 'Volte ao painel para conferir suas conexões com a Meta.'}</p>
       {/* A native link starts a fresh same-site document request, even without
           JavaScript, rather than reusing a prefetched unauthenticated CRM. */}

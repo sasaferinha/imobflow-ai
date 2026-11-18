@@ -6,6 +6,7 @@ import type { LeadLifecycleStatus } from '@/lib/leads';
 import { isAdminRequest } from '@/lib/admin-auth';
 import { hasSameOrigin } from '@/lib/request-security';
 import { currentAccount } from '@/lib/tenant-context';
+import { ClassicCrmError } from '@/lib/classic-crm-access';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -33,6 +34,7 @@ async function handlePATCH(request: NextRequest, context: { params: Promise<{ id
     after(runAutomationsAfterEvent);
     return NextResponse.json({ data });
   } catch (error) {
+    if (error instanceof ClassicCrmError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('lead_update_failed', error);
     return NextResponse.json({ error: 'Não foi possível atualizar o lead.' }, { status: 500 });
   }
