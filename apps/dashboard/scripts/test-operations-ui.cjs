@@ -45,6 +45,21 @@ const now = new Date().toISOString(), past = new Date(Date.now() - 86400000).toI
 function record(id, kind, data) { return { id, kind, data, createdAt: now, updatedAt: now, createdBy: owner.brokerId }; }
 state.records.push(record('followup-one', 'followups', { name: 'Retorno de teste', assignedTo: broker.brokerId, dueAt: past, priority: 'Alta', status: 'Pendente', request: 'Atualize o atendimento fictício.', response: '', review: '' }), record('followup-other', 'followups', { name: 'Cobrança de outra carteira', assignedTo: 'other-broker', dueAt: past, priority: 'Normal', status: 'Pendente', request: 'Não visível a outro corretor.' }), record('lead-one', 'leads', { name: 'Lead fictício incompleto', assignedTo: broker.brokerId, purpose: 'Venda', status: 'Pendente' }), record('goal-one', 'captureGoals', { name: 'Meta fictícia', assignedTo: broker.brokerId, month: now.slice(0, 7), purpose: 'Venda', target: 3 }), record('shift-one', 'shifts', { name: 'Plantão fictício', assignedTo: broker.brokerId, startsAt: past, endsAt: new Date(Date.now() + 86400000).toISOString(), purpose: 'Ambos', status: 'Ativo' }), record('report-one', 'notices', { name: 'Resumo semanal · 2026-10-05', text: 'Contagem agregada fictícia.' }));
 const props = { state, actor: owner, busy: false, onCreate() {}, onSelect() {}, onEdit() {}, execute: async () => true };
+for (const [kind,data,total,completed] of [
+  ['people',{name:'Cliente'},4,1],
+  ['properties',{name:'Casa',code:'A1'},10,2],
+  ['leads',{name:'Cliente'},9,1],
+]) {
+  const healthProps={state,record:record('health',kind,data)};
+  const html=renderToStaticMarkup(React.createElement(operations.CatalogHealth,healthProps));
+  assert(html.includes(`${completed} de ${total} itens`));
+  assert(html.includes(`max="${total}" value="${completed}"`));
+  assert.equal((html.match(/<li /g)||[]).length,total,'every counted item is displayed');
+  assert.equal((html.match(/data-complete="true"/g)||[]).length,completed);
+  const compact=renderToStaticMarkup(React.createElement(operations.CatalogHealth,{...healthProps,compact:true}));
+  assert(compact.includes(`${completed} de ${total} itens`));
+  assert(compact.includes(`${Math.round(100*completed/total)}%`));
+}
 const markup = renderToStaticMarkup(React.createElement(operations.default, props));
 assert(markup.includes('Nova cobrança'));
 assert(markup.includes('Central') === false, 'Operations component is composed into the existing shell, not a second navigation shell.');

@@ -22,8 +22,14 @@ export function CatalogHealth({ state, record, compact = false }: { state: CrmSt
   if (!['leads', 'people', 'properties'].includes(record.kind)) return null;
   const result = catalogCompleteness(state, record);
   return <div className={`${s.catalogHealth} ${result.complete ? s.healthy : s.incomplete} ${compact ? s.compactHealth : ''}`}>
-    <span><b>{result.percent}%</b> {result.complete ? 'Cadastro completo' : 'Cadastro pendente'}</span>
-    {!compact && <><progress max={100} value={result.percent} aria-label="Completude do cadastro" /><small>{result.complete ? 'Informações essenciais preenchidas.' : `Falta completar: ${result.missing.join(', ')}.`}</small></>}
+    <span><b>{result.percent}%</b> {result.complete ? 'Cadastro essencial completo' : 'Cadastro essencial pendente'} · {result.completed} de {result.total} itens</span>
+    {!compact && <>
+      <progress max={result.total} value={result.completed} aria-label="Completude do cadastro essencial" aria-valuetext={`${result.completed} de ${result.total} itens preenchidos (${result.percent}%)`} />
+      <small>Cada item abaixo tem o mesmo peso. Campos opcionais não entram nesta conta. Percentual arredondado para o inteiro mais próximo.</small>
+      <ul className={s.catalogChecklist} aria-label="Itens do cadastro essencial">
+        {result.items.map(item => <li key={item.label} data-complete={item.completed}><span aria-hidden="true">{item.completed ? '✓' : '○'}</span><span>{item.label}</span><small>{item.completed ? 'Preenchido' : 'Pendente'}</small></li>)}
+      </ul>
+    </>}
   </div>;
 }
 

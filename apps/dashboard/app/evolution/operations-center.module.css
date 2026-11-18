@@ -53,6 +53,10 @@
 .catalogHealth span { display: flex; gap: 8px; align-items: center; }
 .catalogHealth small { font-size: 11px; line-height: 1.6; color: var(--muted, #526b8c); }
 .catalogHealth b { color: var(--ink, #10294b); }
+.catalogChecklist { list-style: none; padding: 0; margin: 4px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 20px; }
+.catalogChecklist li { display: flex; align-items: center; gap: 7px; }
+.catalogChecklist li > small { margin-left: auto; }
+.catalogChecklist li[data-complete="true"] > span:first-child { color: var(--success, #00816c); }
 .healthy { background: var(--ops-success-surface, #eff9f4); }
 .healthy b { color: var(--ops-success, #21734f); }
 .compactHealth { display: inline-flex; padding: 3px 7px; margin-top: 5px; font-size: 10px; width: auto; }

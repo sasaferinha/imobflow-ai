@@ -40,6 +40,44 @@ const property=save('properties',{name:'Fictitious apartment',code:'OPS-01',purp
 assert.equal(ops.catalogCompleteness(state,state.records.find(r=>r.id===lead)).complete,false,'incomplete leads remain saved');
 assert.equal(ops.catalogCompleteness(state,state.records.find(r=>r.id===property)).complete,false,'old minimal property remains usable');
 const essentialProperty={...state.records.find(r=>r.id===property),data:{name:'Imóvel essencial fictício',code:'TESTE',purpose:'Venda',price:300000,assignedTo:'broker1',propertyType:'Casa',city:'Lavras',district:'Centro',area:80,description:'Descrição factual de teste'}};
+// Every subset must contribute exactly its share, independent of filling order.
+for (const [kind, values] of [
+  ['people', { name:'Cliente', phone:'31999999999', category:'Cliente', assignedTo:'broker1' }],
+  ['properties', essentialProperty.data],
+]) {
+  const entries = Object.entries(values);
+  for (let mask=0; mask < 2 ** entries.length; mask++) {
+    const data = Object.fromEntries(entries.filter((_, index) => mask & (1 << index)));
+    const result = ops.catalogCompleteness(state, {kind, data});
+    const count = Object.keys(data).length;
+    assert.equal(result.total, entries.length);
+    assert.equal(result.completed, count);
+    assert.equal(result.percent, Math.round(count / entries.length * 100));
+    assert.equal(result.complete, count === entries.length);
+    assert.equal(result.items.filter(item => item.completed).length, count);
+    assert.equal(result.missing.length, entries.length-count);
+  }
+}
+const samplePerson = { id:'completion-person', kind:'people', data:{email:'test@example.com'} };
+const leadValues = {name:'Cliente', personId:samplePerson.id, assignedTo:'broker1', source:'Site', purpose:'Venda', propertyType:'Casa', city:'Lavras', budgetMax:100000};
+for (let mask=0; mask<256; mask++) {
+  const data = Object.fromEntries(Object.entries(leadValues).filter((_,index)=>mask & (1<<index)));
+  const result = ops.catalogCompleteness({...state,records:[samplePerson]}, {kind:'leads',data});
+  // A linked person with contact completes both explicitly listed criteria.
+  const count = Object.keys(data).length + (data.personId ? 1 : 0);
+  assert.equal(result.total,9);
+  assert.equal(result.completed,count);
+  assert.equal(result.percent,Math.round(count/9*100));
+  assert.equal(result.complete,count===9);
+}
+for (const invalid of [Infinity, 'Infinity', true, -1, 0, '', 'não informado']) {
+  const result=ops.catalogCompleteness(state,{...essentialProperty,data:{...essentialProperty.data,price:invalid}});
+  assert.equal(result.percent,90,'invalid price cannot complete a criterion');
+}
+assert.equal(ops.catalogCompleteness(state,{kind:'tasks',data:{}}).percent,0,'unsupported records never claim 100%');
+const duplicateContact=ops.catalogCompleteness(state,{kind:'people',data:{phone:'31999999999',email:'test@example.com'}});
+assert.equal(duplicateContact.percent,25,'phone and email form one alternative criterion');
+assert.equal(ops.catalogCompleteness(state,{kind:'people',data:{name:'Não informado'}}).percent,0);
 assert.equal(ops.catalogCompleteness(state,essentialProperty).complete,true,'photos and exact street address are optional, not required for commercial completeness');
 assert.equal(ops.operationsSettings(state).funnelEnabled,false);
 assert.equal(ops.operationsSettings(state).reassignmentEnabled,false);

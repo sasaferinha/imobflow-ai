@@ -41,19 +41,24 @@ export function overdueContacts(state: CrmState, now = new Date().toISOString())
 }
 const placeholders = new Set(['nao informado','nao informada','nao definido','nao definida','a definir','desconhecido','desconhecida','nao identificado','nao identificada']);
 const present = (value: Value | undefined) => typeof value === 'number' ? Number.isFinite(value) : typeof value === 'string' && Boolean(value.trim()) && !placeholders.has(value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase());
+const positive = (value: Value | undefined) => (typeof value === 'number' || typeof value === 'string') && Number.isFinite(Number(value)) && Number(value) > 0;
 const linkedPerson = (state: CrmState, record: CrmRecord) => state.records.find(r => r.kind === 'people' && r.id === record.data.personId);
 /** Missing information is explicit: zero is valid for room counts, never for a budget. */
-export function catalogCompleteness(state: CrmState, record: CrmRecord): { complete: boolean; percent: number; missing: string[] } {
+export function catalogCompleteness(state: CrmState, record: CrmRecord) {
   const d = record.data;
   let fields: Array<[string, boolean]> = [];
   if (record.kind === 'people') fields = [['Nome', present(d.name)],['Telefone ou email',present(d.phone)||present(d.email)],['Categoria',present(d.category)],['Responsável',present(d.assignedTo)]];
   if (record.kind === 'leads') {
     const person = linkedPerson(state, record);
-    fields = [['Nome',present(d.name)],['Pessoa vinculada',Boolean(person)],['Telefone ou email',Boolean(person && (present(person.data.phone)||present(person.data.email)))],['Responsável',present(d.assignedTo)],['Origem',present(d.source)],['Finalidade',['Venda','Aluguel'].includes(String(d.purpose))],['Tipo de imóvel',present(d.propertyType)],['Cidade ou região',present(d.city)||present(d.region)],['Orçamento máximo',Number(d.budgetMax)>0]];
+    fields = [['Nome',present(d.name)],['Pessoa vinculada',Boolean(person)],['Telefone ou email',Boolean(person && (present(person.data.phone)||present(person.data.email)))],['Responsável',present(d.assignedTo)],['Origem',present(d.source)],['Finalidade',['Venda','Aluguel'].includes(String(d.purpose))],['Tipo de imóvel',present(d.propertyType)],['Cidade ou região',present(d.city)||present(d.region)],['Orçamento máximo',positive(d.budgetMax)]];
   }
-  if (record.kind === 'properties') fields = [['Título',present(d.name)],['Código',present(d.code)],['Finalidade',['Venda','Aluguel'].includes(String(d.purpose))],['Preço',Number(d.price)>0],['Responsável',present(d.assignedTo)],['Tipo de imóvel',present(d.propertyType)],['Cidade',present(d.city)],['Bairro',present(d.district)||present(d.neighborhoodId)],['Área',Number(d.area)>0],['Descrição',present(d.description)]];
-  const missing = fields.filter(([,ok])=>!ok).map(([name])=>name);
-  return { complete: missing.length === 0, percent: fields.length ? Math.round(100 * (fields.length - missing.length) / fields.length) : 100, missing };
+  if (record.kind === 'properties') fields = [['Título',present(d.name)],['Código',present(d.code)],['Finalidade',['Venda','Aluguel'].includes(String(d.purpose))],['Preço',positive(d.price)],['Responsável',present(d.assignedTo)],['Tipo de imóvel',present(d.propertyType)],['Cidade',present(d.city)],['Bairro',present(d.district)||present(d.neighborhoodId)],['Área',positive(d.area)],['Descrição',present(d.description)]];
+  const items = fields.map(([label, completed]) => ({ label, completed }));
+  const missing = items.filter(item => !item.completed).map(item => item.label);
+  const total = items.length;
+  const completed = total - missing.length;
+  // One criterion, one vote. Keep the same denominator for the checklist and bar.
+  return { complete: total > 0 && completed === total, percent: total ? Math.round(100 * completed / total) : 0, missing, items, total, completed };
 }
 export function captureGoalProgress(state: CrmState, goal: CrmRecord) {
   const month = String(goal.data.month);
