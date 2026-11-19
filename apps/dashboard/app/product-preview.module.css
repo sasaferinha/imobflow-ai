@@ -10,6 +10,7 @@
 .caption .explorePanel>span{flex-shrink:0;font-size:22px;line-height:1}
 .caption .explorePanel:hover{background:#0054cf;border-color:#0054cf;color:#fff!important;text-decoration:none!important}
 .caption .explorePanel:focus-visible{outline:3px solid #0054cf;outline-offset:4px}
+.loading{padding:16px;text-align:center}.loading button{min-height:40px;padding:9px 14px;border:1px solid #bfdef4;border-radius:8px;background:#fff;color:#0573c8;font-size:12px;font-weight:600}.loading button:hover{background:#ecf8ff}.loading button:focus-visible{outline:3px solid #0066f5;outline-offset:3px}
 .focus>span{width:max-content;max-width:min(210px,45vw);white-space:normal}.focus[data-align='right']>span{left:auto;right:0}
 @keyframes copyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}@keyframes draw{from{stroke-dashoffset:900}to{stroke-dashoffset:0}}@keyframes spin{to{transform:rotate(360deg)}}
 @media(min-width:1500px){.showcase{grid-template-columns:320px minmax(0,1fr);gap:60px}}

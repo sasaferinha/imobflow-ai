@@ -348,4 +348,77 @@ test('parent integration requests real readiness on load and remounts the iframe
   assert.match(parent.text, /onClick=\{retryPanel\}/);
 });
 
+test('landing preview waits until eligible, validates replies and recovers after timeout', () => {
+  const preview = parse('app/product-preview.tsx');
+  const effects = findNodes(preview, node => ts.isCallExpression(node)
+    && node.expression.getText(preview) === 'useEffect'
+    && node.arguments[0]?.getText(preview).includes('startPresentationHandshake'));
+  assert.equal(effects.length, 1);
+  assert.equal(effects[0].arguments[1].getText(preview), '[canStartHandshake, attempt]',
+    'Scrolling out and back in must not restart a pending handshake.');
+  assert.match(preview.text, /const canStartHandshake = hasEntered && width > 0/);
+  assert.match(preview.text, /if \(entry\.isIntersecting\) setHasEntered\(true\)/);
+  assert.doesNotMatch(preview.text, /setHasEntered\(false\)/);
+  const host = fakeWindow();
+  const commands = [];
+  const frame = { current: { contentWindow: { postMessage: (data, targetOrigin) => {
+    assert.equal(targetOrigin, origin);
+    commands.push(data);
+  } } } };
+  const state = { ready: false, failed: false, view: '' };
+  const context = {
+    window: host, frame, handshake: { current: null }, readyRef: { current: false },
+    activeRef: { current: 2 }, startPresentationHandshake,
+    sections: ['conversations', 'leads', 'opportunities', 'overview'].map(view => ({ view })),
+    setReady: value => { state.ready = value; },
+    setLoadFailed: value => { state.failed = value; },
+    setConfirmedView: value => { state.view = value; },
+  };
+  const mount = canStartHandshake => vm.runInNewContext(
+    compile(`(${effects[0].arguments[0].getText(preview)})()`),
+    { ...context, canStartHandshake },
+  );
+  assert.equal(mount(false), undefined);
+  host.clock.advance(30_000);
+  assert.equal(commands.length, 0, 'A lazy offscreen frame gets no timeout or readiness requests.');
+  assert.equal(state.failed, false);
+  const cleanup = mount(true);
+  assert.equal(commands[0].type, 'imobflow-demo-status-request');
+  for (const view of ['team', '', null, 42]) host.emit({ type: 'imobflow-demo-active', view }, frame.current.contentWindow);
+  host.emit({ type: 'imobflow-demo-active', view: 'conversations' }, {});
+  host.emit({ type: 'imobflow-demo-active', view: 'conversations' }, frame.current.contentWindow, 'https://untrusted.test');
+  assert.equal(state.ready, false);
+  host.clock.advance(15_000);
+  assert.equal(state.failed, true);
+  assert.equal(host.clock.timers.size, 0);
+  host.emit({ type: 'imobflow-demo-active', view: 'conversations' }, frame.current.contentWindow);
+  assert.equal(state.ready, true);
+  assert.equal(state.failed, false, 'A late valid response dismisses the fallback.');
+  assert.equal(state.view, 'conversations');
+  assert.equal(commands.at(-1).type, 'imobflow-demo-view');
+  assert.equal(commands.at(-1).view, 'opportunities', 'Restore the visitor-selected step after readiness.');
+  cleanup();
+  assert.equal(host.listeners.size, 0);
+  assert.equal(context.handshake.current, null);
+});
+
+test('landing preview retries by remounting and never treats iframe load as readiness', () => {
+  const preview = parse('app/product-preview.tsx');
+  const frames = findNodes(preview, node => (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node))
+    && node.tagName.getText(preview) === 'iframe');
+  assert.equal(frames.length, 1);
+  const attribute = name => frames[0].attributes.properties.find(node => ts.isJsxAttribute(node) && node.name.text === name);
+  assert.equal(attribute('key').initializer.expression.getText(preview), 'attempt');
+  assert.equal(attribute('src').initializer.text, '/demonstracao');
+  assert.match(attribute('onLoad').initializer.expression.getText(preview), /handshake\.current\?\.request\(\)/);
+  assert.doesNotMatch(attribute('onLoad').getText(preview), /setReady|setLoadFailed/);
+  const retry = findNodes(preview, node => ts.isFunctionDeclaration(node) && node.name?.text === 'retryPanel');
+  assert.equal(retry.length, 1);
+  const body = retry[0].getText(preview);
+  for (const pattern of [/readyRef\.current = false/, /setReady\(false\)/, /setLoadFailed\(false\)/,
+    /setConfirmedView\(''\)/, /setFocus\(null\)/, /setAttempt\(value => value \+ 1\)/]) assert.match(body, pattern);
+  assert.match(preview.text, /onClick=\{retryPanel\}/);
+  assert.match(preview.text, /loadFailed \? 'Não foi possível carregar a demonstração\.'/);
+});
+
 console.log(`PASS presentation handshake: ${passed} isolated regression tests; no browser, network or real timers`);
