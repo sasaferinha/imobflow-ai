@@ -19,3 +19,10 @@
 @media(max-width:440px){.story h2{font-size:34px}.steps{gap:4px}.steps button{font-size:10px;padding-inline:4px}.description{min-height:140px}.screen{padding:7px;border-radius:14px}.screenBar{font-size:9px;padding-bottom:9px}.demoBadge{font-size:8px}.viewport{border-radius:8px}.focus>span{font-size:8px;padding:4px 6px;left:3px}.controls{gap:9px}.controls button{padding-inline:9px;font-size:10px}.progressGroup{gap:5px}.progress{width:58px}.caption{gap:10px}}
 @media(max-width:600px){.caption{align-items:stretch;gap:12px}.caption>span{width:100%;text-align:center}.caption .explorePanel{width:100%;min-width:0;padding-inline:18px}}
 @media(prefers-reduced-motion:reduce){.showcase *,.showcase *:before,.showcase *:after{animation:none!important;transition:none!important}.connector path{stroke-dashoffset:0}}
+/* Keep the real panel presentation legible alongside the public product tour. */
+.description p{font-size:15px;line-height:1.7}
+.descriptionContent>span{font-size:12px}
+.controls button{font-size:13px;min-height:42px}
+.caption>span{font-size:12px}
+@media(max-width:800px){.steps button{font-size:12px}.description{min-height:155px}.controls button{font-size:12px}}
+@media(max-width:440px){.steps button{font-size:11px}.description{min-height:190px}}
