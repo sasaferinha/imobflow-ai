@@ -1,0 +1,82 @@
+.shell {
+  min-width: 0;
+}
+
+.entering {
+  animation: entrance 650ms cubic-bezier(.2, .75, .25, 1) both;
+}
+
+.shell[data-motion='paused'] *,
+.shell[data-motion='paused'] *::before,
+.shell[data-motion='paused'] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+.shell[data-motion='paused'] .entering {
+  animation: none !important;
+}
+
+.motionButton {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid #d4e0ed;
+  border-radius: 10px;
+  background: #fff;
+  color: #385475;
+  box-shadow: 0 3px 16px #10294b0d;
+  font: 500 12px/1.4 var(--crm-font, 'Inter', Arial, sans-serif);
+  cursor: pointer;
+}
+
+.motionButton svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.motionButton:hover:not(:disabled) {
+  border-color: #a9c4e8;
+  background: #f7faff;
+  color: #0058d5;
+}
+
+.motionButton:focus-visible {
+  outline: 3px solid #0066f5;
+  outline-offset: 4px;
+}
+
+.motionButton:disabled {
+  cursor: default;
+}
+
+@keyframes entrance {
+  from { opacity: .2; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 520px) {
+  .motionButton {
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell *, .shell *::before, .shell *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
