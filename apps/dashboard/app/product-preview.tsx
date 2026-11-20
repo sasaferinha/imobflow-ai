@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { startPresentationHandshake } from '@/lib/presentation-handshake';
 import s from './product-preview.module.css';
 
 const sections = [
@@ -32,12 +33,16 @@ export default function ProductPreview() {
   const elapsed = useRef(0);
   const activeRef = useRef(0);
   const readyRef = useRef(false);
+  const handshake = useRef<ReturnType<typeof startPresentationHandshake> | null>(null);
   const [active, setActive] = useState(0);
   const [width, setWidth] = useState(0);
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [confirmedView, setConfirmedView] = useState('');
   const [playing, setPlaying] = useState(true);
   const [inView, setInView] = useState(false);
+  const [hasEntered, setHasEntered] = useState(false);
   const [focus, setFocus] = useState<{ left: number; top: number; width: number; height: number; view: string } | null>(null);
   const [connector, setConnector] = useState('');
   const reduced = useSyncExternalStore(subscribeMotion, () => window.matchMedia('(prefers-reduced-motion: reduce)').matches, () => true);
@@ -46,6 +51,7 @@ export default function ProductPreview() {
   const scale = width / FRAME_WIDTH;
   const section = sections[active];
   const showFocus = focus && focus.view === section.view && confirmedView === section.view;
+  const canStartHandshake = hasEntered && width > 0;
 
   useEffect(() => {
     const element = viewport.current;
@@ -53,21 +59,44 @@ export default function ProductPreview() {
     if (!element || !container) return;
     const resize = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
     resize.observe(element);
-    const intersection = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.15 });
+    const intersection = new IntersectionObserver(([entry]) => {
+      setInView(entry.isIntersecting);
+      if (entry.isIntersecting) setHasEntered(true);
+    }, { threshold: 0.15 });
     intersection.observe(container);
-    const receive = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || event.source !== frame.current?.contentWindow) return;
-      if (event.data?.type !== 'imobflow-demo-active') return;
-      setConfirmedView(event.data.view);
-      if (!readyRef.current) {
-        readyRef.current = true;
-        setReady(true);
-        frame.current?.contentWindow?.postMessage({ type: 'imobflow-demo-view', view: sections[activeRef.current].view }, window.location.origin);
-      }
-    };
-    window.addEventListener('message', receive);
-    return () => { resize.disconnect(); intersection.disconnect(); window.removeEventListener('message', receive); };
+    return () => { resize.disconnect(); intersection.disconnect(); };
   }, []);
+
+  useEffect(() => {
+    // Do not time out a lazy iframe before the visitor reaches this section.
+    if (!canStartHandshake) return;
+    const bridge = startPresentationHandshake({
+      host: window,
+      getFrameWindow: () => frame.current?.contentWindow ?? null,
+      isView: value => sections.some(step => step.view === value),
+      onReady: view => {
+        setConfirmedView(view);
+        setLoadFailed(false);
+        if (!readyRef.current) {
+          readyRef.current = true;
+          setReady(true);
+          frame.current?.contentWindow?.postMessage({ type: 'imobflow-demo-view', view: sections[activeRef.current].view }, window.location.origin);
+        }
+      },
+      onTimeout: () => setLoadFailed(true),
+    });
+    handshake.current = bridge;
+    return () => { bridge.dispose(); handshake.current = null; };
+  }, [canStartHandshake, attempt]);
+
+  function retryPanel() {
+    readyRef.current = false;
+    setReady(false);
+    setLoadFailed(false);
+    setConfirmedView('');
+    setFocus(null);
+    setAttempt(value => value + 1);
+  }
 
   useEffect(() => {
     activeRef.current = active;
@@ -167,9 +196,9 @@ export default function ProductPreview() {
       <div className={s.screen}>
         <div className={s.screenBar}><span className={s.dots} aria-hidden="true"><i/><i/><i/></span><span>O painel da ImobFlow</span><span className={s.demoBadge}>Demonstração</span></div>
         <div ref={viewport} id="product-demo-panel" role="tabpanel" aria-labelledby={`demo-tab-${active}`} className={s.viewport} style={{ aspectRatio: `${FRAME_WIDTH} / ${FRAME_HEIGHT}` }}>
-          {!ready && <div className={s.loading} role="status"><span/>Preparando o painel…<a href="/demonstracao" target="_blank" rel="noopener noreferrer">Abrir demonstração completa ↗</a></div>}
+          {!ready && <div className={s.loading} role="status">{!loadFailed && <span aria-hidden="true"/>}<p>{loadFailed ? 'Não foi possível carregar a demonstração.' : 'Preparando o painel…'}</p>{loadFailed && <button type="button" onClick={retryPanel}>Tentar novamente</button>}<a href="/demonstracao" target="_blank" rel="noopener noreferrer">Abrir demonstração completa ↗</a></div>}
           <div inert className={s.frameWrap}>
-            {width > 0 && <iframe ref={frame} src="/demonstracao" title="Painel real da ImobFlow com dados fictícios" loading="lazy" tabIndex={-1} sandbox="allow-scripts allow-same-origin" allow="camera 'none'; microphone 'none'; geolocation 'none'" className={s.frame} style={{ width: FRAME_WIDTH, height: FRAME_HEIGHT, transform: `scale(${scale})` }} />}
+            {width > 0 && <iframe key={attempt} ref={frame} src="/demonstracao" title="Painel real da ImobFlow com dados fictícios" loading="lazy" tabIndex={-1} sandbox="allow-scripts allow-same-origin" allow="camera 'none'; microphone 'none'; geolocation 'none'" className={s.frame} style={{ width: FRAME_WIDTH, height: FRAME_HEIGHT, transform: `scale(${scale})` }} onLoad={() => handshake.current?.request()} />}
           </div>
           {showFocus && <div className={s.focus} data-align={focus.left > width / 2 ? 'right' : 'left'} style={{ left: focus.left, top: focus.top, width: focus.width, height: focus.height }} aria-hidden="true"><span key={active}>{section.label}</span></div>}
         </div>
