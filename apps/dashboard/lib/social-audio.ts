@@ -1,5 +1,5 @@
 import { supabaseServiceRequest as db } from './supabase';
-import { socialUuid } from './social-model';
+import { socialAudioUrl, socialUuid } from './social-model';
 import { transcribeAudio } from './ai/audio-transcription';
 
 /** Only media persisted from a verified Meta webhook is eligible, never a caller-supplied URL. */
@@ -12,8 +12,8 @@ export async function transcribeSocialAudio(companyId: string, threadId: string,
     if (!message || message.direction !== 'incoming' || message.media_type !== 'audio') return null;
     if (message.transcript_text) return message.transcript_text;
     if (!Array.isArray(message.media_urls) || message.media_urls.length !== 1 || typeof message.media_urls[0] !== 'string' || deadline-Date.now()<1500) return null;
-    const url = new URL(message.media_urls[0]);
-    if (url.protocol !== 'https:' || url.username || url.password || url.port || !['fbcdn.net','facebook.com','cdninstagram.com'].some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) return null;
+    const url = socialAudioUrl(message.media_urls[0]);
+    if (!url) return null;
     const response = await fetch(url, { cache: 'no-store', redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(Math.min(7000,deadline-Date.now())) });
     const type = response.headers.get('content-type')?.split(';')[0].trim() || '';
     if (!response.ok || !['audio/ogg','audio/mpeg','audio/mp4'].includes(type) || Number(response.headers.get('content-length')) > 16*1024*1024 || !response.body) return null;

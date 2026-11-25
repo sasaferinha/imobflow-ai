@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { supabaseServiceRequest as db } from './supabase';
 import { analyzeLead, explainProfile, type LeadInput } from './leads';
 import { importPhone } from './lead-import';
-import { socialImageUrl } from './social-model';
+import { socialAudioUrl, socialImageUrl } from './social-model';
 
 type ObjectValue = Record<string, unknown>;
 const object = (value: unknown): ObjectValue => value && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : {};
@@ -59,10 +59,10 @@ export function parseSocialEvents(payload: unknown, connections: SocialConnectio
       for (const rawMessage of list(entry.messaging)) {
         const event = object(rawMessage), message = object(event.message), senderId = id(object(event.sender).id), recipient = id(object(event.recipient).id);
         const externalId = clean(message.mid, 255), attachment = object(list(message.attachments)[0]), mediaType = clean(attachment.type, 30);
-        const image = mediaType === 'image' ? socialImageUrl(object(attachment.payload).url) : null;
-        const text = clean(message.text, 2000) || (image ? '[Foto recebida]' : mediaType ? `[Mídia recebida: ${mediaType}. Consulte o canal para abrir.]` : '');
+        const mediaUrl = mediaType === 'image' ? socialImageUrl(object(attachment.payload).url) : mediaType === 'audio' ? socialAudioUrl(object(attachment.payload).url) : null;
+        const text = clean(message.text, 2000) || (mediaUrl ? mediaType === 'audio' ? '[Áudio recebido]' : '[Foto recebida]' : mediaType ? `[Mídia recebida: ${mediaType}. Consulte o canal para abrir.]` : '');
         const occurred = typeof event.timestamp === 'number' && event.timestamp > 0 && event.timestamp <= Date.now() + 300000 ? new Date(event.timestamp).toISOString() : undefined;
-        if (recipient === entryId && senderId && senderId !== entryId && externalId && text && message.is_echo !== true) result.push({ kind: instagram ? 'instagram' : 'facebook', connection, externalId, senderId, text, occurredAt: occurred, ...(image ? { mediaUrls: [image] } : {}), ...(mediaType ? { mediaType } : {}) });
+        if (recipient === entryId && senderId && senderId !== entryId && externalId && text && message.is_echo !== true) result.push({ kind: instagram ? 'instagram' : 'facebook', connection, externalId, senderId, text, occurredAt: occurred, ...(mediaUrl ? { mediaUrls: [mediaUrl] } : {}), ...(mediaType ? { mediaType } : {}) });
       }
     }
   }
