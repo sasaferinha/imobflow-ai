@@ -64,7 +64,8 @@ function harness(options = {}) {
     const url = new URL(input); network.push({ url, init }); events.push(`http:${url.pathname}`);
     assert.equal(init.redirect, 'error'); assert.equal(init.cache, 'no-store'); assert(init.signal instanceof AbortSignal);
     if (options.networkFailure) throw new Error(`raw ${appSecret} ${longToken}`);
-    if (options.providerError) return Response.json({ error: { message: `raw ${appSecret} ${longToken}` } }, { status: options.providerError });
+    const providerError = url.pathname.endsWith('/subscribed_apps') ? options.subscriptionError || options.providerError : options.providerError;
+    if (providerError) return Response.json({ error: { message: `raw ${appSecret} ${longToken}` } }, { status: providerError });
     let output;
     if (url.origin === 'https://api.instagram.com' && url.pathname === '/oauth/access_token') {
       assert.equal(init.method, 'POST'); assert(init.body instanceof FormData);
@@ -142,11 +143,15 @@ async function testApi() {
   const unconfigured = harness({ env: { META_INSTAGRAM_APP_ID: '', META_INSTAGRAM_APP_SECRET: '', META_APP_ID: '123', META_APP_SECRET: 'facebook-secret' } });
   assert.equal(unconfigured.api.instagramAvailable(), false, 'Facebook credentials never silently substitute for Instagram credentials');
   await assert.rejects(unconfigured.api.instagramExchange(oauthCode, redirectUri), error => error.status === 503); assert.equal(unconfigured.network.length, 0);
-  for (const options of [{ networkFailure: true }, { providerError: 400 }, { providerError: 429 }, { providerError: 500 }]) {
-    const h = harness(options); await assert.rejects(h.api.instagramExchange(oauthCode, redirectUri), noSecret); assert.equal(h.network.length, 1);
+  for (const [options, reason] of [[{ networkFailure: true }, 'provider_unavailable'], [{ providerError: 400 }, 'provider_rejected'], [{ providerError: 429 }, 'provider_rate_limit'], [{ providerError: 500 }, 'provider_unavailable']]) {
+    const h = harness(options); await assert.rejects(h.api.instagramExchange(oauthCode, redirectUri), error => error.code === reason && noSecret(error)); assert.equal(h.network.length, 1);
   }
   const subscribe = harness({ outputs: { subscription: { success: false } } });
-  await assert.rejects(subscribe.api.instagramSubscribe(professionalId, longToken), noSecret);
+  await assert.rejects(subscribe.api.instagramSubscribe(professionalId, longToken), error => error.code === 'subscription_failed' && noSecret(error));
+  for (const [status, reason] of [[400, 'subscription_failed'], [429, 'provider_rate_limit'], [503, 'provider_unavailable']]) {
+    const h = harness({ subscriptionError: status });
+    await assert.rejects(h.api.instagramSubscribe(professionalId, longToken), error => error.code === reason && noSecret(error));
+  }
   const invalidAccount = harness(); await assert.rejects(invalidAccount.api.instagramSubscribe('../foreign', longToken)); assert.equal(invalidAccount.network.length, 0);
 }
 
@@ -192,15 +197,33 @@ async function testLogin() {
   const lostAfter = harness({ revokeAfterOwnerCheck: 2 }), latePending = await begin(lostAfter); await assert.rejects(finish(lostAfter, latePending), error => error.status === 403); assert.equal(lostAfter.network.length, 3); assert.equal(lostAfter.binds.length, 0);
   assert(!lostAfter.network.some(call => call.url.pathname.endsWith('/subscribed_apps')));
   for (const options of [{ foreignOwner: true }, { activeAccounts: [{ account_id: '999999', login_provider: 'instagram' }] }, { activeAccounts: [{ account_id: professionalId, login_provider: 'facebook' }] }]) {
-    const conflict = harness(options), state = await begin(conflict); await assert.rejects(finish(conflict, state), error => error.status === 409);
+    const conflict = harness(options), state = await begin(conflict); await assert.rejects(finish(conflict, state), error => error.status === 409 && error.code === 'account_conflict');
     assert.equal(conflict.binds.length, 0); assert(!conflict.network.some(call => call.url.pathname.endsWith('/subscribed_apps')), 'Conflicts cannot mutate a provider subscription');
   }
   const existing = harness({ activeAccounts: [{ account_id: professionalId, login_provider: 'instagram' }] }), existingPending = await begin(existing); await finish(existing, existingPending); assert.equal(existing.binds.length, 1, 'An identical native account can renew its token');
   const failedSubscription = harness({ outputs: { subscription: { success: false } } }), subscriptionPending = await begin(failedSubscription); await assert.rejects(finish(failedSubscription, subscriptionPending)); assert.equal(failedSubscription.binds.length, 0);
   for (const env of [{ META_INSTAGRAM_APP_ID: '' }, { META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN: '', META_SOCIAL_WEBHOOK_VERIFY_TOKEN: '' }, { META_SOCIAL_TOKEN_ENCRYPTION_KEY: '', META_APP_SECRET: '' }, { META_SOCIAL_TOKEN_ENCRYPTION_KEY: 'malformed' }]) {
-    const disabled = harness({ env }); await assert.rejects(begin(disabled), error => error.status === 503); assert.equal(disabled.requests.size, 0); assert.equal(disabled.network.length, 0);
+    const disabled = harness({ env }); await assert.rejects(begin(disabled), error => error.status === 503 && error.code === 'configuration_unavailable'); assert.equal(disabled.requests.size, 0); assert.equal(disabled.network.length, 0);
   }
   const fallbackWebhook = harness({ env: { META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN: '', META_SOCIAL_WEBHOOK_VERIFY_TOKEN: 'synthetic-shared-webhook' } }); assert((await begin(fallbackWebhook)).state);
+
+  for (const reason of ['cancelled', 'provider_rejected']) {
+    const denied = harness(), pending = await begin(denied);
+    await assert.rejects(denied.login.finishInstagramOAuth(pending.state, '0'.repeat(64), '', reason), error => error.code === 'expired');
+    assert.equal(denied.requests.size, 1, 'An untrusted denial cannot consume another browser request');
+    await assert.rejects(denied.login.finishInstagramOAuth(pending.state, pending.state, '', reason), error => error.code === reason);
+    assert.equal(denied.requests.size, 0, 'A valid denial consumes its provider-bound, one-use state');
+    assert.equal(denied.network.length, 0); assert.equal(denied.binds.length, 0);
+    await assert.rejects(denied.login.finishInstagramOAuth(pending.state, pending.state, '', reason), error => error.code === 'expired');
+  }
+  const expiredDenial = harness(), expiredPending = await begin(expiredDenial);
+  expiredDenial.requests.get(digest(expiredPending.state)).expires_at = new Date(Date.now() - 1000).toISOString();
+  await assert.rejects(expiredDenial.login.finishInstagramOAuth(expiredPending.state, expiredPending.state, '', 'cancelled'), error => error.code === 'expired');
+  assert.equal(expiredDenial.network.length, 0);
+  const configChanged = harness(), configPending = await begin(configChanged);
+  configChanged.env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN = '';
+  await assert.rejects(finish(configChanged, configPending), error => error.code === 'configuration_unavailable');
+  assert.equal(configChanged.network.length, 0); assert.equal(configChanged.binds.length, 0);
 }
 
 (async () => { await testApi(); await testLogin(); console.log('PASS native Instagram OAuth: independent credentials/scopes/hosts; app-scoped versus professional IDs; flat/wrapped profiles, account type/permissions/expiry; one-use provider-bound state; owner rechecks and ownership preflight; encrypted company-bound token; no Facebook authorization overwrite. Synthetic HTTP/DB only.'); })().catch(error => { console.error(error); process.exitCode = 1; });

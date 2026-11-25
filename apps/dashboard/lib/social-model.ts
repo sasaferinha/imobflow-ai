@@ -18,9 +18,20 @@ export function socialImageUrl(v: unknown): string | null {
   if (typeof v !== 'string' || v.length > 4096 || /[\s\\\u0000-\u001f]/u.test(v)) return null;
   try { const u = new URL(v); return u.protocol === 'https:' && !u.username && !u.password && !u.port && u.hostname.includes('.') && !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(u.hostname) && !/(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion)$/.test(u.hostname) ? u.href : null; } catch { return null; }
 }
+/** Audio is fetched server-side: restrict it to Meta media hosts and routes. */
+export function socialAudioUrl(v: unknown): string | null {
+  const safe = socialImageUrl(v);
+  if (!safe) return null;
+  const { hostname, pathname } = new URL(safe);
+  // Instagram webhook media uses this signed CDN endpoint; do not trust the
+  // whole fbsbx.com domain or arbitrary lookaside paths.
+  if (hostname === 'lookaside.fbsbx.com') return /^\/ig_messaging_cdn\/?$/.test(pathname) ? safe : null;
+  return ['fbcdn.net', 'facebook.com', 'cdninstagram.com'].some(host => hostname === host || hostname.endsWith(`.${host}`)) ? safe : null;
+}
 export function publicSocialMessage(value: unknown): SocialMessage {
   const r = socialObject(value);
-  return { id: String(r.id), text: typeof r.content === 'string' ? r.content : '', at: String(r.occurred_at || r.created_at), direction: r.direction === 'outgoing' ? 'outgoing' : 'incoming', status: r.status as SocialMessageStatus, error: typeof r.error_message === 'string' ? r.error_message : null, mediaUrls: Array.isArray(r.media_urls) ? r.media_urls.map(socialImageUrl).filter((u): u is string => Boolean(u)) : [], mediaType: typeof r.media_type === 'string' ? r.media_type : null, source: typeof r.source === 'string' ? r.source : 'client' };
+  const mediaType = typeof r.media_type === 'string' ? r.media_type : null;
+  return { id: String(r.id), text: typeof r.content === 'string' ? r.content : '', at: String(r.occurred_at || r.created_at), direction: r.direction === 'outgoing' ? 'outgoing' : 'incoming', status: r.status as SocialMessageStatus, error: typeof r.error_message === 'string' ? r.error_message : null, mediaUrls: Array.isArray(r.media_urls) ? r.media_urls.map(mediaType === 'audio' ? socialAudioUrl : socialImageUrl).filter((u): u is string => Boolean(u)) : [], mediaType, source: typeof r.source === 'string' ? r.source : 'client' };
 }
 /** Only qualified property preferences, never raw provider identifiers or transcript data. */
 export function publicSocialProfile(value: unknown): Record<string, unknown> {

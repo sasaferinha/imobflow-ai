@@ -14,6 +14,7 @@ const origin = 'https://app.example.test';
 const state = 'a'.repeat(64);
 const code = 'synthetic-authorization-code';
 const finishCalls = [];
+const diagnosticLogs = [];
 let fail = false;
 
 class TestResponse extends Response {
@@ -32,6 +33,7 @@ function load(file, dependencies = {}) {
   }).outputText;
   vm.runInNewContext(source, {
     module, exports: module.exports, URL, process: { env: { NODE_ENV: 'production' } },
+    console: { error: (...args) => diagnosticLogs.push(args) },
     require(name) {
       if (Object.hasOwn(dependencies, name)) return dependencies[name];
       if (name === 'react/jsx-runtime' || name.startsWith('node:')) return require(name);
@@ -50,6 +52,8 @@ function walk(node, found = []) {
 }
 
 (async () => {
+  const model = load('lib/social-model.ts');
+  const diagnostics = load('lib/instagram-oauth-result.ts', { './social-model': model });
   for (const flow of ['social', 'ads', 'instagram']) {
     const cookieName = flow === 'instagram' ? 'imobflow_instagram_state' : flow === 'social' ? 'imobflow_meta_social_state' : 'imobflow_meta_ads_state';
     const callbackPath = `/api/integrations/meta/${flow}/callback`;
@@ -57,7 +61,7 @@ function walk(node, found = []) {
     const dependency = flow === 'instagram' ? { '@/lib/instagram-login': { INSTAGRAM_COOKIE: cookieName, INSTAGRAM_CALLBACK: callbackPath, finishInstagramOAuth: finish } } : flow === 'social'
       ? { '@/lib/social-connections': { SOCIAL_COOKIE: cookieName, finishSocialOAuth: finish } }
       : { '@/lib/meta-ads': { ADS_COOKIE: cookieName, finishAdsOAuth: finish } };
-    const callback = load(`app${callbackPath}/route.ts`, { 'next/server': { NextResponse: TestResponse }, ...dependency });
+    const callback = load(`app${callbackPath}/route.ts`, { 'next/server': { NextResponse: TestResponse }, '@/lib/instagram-oauth-result': diagnostics, ...dependency });
     for (const rejected of [false, true]) {
       fail = rejected;
       const request = {
@@ -72,8 +76,12 @@ function walk(node, found = []) {
       assert.equal(target.pathname, '/integracoes/retorno');
       assert.equal(target.searchParams.get('fluxo'), flow === 'instagram' ? 'social' : flow);
       assert.equal(target.searchParams.get('resultado'), rejected ? 'failed' : 'connected');
-      assert.deepEqual([...target.searchParams.keys()].sort(), flow !== 'ads' && !rejected ? ['canal', 'fluxo', 'resultado'] : ['fluxo', 'resultado']);
-      assert.equal(target.searchParams.get('canal'), flow !== 'ads' && !rejected ? 'instagram' : null);
+      assert.deepEqual([...target.searchParams.keys()].sort(), flow === 'instagram' && rejected ? ['canal', 'fluxo', 'motivo', 'referencia', 'resultado'] : flow === 'instagram' || flow !== 'ads' && !rejected ? ['canal', 'fluxo', 'resultado'] : ['fluxo', 'resultado']);
+      assert.equal(target.searchParams.get('canal'), flow === 'instagram' || flow !== 'ads' && !rejected ? 'instagram' : null);
+      if (flow === 'instagram' && rejected) {
+        assert.equal(target.searchParams.get('motivo'), 'failed');
+        assert.match(target.searchParams.get('referencia'), /^[a-f\d]{24}$/);
+      }
       assert.equal(target.hash, '');
       assert.equal(JSON.stringify(finishCalls.at(-1)), JSON.stringify([state, state, code]));
       assert.match(response.headers.get('cache-control'), /no-store/);
@@ -91,7 +99,47 @@ function walk(node, found = []) {
     }
   }
 
-  const pageModule = load('app/integracoes/retorno/page.tsx', { './return.module.css': { default: {} } });
+  const instagramPath = '/api/integrations/meta/instagram/callback';
+  const secret = 'synthetic-provider-secret-must-not-leak';
+  const knownReasons = ['cancelled', 'expired', 'configuration_unavailable', 'permissions_missing', 'owner_required', 'account_conflict', 'professional_required', 'provider_unavailable', 'provider_rate_limit', 'provider_rejected', 'subscription_failed', 'failed'];
+  for (const [issue, expected] of [
+    ...knownReasons.map(reason => [new model.SocialError(secret, 422, reason), reason]),
+    [new model.SocialError(secret, 403), 'owner_required'],
+    [new model.SocialError(secret, 502, secret), 'failed'],
+    [new model.SocialError(secret, 422, 'toString'), 'failed'],
+    [new model.SocialError(secret, 422, '__proto__'), 'failed'],
+    [{ code: 'permissions_missing', message: secret }, 'failed'],
+    [new Error(secret), 'failed'],
+  ]) {
+    const callback = load(`app${instagramPath}/route.ts`, {
+      'next/server': { NextResponse: TestResponse }, '@/lib/instagram-oauth-result': diagnostics,
+      '@/lib/instagram-login': { INSTAGRAM_COOKIE: 'imobflow_instagram_state', INSTAGRAM_CALLBACK: instagramPath, finishInstagramOAuth: async () => { throw issue; } },
+    });
+    const response = await callback.GET({ nextUrl: new URL(`${origin}${instagramPath}?${new URLSearchParams({ state, code, error_description: secret, motivo: 'cancelled', referencia: 'a'.repeat(24) })}`), cookies: { get: () => ({ value: state }) } });
+    const target = new URL(response.headers.get('location'));
+    assert.equal(target.searchParams.get('motivo'), expected);
+    assert.match(target.searchParams.get('referencia'), /^[a-f\d]{24}$/);
+    assert.notEqual(target.searchParams.get('referencia'), 'a'.repeat(24), 'Reference is generated locally, not copied from the request');
+    assert.equal(JSON.stringify(diagnosticLogs.at(-1)), JSON.stringify(['instagram_oauth_failed', { reason: expected, reference: target.searchParams.get('referencia') }]));
+    assert(!JSON.stringify([...response.headers]).includes(secret));
+  }
+  for (const [query, expectedArgs] of [
+    [{ state, error: 'access_denied', error_reason: secret, error_description: secret }, [state, state, '', 'cancelled']],
+    [{ state, error: secret, error_description: secret }, [state, state, '', 'provider_rejected']],
+    [[['state', state], ['state', 'b'.repeat(64)], ['code', code]], ['', state, code]],
+    [[['state', state], ['code', code], ['code', secret]], [state, state, '']],
+  ]) {
+    let actualArgs;
+    const callback = load(`app${instagramPath}/route.ts`, {
+      'next/server': { NextResponse: TestResponse }, '@/lib/instagram-oauth-result': diagnostics,
+      '@/lib/instagram-login': { INSTAGRAM_COOKIE: 'imobflow_instagram_state', INSTAGRAM_CALLBACK: instagramPath, finishInstagramOAuth: async (...args) => { actualArgs = args; throw new model.SocialError(secret, 422, 'expired'); } },
+    });
+    await callback.GET({ nextUrl: new URL(`${origin}${instagramPath}?${new URLSearchParams(query)}`), cookies: { get: () => ({ value: state }) } });
+    assert.equal(JSON.stringify(actualArgs), JSON.stringify(expectedArgs), 'Callback must reject ambiguous parameters and never forward provider error descriptions');
+  }
+  assert(!JSON.stringify(diagnosticLogs).includes(secret) && !JSON.stringify(diagnosticLogs).includes(code) && !JSON.stringify(diagnosticLogs).includes(state), 'Logs contain only allowlisted category and random reference');
+
+  const pageModule = load('app/integracoes/retorno/page.tsx', { './return.module.css': { default: {} }, '@/lib/instagram-oauth-result': diagnostics });
   assert.equal(pageModule.dynamic, 'force-dynamic');
   assert.equal(pageModule.metadata.referrer, 'no-referrer');
   assert.equal(pageModule.metadata.robots.index, false);
@@ -123,7 +171,7 @@ function walk(node, found = []) {
     [{ fluxo: 'social', resultado: 'connected' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'social', resultado: 'connected', canal: 'instagram' }, '/painel?area=settings&social=instagram#settings', 'Concluir conexão do Instagram'],
     [{ fluxo: 'social', resultado: 'connected', canal: 'facebook' }, '/painel?area=settings&social=facebook#settings', 'Concluir conexão do Facebook'],
-    [{ fluxo: 'social', resultado: 'failed', canal: 'instagram' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
+    [{ fluxo: 'social', resultado: 'failed', canal: 'instagram' }, '/painel?area=settings&social=instagram#settings', 'Rever conexão do Instagram'],
     [{ fluxo: 'social', resultado: 'connected', canal: ['instagram','facebook'] }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'social', resultado: 'connected', canal: 'https://attacker.test' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'ads', resultado: 'connected' }, '/painel?area=campaigns#campaigns', 'Voltar às campanhas'],
@@ -146,6 +194,28 @@ function walk(node, found = []) {
     assert.ok(!nodes.some(node => ['script', 'form', 'input', 'meta'].includes(node.type)), 'No auto-redirect, authentication form or token transfer');
     if (query.resultado === 'failed') assert.ok(html.includes('A conexão não foi concluída'));
     if (!['connected', 'failed'].includes(query.resultado)) assert.ok(!html.includes('A autorização foi recebida'));
+  }
+  for (const reason of knownReasons) {
+    const query = { fluxo: 'social', resultado: 'failed', canal: 'instagram', motivo: reason, referencia: 'd'.repeat(24) };
+    const tree = await pageModule.default({ searchParams: Promise.resolve(query) });
+    const html = renderToStaticMarkup(tree);
+    assert.ok(html.includes(diagnostics.instagramOAuthFailureMessage(reason)));
+    assert.ok(html.includes('Referência para suporte:') && html.includes('d'.repeat(24)));
+    assert.equal(walk(tree).find(node => node.type === 'a').props.href, '/painel?area=settings&social=instagram#settings');
+  }
+  for (const patch of [
+    { motivo: secret, referencia: secret }, { motivo: '__proto__', referencia: '<script>bad</script>' },
+    { motivo: 'toString', referencia: ['d'.repeat(24)] }, { motivo: ['permissions_missing'], referencia: 'd'.repeat(25) },
+    { fluxo: 'ads', motivo: 'permissions_missing', referencia: 'd'.repeat(24) },
+    { resultado: 'connected', motivo: 'permissions_missing', referencia: 'd'.repeat(24) },
+    { canal: 'facebook', motivo: 'permissions_missing', referencia: 'd'.repeat(24) },
+    { canal: ['instagram'], motivo: 'permissions_missing', referencia: 'd'.repeat(24) },
+  ]) {
+    const tree = await pageModule.default({ searchParams: Promise.resolve({ fluxo: 'social', resultado: 'failed', canal: 'instagram', ...patch }) });
+    const html = renderToStaticMarkup(tree);
+    assert(!html.includes(secret) && !html.includes('<script>bad</script>') && !html.includes('Referência para suporte:'));
+    assert(!html.includes(diagnostics.instagramOAuthFailureMessage('permissions_missing')), 'Unknown or mismatched result parameters never select a diagnostic');
+    assert(!html.includes('__proto__') && !html.includes('toString'));
   }
 
   const accounts = load('lib/accounts.ts', {

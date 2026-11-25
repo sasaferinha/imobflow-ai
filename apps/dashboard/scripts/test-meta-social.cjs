@@ -23,10 +23,19 @@ const cache=new Map();function load(name){if(cache.has(name))return cache.get(na
  assert.equal(facebook.length,2);assert.equal(facebook[0].senderId,undefined);assert.equal(facebook[1].senderId,'777');assert.notEqual(m.socialLeadId(facebook[0]),m.socialLeadId(facebook[1]));assert.notEqual(m.socialLeadId(instagram[0]),m.socialLeadId(facebook[1]));
  const photo=m.parseSocialEvents({object:'instagram',entry:[{id:'456',messaging:[message('456','777','photo','',{attachments:[{type:'image',payload:{url:'https://cdn.facebook.com/test.jpg'}}]})]}]},connections)[0];assert.equal(photo.mediaUrls[0],'https://cdn.facebook.com/test.jpg');assert.equal(photo.text,'[Foto recebida]');
  const malicious=m.parseSocialEvents({object:'instagram',entry:[{id:'456',messaging:[message('456','777','bad','',{attachments:[{type:'image',payload:{url:'javascript:alert(1)'}}]})]}]},connections)[0];assert.equal(malicious.mediaUrls,undefined);
+ const audioEvent=url=>m.parseSocialEvents({object:'instagram',entry:[{id:'456',messaging:[message('456','777','audio','',{attachments:[{type:'audio',payload:{url}}]})]}]},[nativeConnection])[0];
+ for(const url of ['https://scontent.xx.fbcdn.net/audio.ogg?token=synthetic','https://cdninstagram.com/audio.m4a','https://cdn.facebook.com/audio.mp3','https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=456&signature=synthetic']){
+  const audio=audioEvent(url);assert.equal(audio.mediaType,'audio');assert.equal(audio.text,'[Áudio recebido]');assert.equal(audio.mediaUrls[0],url);
+ }
+ const longAudio='https://fbcdn.net/audio?signature='+'x'.repeat(4096);
+ for(const url of ['http://fbcdn.net/audio.ogg','https://fbcdn.net.evil.example.org/audio.ogg','https://example.org/audio.ogg','https://127.0.0.1/audio.ogg','https://user:password@fbcdn.net/audio.ogg','https://fbcdn.net:444/audio.ogg','https://fbcdn.net/\\audio.ogg','https://fbcdn.net/audio\n.ogg','https://lookaside.fbsbx.com.evil.example.org/ig_messaging_cdn/','https://other.fbsbx.com/ig_messaging_cdn/','https://lookaside.fbsbx.com/other/','https://lookaside.fbsbx.com/ig_messaging_cdn/../other',longAudio]){
+  const audio=audioEvent(url);assert.equal(audio.mediaType,'audio');assert.equal(audio.mediaUrls,undefined,'Untrusted audio is recorded without a downloadable URL');
+  const publicAudio=load('social-model').publicSocialMessage({media_type:'audio',media_urls:[url]});assert.equal(publicAudio.mediaType,'audio');assert.equal(publicAudio.mediaUrls.length,0,'The public view cannot reintroduce a rejected audio URL');
+ }
  const future=m.parseSocialEvents({object:'instagram',entry:[{id:'456',messaging:[{...message('456','777','future'),timestamp:Date.now()+999999}]}]},connections)[0];assert.equal(future.occurredAt,undefined);
  assert.equal((await m.saveSocialEvent(facebook[0])).created,true);assert.equal((await m.saveSocialEvent(facebook[0])).created,false);assert.equal(rows.size,1);const lead=[...rows.values()][0];assert.equal(lead.source,'Facebook Lead Ads');assert.equal(lead.phone,'5535999999999');
  await m.saveSocialEvent(facebook[1]);assert.equal(received.length,2);assert.equal(received[1].kind,'facebook');assert.equal(rows.size,1,'Messenger never enters Lead Ads ingestion');
  graphFailure=true;await assert.rejects(()=>m.saveSocialEvent({...facebook[0],externalId:'888'}),/social_retrieval_failed/);
  assert.ok(calls.every(c=>!c.resource.includes('message_outbox')&&!c.resource.startsWith('messages')),'no WhatsApp routing');
- console.log('PASS Meta social parsing: tenant/account/channel identity, Messenger distinct from Lead Ads, photos, echoes, delegated durable inbox and retry-safe Lead Ads.');
+ console.log('PASS Meta social parsing: tenant/account/channel identity, Messenger distinct from Lead Ads, photos, safe Meta audio URLs and type, rejected URL isolation, echoes, delegated durable inbox and retry-safe Lead Ads.');
 })().catch(error=>{console.error(error);process.exit(1);});
