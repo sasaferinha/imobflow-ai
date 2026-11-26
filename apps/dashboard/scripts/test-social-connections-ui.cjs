@@ -169,9 +169,17 @@ function harness(fetch, href = 'https://app.test/painel#settings') {
   await unfinished.settle();
   assert.equal(unfinishedRequests.length, 1);
   assert.match(text(unfinished.tree), /Não foi possível concluir a conexão do Instagram/);
-  assert.ok(button(unfinished.tree, 'Conectar Instagram'));
+  assert.ok(button(unfinished.tree, 'Tentar conectar Instagram'));
+  assert.ok(find(unfinished.tree, node => node.props?.role === 'alert'), 'unfinished connection is not styled as success');
+  assert.equal(find(unfinished.tree, node => node.props?.role === 'status'), undefined);
   const instagramCard = find(unfinished.tree, node => node.props?.['aria-label'] === 'Conexão do Instagram');
-  assert.doesNotMatch(text(instagramCard), /Página|vinculad|Concluir conexão/, 'Failed direct callback does not require a Facebook Page');
+  assert.doesNotMatch(text(instagramCard), /Vincule|Conta profissional vinculada|Concluir conexão/, 'Failed direct callback does not require a Facebook Page');
+  const help = find(instagramCard, node => node.type === 'details' && node.props['aria-label'] === 'Como conectar o Instagram');
+  assert.ok(help); assert.equal(help.props.open, undefined, 'connection help is optional and initially collapsed');
+  assert.match(text(help), /profissional.*empresa ou criador/);
+  assert.match(text(help), /Não precisa de uma Página do Facebook/);
+  assert.match(text(help), /não informa senha ou código de acesso à ImobFlow/);
+  assert.equal(nodes(instagramCard).filter(node => node.type === 'button').length, 1, 'one main action while disconnected');
 
   const unavailableRequests = [];
   const unavailable = harness(async (url, options) => {
@@ -181,17 +189,43 @@ function harness(fetch, href = 'https://app.test/painel#settings') {
   unavailable.tree.props.onToggle({ currentTarget: { open: true } }); await unavailable.settle();
   assert.equal(button(unavailable.tree, 'Conectar Instagram').props.disabled, true);
   assert.equal(button(unavailable.tree, 'Conectar Facebook').props.disabled, false, 'Missing Instagram credentials never disable Facebook');
-  assert.match(text(unavailable.tree), /A conexão direta do Instagram ainda precisa ser habilitada pela ImobFlow/);
+  assert.match(text(unavailable.tree), /A ImobFlow precisa concluir a configuração do Instagram/);
   button(unavailable.tree, 'Conectar Instagram').props.onClick(); await unavailable.settle();
   assert.equal(unavailableRequests.length, 1, 'Unavailable channel cannot start authorization even through a stale click');
   button(unavailable.tree, 'Conectar Facebook').props.onClick(); await unavailable.settle(); assert.equal(unavailable.redirects.length, 1);
 
-  const independent = harness(async (_url, options) => options.body ? response({ url: 'https://www.instagram.com/oauth/authorize?state=only-instagram' }) : response({ ...directStatus, available: false, channels: { facebook: { available: false, webhookConfigured: false }, instagram: { available: true, webhookConfigured: false } } }));
+  const independent = harness(async (_url, options) => options.body ? response({ url: 'https://www.instagram.com/oauth/authorize?state=only-instagram' }) : response({ ...directStatus, available: false, channels: { facebook: { available: false, webhookConfigured: false }, instagram: { available: true, webhookConfigured: true } } }));
   independent.tree.props.onToggle({ currentTarget: { open: true } }); await independent.settle();
   assert.equal(button(independent.tree, 'Conectar Instagram').props.disabled, false); assert.equal(button(independent.tree, 'Conectar Facebook').props.disabled, true);
-  assert.match(text(find(independent.tree, node => node.props?.['aria-label'] === 'Conexão do Instagram')), /recebimento de mensagens do Instagram/);
+  assert.doesNotMatch(text(find(independent.tree, node => node.props?.['aria-label'] === 'Conexão do Instagram')), /precisa concluir|recebimento de mensagens/);
   assert.doesNotMatch(text(find(independent.tree, node => node.props?.['aria-label'] === 'Conexão do Facebook')), /recebimento de mensagens do Instagram/);
   button(independent.tree, 'Conectar Instagram').props.onClick(); await independent.settle(); assert.equal(independent.redirects.length, 1, 'Direct Instagram can connect without Facebook configuration');
+
+  // Retrying a failed start must actually reopen the same provider's OAuth,
+  // rather than reload status and strand the customer in an unrelated picker.
+  for (const channel of ['instagram', 'facebook']) {
+    const name = channel === 'instagram' ? 'Instagram' : 'Facebook';
+    const other = channel === 'instagram' ? fbAccount : igAccount;
+    const attempts = []; let completeRetry;
+    const connectRetry = harness(async (_url, options) => {
+      const body = options.body && JSON.parse(options.body); attempts.push(body || null);
+      if (!body) return response({ ...directStatus, accounts: [other] });
+      if (attempts.length === 2) return response({ error: 'Falha temporária ao abrir a autorização.' }, false);
+      return new Promise(resolve => { completeRetry = resolve; });
+    });
+    connectRetry.tree.props.onToggle({ currentTarget: { open: true } }); await connectRetry.settle();
+    button(connectRetry.tree, `Conectar ${name}`).props.onClick(); await connectRetry.settle();
+    assert.ok(button(connectRetry.tree, `Tentar conectar ${name}`));
+    assert.equal(button(connectRetry.tree, 'Tentar novamente'), undefined, 'the failed channel has one retry action');
+    assert.ok(button(connectRetry.tree, `Desconectar ${channel === 'instagram' ? 'Facebook' : 'Instagram'}`), 'another channel remains connected');
+    const retryButton = button(connectRetry.tree, `Tentar conectar ${name}`);
+    retryButton.props.onClick(); retryButton.props.onClick(); connectRetry.render();
+    assert.equal(attempts.length, 3, 'double retry never starts competing OAuth states');
+    assert.deepEqual(attempts[2], { action: 'connect', channel }, 'retry repeats authorization instead of reading status or listing Pages');
+    const oauthUrl = channel === 'instagram' ? 'https://www.instagram.com/oauth/authorize?state=retry' : 'https://www.facebook.com/v26.0/dialog/oauth?state=retry';
+    completeRetry(response({ url: oauthUrl })); await connectRetry.settle();
+    assert.deepEqual(connectRetry.redirects, [oauthUrl]);
+  }
 
   for (const [channel, url] of [
     ['Instagram', 'https://www.facebook.com/v26.0/dialog/oauth?state=wrong-channel'],

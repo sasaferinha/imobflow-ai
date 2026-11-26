@@ -118,6 +118,8 @@ async function testApi() {
   assert.equal((await wrapped.api.instagramExchange(oauthCode, redirectUri)).accountId, professionalId, 'Single-item data wrappers are accepted');
   const stringScopes = harness(); stringScopes.outputs.short.permissions = scopes.join(', '); stringScopes.outputs.profile.account_type = 'MEDIA_CREATOR';
   assert.equal((await stringScopes.api.instagramExchange(oauthCode, redirectUri)).accountId, professionalId);
+  const personal = harness(); personal.outputs.profile.account_type = 'PERSONAL';
+  await assert.rejects(personal.api.instagramExchange(oauthCode, redirectUri), error => error.code === 'account_not_professional' && personal.login.instagramOAuthFailure(error) === 'account_not_professional' && noSecret(error));
   const omittedOptional = harness(); delete omittedOptional.outputs.short.permissions; delete omittedOptional.outputs.short.user_id; delete omittedOptional.outputs.profile.id;
   assert.equal((await omittedOptional.api.instagramExchange(oauthCode, redirectUri)).accountId, professionalId, 'Optional short-token scope/scoped-ID fields do not replace the authenticated professional profile');
   for (const permissions of [[], [scopes[0]], 'instagram_basic,instagram_manage_messages', null, 7]) {
@@ -143,10 +145,10 @@ async function testApi() {
   assert.equal(unconfigured.api.instagramAvailable(), false, 'Facebook credentials never silently substitute for Instagram credentials');
   await assert.rejects(unconfigured.api.instagramExchange(oauthCode, redirectUri), error => error.status === 503); assert.equal(unconfigured.network.length, 0);
   for (const options of [{ networkFailure: true }, { providerError: 400 }, { providerError: 429 }, { providerError: 500 }]) {
-    const h = harness(options); await assert.rejects(h.api.instagramExchange(oauthCode, redirectUri), noSecret); assert.equal(h.network.length, 1);
+    const h = harness(options); await assert.rejects(h.api.instagramExchange(oauthCode, redirectUri), error => h.login.instagramOAuthFailure(error) === (options.networkFailure ? 'provider_unavailable' : options.providerError === 429 ? 'provider_rate_limit' : 'provider_rejected') && noSecret(error)); assert.equal(h.network.length, 1);
   }
   const subscribe = harness({ outputs: { subscription: { success: false } } });
-  await assert.rejects(subscribe.api.instagramSubscribe(professionalId, longToken), noSecret);
+  await assert.rejects(subscribe.api.instagramSubscribe(professionalId, longToken), error => subscribe.login.instagramOAuthFailure(error) === 'subscription_failed' && noSecret(error));
   const invalidAccount = harness(); await assert.rejects(invalidAccount.api.instagramSubscribe('../foreign', longToken)); assert.equal(invalidAccount.network.length, 0);
 }
 
@@ -164,7 +166,7 @@ async function testLogin() {
   assert.equal(stored.company_id, company); assert.equal(stored.broker_id, broker); assert.equal(stored.channel, 'instagram'); assert.equal(stored.login_provider, 'instagram'); assert.equal(stored.redirect_uri, redirectUri);
   assert(Math.abs(Date.parse(stored.expires_at) - time - 600_000) < 3000); assert(!JSON.stringify(stored).includes(pending.state), 'Persist only the nonce hash');
   assert.equal(h.network.length, 0);
-  await assert.rejects(h.login.finishInstagramOAuth(pending.state, '0'.repeat(64), oauthCode)); assert(h.requests.has(digest(pending.state))); assert.equal(h.network.length, 0);
+  await assert.rejects(h.login.finishInstagramOAuth(pending.state, '0'.repeat(64), oauthCode), error => h.login.instagramOAuthFailure(error) === 'oauth_expired'); assert(h.requests.has(digest(pending.state))); assert.equal(h.network.length, 0);
   for (const code of ['', 'short', 'x'.repeat(4097)]) await assert.rejects(h.login.finishInstagramOAuth(pending.state, pending.state, code));
   await finish(h, pending);
   assert.equal(h.binds.length, 1); assert.equal(h.requests.size, 0); assert.equal(h.ownerChecks(), 3, 'Owner checked at begin, before exchange and again before subscription/binding');
@@ -198,7 +200,7 @@ async function testLogin() {
   const existing = harness({ activeAccounts: [{ account_id: professionalId, login_provider: 'instagram' }] }), existingPending = await begin(existing); await finish(existing, existingPending); assert.equal(existing.binds.length, 1, 'An identical native account can renew its token');
   const failedSubscription = harness({ outputs: { subscription: { success: false } } }), subscriptionPending = await begin(failedSubscription); await assert.rejects(finish(failedSubscription, subscriptionPending)); assert.equal(failedSubscription.binds.length, 0);
   for (const env of [{ META_INSTAGRAM_APP_ID: '' }, { META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN: '', META_SOCIAL_WEBHOOK_VERIFY_TOKEN: '' }, { META_SOCIAL_TOKEN_ENCRYPTION_KEY: '', META_APP_SECRET: '' }, { META_SOCIAL_TOKEN_ENCRYPTION_KEY: 'malformed' }]) {
-    const disabled = harness({ env }); await assert.rejects(begin(disabled), error => error.status === 503); assert.equal(disabled.requests.size, 0); assert.equal(disabled.network.length, 0);
+    const disabled = harness({ env }); await assert.rejects(begin(disabled), error => error.status === 503 && disabled.login.instagramOAuthFailure(error) === 'instagram_unavailable'); assert.equal(disabled.requests.size, 0); assert.equal(disabled.network.length, 0);
   }
   const fallbackWebhook = harness({ env: { META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN: '', META_SOCIAL_WEBHOOK_VERIFY_TOKEN: 'synthetic-shared-webhook' } }); assert((await begin(fallbackWebhook)).state);
 }
