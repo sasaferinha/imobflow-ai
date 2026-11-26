@@ -103,7 +103,8 @@ export async function socialConnectionStatus(companyId: string, includePages = f
   const accounts = await db<SocialAccountRow[]>(`social_accounts?company_id=eq.${companyId}&enabled=eq.true&select=id,channel,account_id,page_id,name,enabled,default_mode,login_provider,token_expires_at&order=channel.asc`);
   const pending = await db<Array<{ expires_at: string | null }>>(`social_authorizations?company_id=eq.${companyId}&select=expires_at&limit=1`);
   const facebook = { available: socialAvailable(), webhookConfigured: Boolean(process.env.META_APP_SECRET && process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN) };
-  const instagram = { available: instagramAvailable() && socialTokenProtectionAvailable(), webhookConfigured: Boolean(process.env.META_INSTAGRAM_APP_SECRET && (process.env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN || process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN)) };
+  const instagramWebhookConfigured = Boolean(process.env.META_INSTAGRAM_APP_SECRET && (process.env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN || process.env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN));
+  const instagram = { available: instagramAvailable() && socialTokenProtectionAvailable() && instagramWebhookConfigured, webhookConfigured: instagramWebhookConfigured };
   return { ...facebook, channels: { facebook, instagram }, authorized: Boolean(pending[0]), accounts: accounts.map(a => {
     const expiresAt = Date.parse(a.token_expires_at || '');
     // An expired native authorization stays bound so the owner can renew the

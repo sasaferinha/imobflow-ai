@@ -15,6 +15,7 @@ const state = 'a'.repeat(64);
 const code = 'synthetic-authorization-code';
 const finishCalls = [];
 let fail = false;
+let failure = null;
 
 class TestResponse extends Response {
   constructor(body, options) {
@@ -49,12 +50,19 @@ function walk(node, found = []) {
   return found;
 }
 
+const feedback = load('lib/instagram-connection-feedback.ts');
+const socialModel = load('lib/social-model.ts');
+const loginDiagnostics = load('lib/instagram-login.ts', {
+  './supabase': {}, './social-model': socialModel, './social-connections': {}, './instagram-api': {},
+  './instagram-connection-feedback': feedback,
+});
+
 (async () => {
   for (const flow of ['social', 'ads', 'instagram']) {
     const cookieName = flow === 'instagram' ? 'imobflow_instagram_state' : flow === 'social' ? 'imobflow_meta_social_state' : 'imobflow_meta_ads_state';
     const callbackPath = `/api/integrations/meta/${flow}/callback`;
-    const finish = async (...args) => { finishCalls.push(args); if (fail) throw Error('synthetic-provider-secret-must-not-leak'); return flow === 'social' ? 'instagram' : undefined; };
-    const dependency = flow === 'instagram' ? { '@/lib/instagram-login': { INSTAGRAM_COOKIE: cookieName, INSTAGRAM_CALLBACK: callbackPath, finishInstagramOAuth: finish } } : flow === 'social'
+    const finish = async (...args) => { finishCalls.push(args); if (failure) throw failure; if (fail) throw Error('synthetic-provider-secret-must-not-leak'); return flow === 'social' ? 'instagram' : undefined; };
+    const dependency = flow === 'instagram' ? { '@/lib/instagram-login': { INSTAGRAM_COOKIE: cookieName, INSTAGRAM_CALLBACK: callbackPath, finishInstagramOAuth: finish, instagramOAuthFailure: loginDiagnostics.instagramOAuthFailure } } : flow === 'social'
       ? { '@/lib/social-connections': { SOCIAL_COOKIE: cookieName, finishSocialOAuth: finish } }
       : { '@/lib/meta-ads': { ADS_COOKIE: cookieName, finishAdsOAuth: finish } };
     const callback = load(`app${callbackPath}/route.ts`, { 'next/server': { NextResponse: TestResponse }, ...dependency });
@@ -72,8 +80,9 @@ function walk(node, found = []) {
       assert.equal(target.pathname, '/integracoes/retorno');
       assert.equal(target.searchParams.get('fluxo'), flow === 'instagram' ? 'social' : flow);
       assert.equal(target.searchParams.get('resultado'), rejected ? 'failed' : 'connected');
-      assert.deepEqual([...target.searchParams.keys()].sort(), flow !== 'ads' && !rejected ? ['canal', 'fluxo', 'resultado'] : ['fluxo', 'resultado']);
-      assert.equal(target.searchParams.get('canal'), flow !== 'ads' && !rejected ? 'instagram' : null);
+      assert.deepEqual([...target.searchParams.keys()].sort(), flow === 'instagram' && rejected ? ['canal', 'fluxo', 'motivo', 'resultado'] : flow === 'instagram' || flow !== 'ads' && !rejected ? ['canal', 'fluxo', 'resultado'] : ['fluxo', 'resultado']);
+      assert.equal(target.searchParams.get('canal'), flow === 'instagram' || flow !== 'ads' && !rejected ? 'instagram' : null);
+      assert.equal(target.searchParams.get('motivo'), flow === 'instagram' && rejected ? 'connection_failed' : null);
       assert.equal(target.hash, '');
       assert.equal(JSON.stringify(finishCalls.at(-1)), JSON.stringify([state, state, code]));
       assert.match(response.headers.get('cache-control'), /no-store/);
@@ -89,9 +98,47 @@ function walk(node, found = []) {
       assert.equal(cleared.options.maxAge, 0);
       assert.ok(!JSON.stringify([...response.headers]).includes(code));
     }
+    if (flow === 'instagram') {
+      fail = false;
+      for (const [issue, expected] of [
+        ...['permissions_missing', 'account_not_professional', 'account_bound', 'account_disconnect_required', 'oauth_expired', 'provider_unavailable', 'provider_rejected', 'provider_rate_limit', 'instagram_unavailable', 'subscription_failed'].map(issue => [new socialModel.SocialError('synthetic-provider-secret-must-not-leak', 409, issue), issue]),
+        [new socialModel.SocialError('private-owner-detail', 403), 'owner_required'],
+        [new socialModel.SocialError('raw-provider-error', 502, 'synthetic-secret'), 'connection_failed'],
+        [new Error('synthetic-provider-secret-must-not-leak'), 'connection_failed'],
+        [{ code: 'permissions_missing', message: 'synthetic-provider-secret-must-not-leak' }, 'connection_failed'],
+      ]) {
+        failure = issue;
+        const response = await callback.GET({
+          nextUrl: new URL(`${origin}${callbackPath}?${new URLSearchParams({ state, code, motivo: 'permissions_missing', error_description: 'synthetic-provider-secret-must-not-leak' })}`),
+          cookies: { get: () => ({ value: state }) },
+        });
+        const target = new URL(response.headers.get('location'));
+        assert.equal(target.searchParams.get('motivo'), expected);
+        assert.equal(target.searchParams.get('canal'), 'instagram');
+        assert.equal(target.searchParams.get('resultado'), 'failed');
+        assert(!target.href.includes('synthetic-') && !target.href.includes('private-owner-detail'), 'No raw provider data in redirects');
+      }
+      failure = null;
+      const callsBeforeCancel = finishCalls.length;
+      const canceled = await callback.GET({
+        nextUrl: new URL(`${origin}${callbackPath}?${new URLSearchParams({ state, error: 'access_denied', error_description: 'synthetic-provider-secret-must-not-leak' })}`),
+        cookies: { get: () => ({ value: state }) },
+      });
+      assert.equal(new URL(canceled.headers.get('location')).searchParams.get('motivo'), 'authorization_cancelled');
+      assert.equal(finishCalls.length, callsBeforeCancel, 'Cancellation never exchanges a code or binds an account');
+      assert.equal(canceled.savedCookies[0].options.maxAge, 0);
+      failure = new socialModel.SocialError('expired', 422, 'oauth_expired');
+      const wrongBrowser = await callback.GET({
+        nextUrl: new URL(`${origin}${callbackPath}?${new URLSearchParams({ state, error: 'access_denied' })}`),
+        cookies: { get: () => ({ value: 'b'.repeat(64) }) },
+      });
+      assert.equal(new URL(wrongBrowser.headers.get('location')).searchParams.get('motivo'), 'oauth_expired', 'Unbound provider cancellation cannot bypass state validation');
+      assert.equal(finishCalls.length, callsBeforeCancel + 1);
+      failure = null;
+    }
   }
 
-  const pageModule = load('app/integracoes/retorno/page.tsx', { './return.module.css': { default: {} } });
+  const pageModule = load('app/integracoes/retorno/page.tsx', { './return.module.css': { default: {} }, '@/lib/instagram-connection-feedback': feedback });
   assert.equal(pageModule.dynamic, 'force-dynamic');
   assert.equal(pageModule.metadata.referrer, 'no-referrer');
   assert.equal(pageModule.metadata.robots.index, false);
@@ -123,7 +170,7 @@ function walk(node, found = []) {
     [{ fluxo: 'social', resultado: 'connected' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'social', resultado: 'connected', canal: 'instagram' }, '/painel?area=settings&social=instagram#settings', 'Concluir conexão do Instagram'],
     [{ fluxo: 'social', resultado: 'connected', canal: 'facebook' }, '/painel?area=settings&social=facebook#settings', 'Concluir conexão do Facebook'],
-    [{ fluxo: 'social', resultado: 'failed', canal: 'instagram' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
+    [{ fluxo: 'social', resultado: 'failed', canal: 'instagram' }, '/painel?area=settings&social=instagram#settings', 'Voltar à conexão do Instagram'],
     [{ fluxo: 'social', resultado: 'connected', canal: ['instagram','facebook'] }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'social', resultado: 'connected', canal: 'https://attacker.test' }, '/painel?area=integrations#integrations', 'Voltar às integrações'],
     [{ fluxo: 'ads', resultado: 'connected' }, '/painel?area=campaigns#campaigns', 'Voltar às campanhas'],
@@ -146,6 +193,18 @@ function walk(node, found = []) {
     assert.ok(!nodes.some(node => ['script', 'form', 'input', 'meta'].includes(node.type)), 'No auto-redirect, authentication form or token transfer');
     if (query.resultado === 'failed') assert.ok(html.includes('A conexão não foi concluída'));
     if (!['connected', 'failed'].includes(query.resultado)) assert.ok(!html.includes('A autorização foi recebida'));
+  }
+
+  for (const reason of ['authorization_cancelled', 'oauth_expired', 'permissions_missing', 'account_not_professional', 'account_bound', 'account_disconnect_required', 'provider_unavailable', 'provider_rejected', 'provider_rate_limit', 'instagram_unavailable', 'owner_required', 'subscription_failed', 'connection_failed', '<script>secret</script>', '__proto__', 'constructor', ['permissions_missing', 'provider_rejected']]) {
+    const query = { fluxo: 'social', resultado: 'failed', canal: 'instagram', motivo: reason, error_description: 'synthetic-provider-secret-must-not-leak' };
+    const tree = await pageModule.default({ searchParams: Promise.resolve(query) }), html = renderToStaticMarkup(tree);
+    assert(html.includes(feedback.instagramConnectionFeedback(reason)), 'Public guidance comes only from the fixed catalog');
+    assert(!html.includes('secret') && !html.includes('__proto__') && !html.includes('constructor'));
+    assert.equal(walk(tree).find(node => node.type === 'a').props.href, '/painel?area=settings&social=instagram#settings');
+  }
+  for (const query of [{ fluxo: 'ads', resultado: 'failed', canal: 'instagram', motivo: 'permissions_missing' }, { fluxo: 'social', resultado: 'connected', canal: 'instagram', motivo: 'permissions_missing' }]) {
+    const html = renderToStaticMarkup(await pageModule.default({ searchParams: Promise.resolve(query) }));
+    assert(!html.includes(feedback.instagramConnectionFeedback('permissions_missing')), 'Instagram failure hints do not affect other flows or successes');
   }
 
   const accounts = load('lib/accounts.ts', {

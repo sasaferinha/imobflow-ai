@@ -81,6 +81,24 @@ function request(method,{body,query='',token=ownerToken,state,origin='https://ap
  assert.equal(connected.testCookies[0].value,state);assert.equal(connected.testCookies[0].config.httpOnly,true);assert.equal(connected.testCookies[0].config.secure,true);assert.equal(connected.testCookies[0].config.sameSite,'lax');
  const stored=oauth.get(digest(state));assert.equal(stored.company_id,company);assert.equal(stored.broker_id,broker);assert.equal(stored.channel,'facebook');assert.ok(!JSON.stringify(stored).includes(state),'only nonce hash is stored');
  assert.equal((await api.POST(request('POST',{body:{action:'connect',channel:'instagram'}}))).status,503,'missing native Instagram credentials never silently use Facebook Login');
+ env.META_INSTAGRAM_APP_ID='987654';env.META_INSTAGRAM_APP_SECRET='synthetic-instagram-app-secret';
+ let nativeStatus=(await lib.socialConnectionStatus(company)).channels.instagram;
+ assert.equal(nativeStatus.available,true,'native credentials + token protection + shared webhook secret enable login');
+ assert.equal(nativeStatus.webhookConfigured,true);
+ env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN='';
+ nativeStatus=(await lib.socialConnectionStatus(company)).channels.instagram;
+ assert.equal(nativeStatus.available,false,'the button cannot advertise a login that beginInstagramOAuth will reject for missing webhook setup');
+ assert.equal(nativeStatus.webhookConfigured,false);
+ const pendingBeforeDisabled=oauth.size;
+ const disabledNative=await api.POST(request('POST',{body:{action:'connect',channel:'instagram'}}));
+ assert.equal(disabledNative.status,503);assert.equal((await disabledNative.json()).code,'instagram_unavailable');
+ assert.equal(oauth.size,pendingBeforeDisabled,'an unavailable channel never creates a pending authorization');
+ env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN='synthetic-native-webhook';
+ const configuredStatus=await lib.socialConnectionStatus(company);
+ assert.equal(configuredStatus.channels.instagram.available,true,'dedicated Instagram webhook setup works without Facebook webhook setup');
+ assert.equal(configuredStatus.channels.facebook.webhookConfigured,false);
+ assert.doesNotMatch(JSON.stringify(configuredStatus),/synthetic-instagram-app-secret|synthetic-native-webhook/,'status returns readiness only, never credentials');
+ delete env.META_INSTAGRAM_APP_ID;delete env.META_INSTAGRAM_APP_SECRET;delete env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN;env.META_SOCIAL_WEBHOOK_VERIFY_TOKEN='synthetic-webhook';
  for(const channel of [undefined]){
   const response=await api.POST(request('POST',{body:{action:'connect',...(channel?{channel}:{})}}));assert.equal(response.status,200);const scope=new URL((await response.json()).url).searchParams.get('scope');assert.match(scope,/instagram_basic/);assert.match(scope,/instagram_manage_messages/);
  }
